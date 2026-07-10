@@ -1,9 +1,15 @@
 var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
-function AKORT_printResult_(result) {
-  console.log(JSON.stringify(result, null, 2));
-  return result;
-}
+function AKORT_printResult_(result) { console.log(JSON.stringify(result, null, 2)); return result; }
+
+function AKORT_alpha6Install(){return AKORT_printResult_(AKORT.IncrementalPublish.install());}
+function AKORT_alpha6SmokeTest(){return AKORT_printResult_(AKORT.Alpha6Tests.runSmokeTest());}
+function AKORT_alpha6Status(){return AKORT_printResult_(AKORT.Result.success('Incremental Publish status loaded.',AKORT.IncrementalPublish.statusSummary()));}
+function AKORT_alpha6CreatePublishBackup(){return AKORT_printResult_(AKORT.IncrementalPublish.createPublishBackup());}
+function AKORT_alpha6StartReconciliation(){return AKORT_printResult_(AKORT.IncrementalPublish.startReconciliation());}
+function AKORT_alpha6ContinueReconciliation(){return AKORT_printResult_(AKORT.IncrementalPublish.continueReconciliation());}
+function AKORT_alpha6ReconciliationStatus(){return AKORT_printResult_(AKORT.IncrementalPublish.reconciliationStatus());}
+function AKORT_alpha6ResetReconciliation(){return AKORT_printResult_(AKORT.IncrementalPublish.resetReconciliation());}
 
 
 /** Alpha.5: register the release and install parser profiles, staging and issue tables. */
@@ -119,4 +125,14 @@ function AKORT_alpha1ConfigSummary() {
 /** Read-only environment validation. */
 function AKORT_alpha1EnvironmentCheck() {
   return AKORT_printResult_(AKORT.EnvironmentGuard.verify());
+}
+
+/** Alpha.6 hotfix 1: show the resumable alpha.4 compatibility-test checkpoint. */
+function AKORT_alpha4SmokeStatus() {
+  return AKORT_printResult_(AKORT.Alpha4Tests.status());
+}
+
+/** Alpha.6 hotfix 1: delete only ALPHA4_TEST_* artifacts and clear the checkpoint. */
+function AKORT_alpha4SmokeReset() {
+  return AKORT_printResult_(AKORT.Alpha4Tests.reset());
 }
