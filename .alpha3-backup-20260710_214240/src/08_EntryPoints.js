@@ -5,47 +5,17 @@ function AKORT_printResult_(result) {
   return result;
 }
 
-/** Alpha.3: register the release and install Operation Engine settings. */
-function AKORT_alpha3Install() {
-  return AKORT_printResult_(AKORT.OperationEngine.install());
-}
-
-/** Alpha.3: run persisted-state-machine acceptance checks with test handlers. */
-function AKORT_alpha3SmokeTest() {
-  return AKORT_printResult_(AKORT.Alpha3Tests.runSmokeTest());
-}
-
-/** Alpha.3: show engine contract, settings and queue counts. */
-function AKORT_alpha3Status() {
-  return AKORT_printResult_(AKORT.OperationEngine.engineStatus());
-}
-
-/** Alpha.3: create a demo operation and pause it safely after PARSE. */
-function AKORT_alpha3StartDemo() {
-  return AKORT_printResult_(AKORT.OperationEngine.startDemo());
-}
-
-/** Alpha.3: continue the latest demo operation to SUCCESS. */
-function AKORT_alpha3ContinueDemo() {
-  return AKORT_printResult_(AKORT.OperationEngine.continueDemo());
-}
-
-/** Alpha.3: show the latest demo operation and its immutable step history. */
-function AKORT_alpha3DemoStatus() {
-  return AKORT_printResult_(AKORT.OperationEngine.demoStatus());
-}
-
-/** Alpha.2 compatibility: create or validate service tables and register current release. */
+/** Alpha.2: create or validate service tables and register the release. */
 function AKORT_alpha2Install() {
   return AKORT_printResult_(AKORT.Core.install());
 }
 
-/** Alpha.2 compatibility regression. */
+/** Alpha.2: run all Core Foundation acceptance checks. */
 function AKORT_alpha2SmokeTest() {
   return AKORT_printResult_(AKORT.Core.smokeTest());
 }
 
-/** Alpha.2 compatibility status. */
+/** Alpha.2: show release, configuration and service-table status. */
 function AKORT_alpha2Status() {
   return AKORT_printResult_(AKORT.Core.status());
 }

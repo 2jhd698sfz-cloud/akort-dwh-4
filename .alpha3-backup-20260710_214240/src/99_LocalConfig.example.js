@@ -45,10 +45,6 @@
 //     logLevel: 'INFO',
 //     lockTimeoutMs: 30000,
 //     maxOperationAttempts: 3,
-//     timezone: 'Europe/Moscow',
-//     operationExecutionBudgetMs: 180000,
-//     operationMaxStepsPerRun: 3,
-//     operationMinRemainingMs: 15000,
-//     operationLeaseMs: 120000
+//     timezone: 'Europe/Moscow'
 //   }
 // });
