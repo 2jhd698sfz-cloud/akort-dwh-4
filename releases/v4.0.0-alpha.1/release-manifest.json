@@ -1,0 +1,9 @@
+{
+  "version": "4.0.0-alpha.1",
+  "environment": "DEV",
+  "baseline": "VERIFIED_BASELINE_2026-07-10",
+  "productionCompatibility": "3.1.7",
+  "status": "READY_FOR_DEV_INSTALLATION",
+  "productionWrites": false,
+  "createdDate": "2026-07-10"
+}

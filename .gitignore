@@ -7,3 +7,4 @@ node_modules/
 coverage/
 tmp/
 *.log
+src/99_LocalConfig.js
