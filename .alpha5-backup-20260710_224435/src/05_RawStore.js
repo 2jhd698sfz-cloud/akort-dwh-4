@@ -58,7 +58,7 @@ AKORT.RawStore = (function () {
         'revision_type', 'is_latest', 'source_published_at', 'loaded_at', 'load_id'
       ],
       keyFields: ['dataset_code', 'category_id', 'value_type', 'index_type', 'observation_date'],
-      requiredFields: ['dataset_code', 'category_id', 'value_type', 'observation_date', 'value'],
+      requiredFields: ['dataset_code', 'category_id', 'value_type', 'index_type', 'observation_date', 'value'],
       dateFields: ['observation_date', 'source_published_at'],
       contentFields: ['value']
     },
@@ -69,7 +69,7 @@ AKORT.RawStore = (function () {
         'revision_type', 'is_latest', 'source_published_at', 'loaded_at', 'load_id'
       ],
       keyFields: ['dataset_code', 'category_id', 'value_type', 'index_type', 'observation_month'],
-      requiredFields: ['dataset_code', 'category_id', 'value_type', 'observation_month', 'value'],
+      requiredFields: ['dataset_code', 'category_id', 'value_type', 'index_type', 'observation_month', 'value'],
       dateFields: ['observation_month', 'source_published_at'],
       contentFields: ['value']
     },

@@ -88,7 +88,7 @@ AKORT.Alpha4Tests = (function () {
       };
 
       tests.push(test_('raw_store_contract', function () {
-        require_(['4.0.0-alpha.4', '4.0.0-alpha.5'].indexOf(AKORT.Release.version) >= 0, 'RELEASE_VERSION_MISMATCH', 'Unexpected release version for alpha.4 compatibility regression.');
+        require_(AKORT.Release.version === '4.0.0-alpha.4', 'RELEASE_VERSION_MISMATCH', 'Unexpected alpha.4 release version.');
         require_(AKORT.Release.rawSchemaVersion === '4.0-raw-1', 'RAW_SCHEMA_VERSION_MISMATCH', 'Unexpected RAW schema version.');
         ['RAW_STAGE', 'RAW_LOAD_REGISTRY', 'RAW_REVERSAL_LOG'].forEach(function (name) {
           var sheet = dwh.getSheetByName(name);

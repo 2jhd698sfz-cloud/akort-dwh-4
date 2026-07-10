@@ -54,12 +54,6 @@
 //     rawStageBatchSize: 500,
 //     rawDuplicatePolicy: 'REUSE_COMMITTED',
 //     rawReversalPolicy: 'LATEST_LOAD_ONLY',
-//     rawStoreEnabled: true,
-//     parserSchemaVersion: '4.0-parser-1',
-//     parserProfileMinScore: 60,
-//     parserProfileMinMargin: 15,
-//     parserFailOnUnmapped: true,
-//     parserTempConversionEnabled: true,
-//     parserStageBatchSize: 500
+//     rawStoreEnabled: true
 //   }
 // });

@@ -5,27 +5,6 @@ function AKORT_printResult_(result) {
   return result;
 }
 
-
-/** Alpha.5: register the release and install parser profiles, staging and issue tables. */
-function AKORT_alpha5Install() {
-  return AKORT_printResult_(AKORT.ExistingSourceParsers.install());
-}
-
-/** Alpha.5: run all parser, mapping, conversion and Operation Engine acceptance checks. */
-function AKORT_alpha5SmokeTest() {
-  return AKORT_printResult_(AKORT.Alpha5Tests.runSmokeTest());
-}
-
-/** Alpha.5: show parser profiles, settings and service-table counts. */
-function AKORT_alpha5Status() {
-  return AKORT_printResult_(AKORT.Result.success('Existing Source Parsers status loaded.', AKORT.ExistingSourceParsers.statusSummary()));
-}
-
-/** Alpha.5: return the twelve supported source profiles without reading or changing data. */
-function AKORT_alpha5ProfileCatalog() {
-  return AKORT_printResult_(AKORT.Result.success('Existing source profile catalog loaded.', AKORT.ExistingSourceParsers.profiles()));
-}
-
 /** Alpha.4: register the release, install Operation Engine and create RAW Store service tables. */
 function AKORT_alpha4Install() {
   return AKORT_printResult_(AKORT.RawStore.install());

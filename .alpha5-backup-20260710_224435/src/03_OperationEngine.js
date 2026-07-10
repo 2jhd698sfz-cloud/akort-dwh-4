@@ -429,11 +429,6 @@ AKORT.OperationEngine = (function () {
 
   function handler_(operationType) {
     var type = String(operationType || '');
-    if (AKORT.SourceParserHandlers &&
-        typeof AKORT.SourceParserHandlers.supports === 'function' &&
-        AKORT.SourceParserHandlers.supports(type)) {
-      return AKORT.SourceParserHandlers;
-    }
     if (AKORT.RawStoreHandlers &&
         typeof AKORT.RawStoreHandlers.supports === 'function' &&
         AKORT.RawStoreHandlers.supports(type)) {
