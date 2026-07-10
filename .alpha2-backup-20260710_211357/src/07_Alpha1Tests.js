@@ -12,8 +12,8 @@ AKORT.Alpha1Tests = (function () {
 
   function runSmokeTest() {
     var tests = [];
-    tests.push(test_('release_compatibility', function () {
-      if (AKORT.Release.productionCompatibility !== '3.1.7') throw new Error('Unexpected production compatibility');
+    tests.push(test_('release_version', function () {
+      if (AKORT.Release.version !== '4.0.0-alpha.1') throw new Error('Unexpected release version');
       return AKORT.Release.version;
     }));
     tests.push(test_('result_contract', function () {
@@ -27,11 +27,15 @@ AKORT.Alpha1Tests = (function () {
       if (a !== b) throw new Error('Hash is not deterministic');
       return a;
     }));
-    tests.push(test_('environment_guard', function () { return AKORT.EnvironmentGuard.assertDev(); }));
+    tests.push(test_('environment_guard', function () {
+      return AKORT.EnvironmentGuard.assertDev();
+    }));
+
     var ok = tests.every(function (item) { return item.status === 'PASS'; });
     return ok
-      ? AKORT.Result.success('Alpha.1 compatibility smoke test passed.', { tests: tests, config: AKORT.Config.describe() })
-      : AKORT.Result.failure('ALPHA1_COMPATIBILITY_FAILED', 'One or more alpha.1 compatibility checks failed.', { tests: tests, config: AKORT.Config.describe() });
+      ? AKORT.Result.success('Alpha.1 smoke test passed.', { tests: tests, config: AKORT.Config.describe() })
+      : AKORT.Result.failure('SMOKE_TEST_FAILED', 'One or more alpha.1 smoke tests failed.', { tests: tests, config: AKORT.Config.describe() });
   }
+
   return { runSmokeTest: runSmokeTest };
 })();

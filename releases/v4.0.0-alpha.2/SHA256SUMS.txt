@@ -1,0 +1,16 @@
+cb513e71d9f92186743f2cd68c35cf1274c658cf2ac0ea4ccea899890c9f614e  ./DELETE_FILES.txt
+ea3629c1025029f3ebdda0a0e3f44a9fd757e7d0cd72a2dbd5e755b963131566  ./README.md
+dd0c1485385edca0bb26068343f69e4328ea99d6a6f6cec6698a0ced5b307a7a  ./release-manifest.json
+9b64ac0000af70448d2d3b0bea28bb6baa6123593d381ecaad49afbf171573e0  ./releases/v4.0.0-alpha.2/FILE_INVENTORY.md
+02e66ccd5d0015c6149069c8e38725f9cc0c32ae68f423569985130b5c69da72  ./releases/v4.0.0-alpha.2/INSTALLATION.md
+93d7d190fa7939aa5e5162537eea5b590705e3a16cb40bb9086b4d070cb6d266  ./releases/v4.0.0-alpha.2/RELEASE_NOTES.md
+0aac639548040cda4634a8baef473e51dca1861c7dbd6b3f90b05349b68e7021  ./releases/v4.0.0-alpha.2/ROLLBACK.md
+56dc446283fec0eb45dbd2a59fafe4b4c2a3406c21324f8247850af0535d8c62  ./releases/v4.0.0-alpha.2/TEST_REPORT.md
+ebc44a2e5fd950b7fa6cf9322d434a6e9f73ddf0eefa8905bf29cd1cdf02e1af  ./scripts/apply-alpha2.sh
+27510e92051018a5e6cb9a5cb1ad11fef1ce33934929267876302a1416086a7d  ./scripts/rollback-alpha2.sh
+23962731cf62932a1ed2fa70120ecf4ca822fdad2ae50fd0db289591fe47338a  ./src/00_Release.js
+7ace33ea548a912a789e09bb01c0b4127846e367b7ef865fbc1f9df1cbd82988  ./src/01_Config.js
+87fe0fd058f72e5f0ae63e90b450320d3bd790def16c5d043c0ed9fa3424eb96  ./src/02_Core.js
+fd2b02bc939e0d762054d81fd74e182173647bd6c0eaa89d6c89340f104c52b3  ./src/07_Alpha1Tests.js
+251cb98ee8956e3901285e981c212d1f889132586b9117734555f8fc19da0cd9  ./src/08_EntryPoints.js
+03eecd314da4d251f444b11a2382ecce8f9c544b474f0d3eb45be15ae8ab934e  ./src/99_LocalConfig.example.js

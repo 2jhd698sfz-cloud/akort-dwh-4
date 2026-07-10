@@ -6,7 +6,6 @@
 //   environment: 'DEV',
 //   expectedScriptId: 'DEV_SCRIPT_ID',
 //   baselineLabel: 'VERIFIED_BASELINE_2026-07-10',
-//   baselineReportId: 'SUCCESSFUL_ALPHA1_BASELINE_REPORT_ID',
 //   resources: {
 //     dwhSpreadsheetId: 'DEV_DWH_ID',
 //     publishSpreadsheetId: 'DEV_PUBLISH_ID',
@@ -31,20 +30,5 @@
 //     monthlyLatestRows: 378,
 //     aggregateLatestRows: 1364
 //   },
-//   baselinePhysicalExpected: {
-//     rawWeeklyRows: 13711,
-//     rawMonthlyRows: 11970,
-//     rawIndustryRows: 2266,
-//     publishWeeklyRows: 20211,
-//     publishMonthlyRows: 12957,
-//     publishIndustryRows: 2266,
-//     publishAggregateRows: 61636
-//   },
-//   baseline: { chunkRows: 500, executionBudgetMs: 220000 },
-//   system: {
-//     logLevel: 'INFO',
-//     lockTimeoutMs: 30000,
-//     maxOperationAttempts: 3,
-//     timezone: 'Europe/Moscow'
-//   }
+//   baseline: { chunkRows: 500, executionBudgetMs: 220000 }
 // });
