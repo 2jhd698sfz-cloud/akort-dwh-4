@@ -5,52 +5,37 @@ function AKORT_printResult_(result) {
   return result;
 }
 
-/** Alpha.4: register the release, install Operation Engine and create RAW Store service tables. */
-function AKORT_alpha4Install() {
-  return AKORT_printResult_(AKORT.RawStore.install());
-}
-
-/** Alpha.4: run staging, duplicate, revision, reversal and Operation Engine acceptance checks. */
-function AKORT_alpha4SmokeTest() {
-  return AKORT_printResult_(AKORT.Alpha4Tests.runSmokeTest());
-}
-
-/** Alpha.4: show RAW Store contract, settings, service-table counts and load statuses. */
-function AKORT_alpha4Status() {
-  return AKORT_printResult_(AKORT.Result.success('Raw Store status loaded.', AKORT.RawStore.statusSummary()));
-}
-
-/** Alpha.3 compatibility: register the current release and install Operation Engine settings. */
+/** Alpha.3: register the release and install Operation Engine settings. */
 function AKORT_alpha3Install() {
   return AKORT_printResult_(AKORT.OperationEngine.install());
 }
 
-/** Alpha.3 compatibility regression with test handlers. */
+/** Alpha.3: run persisted-state-machine acceptance checks with test handlers. */
 function AKORT_alpha3SmokeTest() {
   return AKORT_printResult_(AKORT.Alpha3Tests.runSmokeTest());
 }
 
-/** Alpha.3 compatibility status. */
+/** Alpha.3: show engine contract, settings and queue counts. */
 function AKORT_alpha3Status() {
   return AKORT_printResult_(AKORT.OperationEngine.engineStatus());
 }
 
-/** Alpha.3: create a test-only demo operation and pause it safely after PARSE. */
+/** Alpha.3: create a demo operation and pause it safely after PARSE. */
 function AKORT_alpha3StartDemo() {
   return AKORT_printResult_(AKORT.OperationEngine.startDemo());
 }
 
-/** Alpha.3: continue the latest test-only demo operation to SUCCESS. */
+/** Alpha.3: continue the latest demo operation to SUCCESS. */
 function AKORT_alpha3ContinueDemo() {
   return AKORT_printResult_(AKORT.OperationEngine.continueDemo());
 }
 
-/** Alpha.3: show the latest test-only demo operation and step history. */
+/** Alpha.3: show the latest demo operation and its immutable step history. */
 function AKORT_alpha3DemoStatus() {
   return AKORT_printResult_(AKORT.OperationEngine.demoStatus());
 }
 
-/** Alpha.2 compatibility: create or validate core service tables and register current release. */
+/** Alpha.2 compatibility: create or validate service tables and register current release. */
 function AKORT_alpha2Install() {
   return AKORT_printResult_(AKORT.Core.install());
 }

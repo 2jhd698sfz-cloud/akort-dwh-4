@@ -49,11 +49,6 @@
 //     operationExecutionBudgetMs: 180000,
 //     operationMaxStepsPerRun: 3,
 //     operationMinRemainingMs: 15000,
-//     operationLeaseMs: 120000,
-//     rawSchemaVersion: '4.0-raw-1',
-//     rawStageBatchSize: 500,
-//     rawDuplicatePolicy: 'REUSE_COMMITTED',
-//     rawReversalPolicy: 'LATEST_LOAD_ONLY',
-//     rawStoreEnabled: true
+//     operationLeaseMs: 120000
 //   }
 // });

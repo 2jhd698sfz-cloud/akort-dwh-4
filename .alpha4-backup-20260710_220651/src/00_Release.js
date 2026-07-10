@@ -6,30 +6,21 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
 var AKORT_RELEASE_DEFINITION = {
   system: 'AKORT analytical monitoring system',
-  version: '4.0.0-alpha.4',
+  version: '4.0.0-alpha.3',
   channel: 'alpha',
   environment: 'DEV',
   schemaVersion: '4.0-core-1',
   operationSchemaVersion: '4.0-operation-1',
-  rawSchemaVersion: '4.0-raw-1',
   baselineLabel: 'VERIFIED_BASELINE_2026-07-10',
   baselineDate: '2026-07-10',
   productionCompatibility: '3.1.7',
-  purpose: 'Raw Store: staging, load and operation identifiers, business keys, content hashes, revision logic, logical reversal and duplicate-load protection',
+  purpose: 'Operation Engine: persisted state machine, checkpoints, resume, retry, dead-letter and test handlers without RAW or Publish changes',
   serviceTables: Object.freeze([
     'SYSTEM_SETTINGS',
     'RELEASE_REGISTRY',
     'OPERATION_QUEUE',
     'OPERATION_STEPS',
-    'SYSTEM_LOG',
-    'RAW_STAGE',
-    'RAW_LOAD_REGISTRY',
-    'RAW_REVERSAL_LOG'
-  ]),
-  rawTargets: Object.freeze([
-    'RAW_PRICES_WEEKLY',
-    'RAW_PRICES_MONTHLY',
-    'RAW_INDUSTRY'
+    'SYSTEM_LOG'
   ]),
   operationPhases: Object.freeze([
     'DISCOVER',
@@ -49,10 +40,8 @@ var AKORT_RELEASE_DEFINITION = {
     '02_Core.js',
     '03_OperationEngine.js',
     '04_TestOperationHandlers.js',
-    '05_RawStore.js',
     '08_EntryPoints.js',
-    '09_Alpha3Tests.js',
-    '10_Alpha4Tests.js'
+    '09_Alpha3Tests.js'
   ])
 };
 
@@ -64,13 +53,11 @@ AKORT_RELEASE_DEFINITION.manifest = function () {
     environment: AKORT.Release.environment,
     schemaVersion: AKORT.Release.schemaVersion,
     operationSchemaVersion: AKORT.Release.operationSchemaVersion,
-    rawSchemaVersion: AKORT.Release.rawSchemaVersion,
     baselineLabel: AKORT.Release.baselineLabel,
     baselineDate: AKORT.Release.baselineDate,
     productionCompatibility: AKORT.Release.productionCompatibility,
     purpose: AKORT.Release.purpose,
     serviceTables: AKORT.Release.serviceTables.slice(),
-    rawTargets: AKORT.Release.rawTargets.slice(),
     operationPhases: AKORT.Release.operationPhases.slice(),
     sourceFiles: AKORT.Release.sourceFiles.slice()
   };
@@ -78,7 +65,7 @@ AKORT_RELEASE_DEFINITION.manifest = function () {
 
 AKORT.Release = Object.freeze(AKORT_RELEASE_DEFINITION);
 
-function AKORT_alpha4ReleaseInfo() {
+function AKORT_alpha3ReleaseInfo() {
   var result = AKORT.Release.manifest();
   console.log(JSON.stringify(result, null, 2));
   return result;

@@ -109,7 +109,7 @@ AKORT.OperationEngine = (function () {
 
   function table_(spreadsheet, name) {
     var sheet = spreadsheet.getSheetByName(name);
-    if (!sheet) throw AKORT.Core.error('SERVICE_TABLE_MISSING', 'Missing service table ' + name + '. Run AKORT_alpha4Install first.');
+    if (!sheet) throw AKORT.Core.error('SERVICE_TABLE_MISSING', 'Missing service table ' + name + '. Run AKORT_alpha3Install first.');
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
     var expected = AKORT.Core.Tables[name];
     if (!expected || JSON.stringify(headers) !== JSON.stringify(expected)) {
@@ -296,12 +296,7 @@ AKORT.OperationEngine = (function () {
     return AKORT.Core.safeRun('OPERATION_ENQUEUE', function (context) {
       AKORT.EnvironmentGuard.assertDev();
       var runtime = runtimeSettings_();
-      var type = String(operationType || '');
-      var isTestType = type.indexOf('ALPHA3_TEST_') === 0 || type.indexOf('ALPHA3_DEMO_') === 0;
-      if (isTestType && !runtime.testMode) {
-        throw AKORT.Core.error('TEST_MODE_DISABLED', 'Test handlers require OPERATION_TEST_MODE=true.');
-      }
-      handler_(type); // Validate that the operation type has a registered handler before enqueue.
+      if (!runtime.testMode) throw AKORT.Core.error('TEST_MODE_DISABLED', 'Alpha.3 only supports test handlers and requires OPERATION_TEST_MODE=true.');
       var spreadsheet = getDwh_();
       var queue = table_(spreadsheet, 'OPERATION_QUEUE');
       var existing = findByIdempotencyKey_(spreadsheet, operationType, options.idempotencyKey);
@@ -427,22 +422,11 @@ AKORT.OperationEngine = (function () {
     return step;
   }
 
-  function handler_(operationType) {
-    var type = String(operationType || '');
-    if (AKORT.RawStoreHandlers &&
-        typeof AKORT.RawStoreHandlers.supports === 'function' &&
-        AKORT.RawStoreHandlers.supports(type)) {
-      return AKORT.RawStoreHandlers;
+  function handler_() {
+    if (!AKORT.TestOperationHandlers || typeof AKORT.TestOperationHandlers.execute !== 'function') {
+      throw AKORT.Core.error('TEST_HANDLER_MISSING', 'Alpha.3 test handlers are not loaded.');
     }
-    if ((type.indexOf('ALPHA3_TEST_') === 0 || type.indexOf('ALPHA3_DEMO_') === 0) &&
-        AKORT.TestOperationHandlers &&
-        typeof AKORT.TestOperationHandlers.execute === 'function') {
-      return AKORT.TestOperationHandlers;
-    }
-    throw AKORT.Core.error('OPERATION_HANDLER_NOT_FOUND', 'No operation handler is registered for this operation type.', {
-      operationType: type,
-      retryable: false
-    });
+    return AKORT.TestOperationHandlers;
   }
 
   function completeSuccess_(spreadsheet, operationTable, operation, checkpoint, logger) {
@@ -619,7 +603,7 @@ AKORT.OperationEngine = (function () {
       var phaseStartedAt = AKORT.Core.now();
       var outcome;
       try {
-        outcome = handler_(operation.operation_type).execute(phase, {
+        outcome = handler_().execute(phase, {
           operation: publicOperation_(operation),
           checkpoint: checkpoint,
           logger: context.logger,
