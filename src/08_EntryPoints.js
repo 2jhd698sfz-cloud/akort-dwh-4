@@ -2,17 +2,25 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
 /** Run first after clasp push and authorization. */
 function AKORT_alpha1SmokeTest() {
-  return AKORT.Alpha1Tests.runSmokeTest();
+  var result = AKORT.Alpha1Tests.runSmokeTest();
+
+  console.log(JSON.stringify(result, null, 2));
+
+  return result;
 }
 
 /** Start a new resumable baseline snapshot. */
 function AKORT_alpha1StartBaseline() {
-  return AKORT.Baseline.start();
+  var result = AKORT.Baseline.start();
+  console.log(JSON.stringify(result, null, 2));
+  return result;
 }
 
 /** Resume the baseline snapshot from its last saved checkpoint. */
 function AKORT_alpha1ContinueBaseline() {
-  return AKORT.Baseline.continueRun();
+  var result = AKORT.Baseline.continueRun();
+  console.log(JSON.stringify(result, null, 2));
+  return result;
 }
 
 /** Return current checkpoint and the latest completed report link. */
