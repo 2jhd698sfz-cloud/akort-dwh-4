@@ -10,10 +10,6 @@ function AKORT_alpha6StartReconciliation(){return AKORT_printResult_(AKORT.Incre
 function AKORT_alpha6ContinueReconciliation(){return AKORT_printResult_(AKORT.IncrementalPublish.continueReconciliation());}
 function AKORT_alpha6ReconciliationStatus(){return AKORT_printResult_(AKORT.IncrementalPublish.reconciliationStatus());}
 function AKORT_alpha6ResetReconciliation(){return AKORT_printResult_(AKORT.IncrementalPublish.resetReconciliation());}
-function AKORT_alpha6StartReconciliationDispatcher(){return AKORT_printResult_(AKORT.IncrementalPublish.startReconciliationDispatcher());}
-function AKORT_alpha6StopReconciliationDispatcher(){return AKORT_printResult_(AKORT.IncrementalPublish.stopReconciliationDispatcher());}
-function AKORT_alpha6ReconciliationDispatcherStatus(){return AKORT_printResult_(AKORT.IncrementalPublish.reconciliationDispatcherStatus());}
-function AKORT_alpha6ReconciliationDispatcherWorker(){return AKORT.IncrementalPublish.reconciliationDispatcherWorker();}
 
 
 /** Alpha.5: register the release and install parser profiles, staging and issue tables. */
