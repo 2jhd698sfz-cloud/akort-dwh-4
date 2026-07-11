@@ -2118,96 +2118,15 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
   function mapFromArray_(arr){var out={};(arr||[]).forEach(function(x){out[String(x)]=true;});return out;}
   function replayPlan_(state,group){return planFromAffected_(affectedForReplayGroup_(group));}
   function withReplayContext_(state,fn){ALPHA6_REPLAY_ALLOWED_LOADS=mapFromArray_(state.allowedLoadIds);ALPHA6_REPLAY_REVERSED_LOADS=mapFromArray_(state.reversedLoadIds);ALPHA6_PUBLISH_OVERRIDE_ID=state.incrementalId;try{return fn();}finally{ALPHA6_PUBLISH_OVERRIDE_ID='';ALPHA6_REPLAY_ALLOWED_LOADS=null;ALPHA6_REPLAY_REVERSED_LOADS=null;}}
-  function replayDescriptorKey_(d){return[v300Text_(d.datasetCode),v300Text_(d.categoryId),v300ValueType_(d.valueType),v300IndexType_(d.indexType||''),v300Text_(d.seriesType)].join('|');}
-  function replayStageItems_(plan,stage){
-    var items=[];
-    if(stage==='WEEKLY')items=v310WeeklyDescriptors_(plan.weekly||[]);
-    else if(stage==='MONTHLY')items=v310MonthlyDescriptors_(plan.monthly||[]);
-    else if(stage==='INDUSTRY')items=(plan.industrySeries||[]).slice();
-    else if(stage==='AGGREGATES')items=(plan.aggregates||[]).slice();
-    if(stage==='WEEKLY'||stage==='MONTHLY')items.sort(function(a,b){return replayDescriptorKey_(a).localeCompare(replayDescriptorKey_(b));});
-    else if(stage==='AGGREGATES')items.sort(function(a,b){return v310ComboKey_(a).localeCompare(v310ComboKey_(b));});
-    else items.sort(function(a,b){return String(a).localeCompare(String(b));});
-    return items;
-  }
-  function replayChunkSize_(stage){if(stage==='WEEKLY'||stage==='MONTHLY')return 4;if(stage==='INDUSTRY')return 8;if(stage==='AGGREGATES')return 20;return 1;}
-  function replaySeriesId_(d){return v300SeriesId_(d.datasetCode,d.categoryId,d.valueType,d.seriesType,d.indexType||'');}
-  function v310UpdateAggregatesReplayChunk_(combos){
-    var comboIndex={};(combos||[]).forEach(function(c){comboIndex[v310ComboKey_(c)]=true;});if(!Object.keys(comboIndex).length)return 0;
-    var ss=v300Publish_(),headers=AKORT_V300.HEADERS.PUBLISH_PRICE_AGGREGATES,sheet=ss.getSheetByName(AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES);
-    if(!sheet)throw new Error('Не найден лист PUBLISH_PRICE_AGGREGATES.');
-    var existing=v300ReadObjects_(sheet,headers),toDelete=[],backup=[];
-    existing.forEach(function(r){var k=v310ComboKey_({frequency:r.frequency,datasetCode:r.dataset_code,period:v300DateKey_(r.period_start),valueType:r.value_type,indexType:r.index_type||''});if(comboIndex[k]){toDelete.push(r._rowNumber);backup.push(rowValues_(headers,r));}});
-    var objects=v310BuildAggregateRowsForCombos_(comboIndex);v317SetLatestAggregateRows_(objects);var rows=v300ObjectsToRows_(objects,headers);
-    try{
-      if(toDelete.length)v300DeleteRows_(ss,sheet,toDelete);
-      for(var i=0;i<rows.length;i+=1000)v300AppendRows_(sheet,headers,rows.slice(i,i+1000));
-      if(rows.length)v300ApplyFormats_(sheet,v300FormatRows_().priceAggregatesPublish);
-      return rows.length;
-    }catch(e){
-      try{var fresh=v300ReadObjects_(sheet,headers),del=[];fresh.forEach(function(r){var k=v310ComboKey_({frequency:r.frequency,datasetCode:r.dataset_code,period:v300DateKey_(r.period_start),valueType:r.value_type,indexType:r.index_type||''});if(comboIndex[k])del.push(r._rowNumber);});if(del.length)v300DeleteRows_(ss,sheet,del);if(backup.length)v300AppendRows_(sheet,headers,backup);}catch(ignore){}
-      throw e;
-    }
-  }
-  function applyReplayChunk_(state,group,stage,items,start,size){return withReplayContext_(state,function(){
-    var chunk=items.slice(start,start+size),result={stage:stage,loadId:group.loadId,chunkStart:start,chunkEnd:start+chunk.length,chunkSize:chunk.length,totalItems:items.length,rows:0};
-    if(stage==='WEEKLY'){
-      var wr=v310BuildWeeklyRowsForTargets_(chunk),wids=v310Unique_(chunk.map(replaySeriesId_));
-      v310ReplacePublishRowsBySeries_(AKORT_V300.SHEETS.PUBLISH_PRICES_WEEKLY,AKORT_V300.HEADERS.PUBLISH_PRICES_WEEKLY,wids,v300ObjectsToRows_(wr,AKORT_V300.HEADERS.PUBLISH_PRICES_WEEKLY),v300FormatRows_().weeklyPublish);result.rows=wr.length;result.series=wids.length;
-    }else if(stage==='MONTHLY'){
-      var mr=v310BuildMonthlyRowsForTargets_(chunk),mids=v310Unique_(chunk.map(replaySeriesId_));
-      v310ReplacePublishRowsBySeries_(AKORT_V300.SHEETS.PUBLISH_PRICES_MONTHLY,AKORT_V300.HEADERS.PUBLISH_PRICES_MONTHLY,mids,v300ObjectsToRows_(mr,AKORT_V300.HEADERS.PUBLISH_PRICES_MONTHLY),v300FormatRows_().monthlyPublish);result.rows=mr.length;result.series=mids.length;
-    }else if(stage==='INDUSTRY'){result.rows=replaceIndustrySeries_(chunk);result.series=chunk.length;}
-    else if(stage==='AGGREGATES'){result.rows=v310UpdateAggregatesReplayChunk_(chunk);result.combos=chunk.length;}
-    return result;
-  });}
-  function advanceReplayStage_(state,groups,group,stage){
-    state.replayWork=null;
-    if(stage==='WEEKLY')state.replayStage='MONTHLY';
-    else if(stage==='MONTHLY')state.replayStage='INDUSTRY';
-    else if(stage==='INDUSTRY')state.replayStage='AGGREGATES';
-    else{
-      markReplayGroup_(state,state.replayIndex,'SUCCESS');state.replayIndex+=1;state.replayStage='PREPARE';
-      if(state.replayIndex>=groups.length)state.replayStage='FINALIZE_LATEST';
-    }
-  }
-  function replayFinalizeAggregateLatest_(state){return withReplayContext_(state,function(){
-    var headers=AKORT_V300.HEADERS.PUBLISH_PRICE_AGGREGATES,sh=v300Publish_().getSheetByName(AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES),count=sh?Math.max(0,sh.getLastRow()-1):0;
-    if(!sh||!count)return 0;
-    var idx=v300HeaderIndex_(headers),left=sh.getRange(2,1,count,12).getValues(),weight=sh.getRange(2,idx.weight_source+1,count,1).getValues(),max={},flags=new Array(count);
-    for(var i=0;i<count;i+=1){var vals=left[i],row={dataset_code:vals[idx.dataset_code],frequency:vals[idx.frequency],aggregate_level:vals[idx.aggregate_level],aggregate_id:vals[idx.aggregate_id],aggregate_name:vals[idx.aggregate_name],category_id:vals[idx.category_id],product_group:vals[idx.product_group],value_type:vals[idx.value_type],index_type:vals[idx.index_type],period_start:vals[idx.period_start],weight_source:weight[i][0]},d=v300Date_(row.period_start),k=v317AggregateSeriesKey_(row);if(d&&k&&(!max[k]||d>max[k]))max[k]=d;}
-    for(var j=0;j<count;j+=1){var v=left[j],r={dataset_code:v[idx.dataset_code],frequency:v[idx.frequency],aggregate_level:v[idx.aggregate_level],aggregate_id:v[idx.aggregate_id],aggregate_name:v[idx.aggregate_name],category_id:v[idx.category_id],product_group:v[idx.product_group],value_type:v[idx.value_type],index_type:v[idx.index_type],period_start:v[idx.period_start],weight_source:weight[j][0]},date=v300Date_(r.period_start),key=v317AggregateSeriesKey_(r);flags[j]=[date&&key&&max[key]&&v300DateKey_(date)===v300DateKey_(max[key])?1:0];}
-    var flagCol=idx.is_latest_period+1,batch=5000;for(var p=0;p<count;p+=batch)sh.getRange(p+2,flagCol,Math.min(batch,count-p),1).setValues(flags.slice(p,p+batch));return count;
-  });}
-  function replayStep_(state){
-    var groups=state.replayGroups||[],stage=state.replayStage||'PREPARE';
-    if(state.replayIndex>=groups.length){
-      if(stage==='FINALIZE_LATEST'){var latestRows=replayFinalizeAggregateLatest_(state);state.replayStage='COMPLETE';state.replayWork=null;state.phase='NORMALIZE_WEEKLY';return{completed:true,stage:'FINALIZE_LATEST',aggregateRows:latestRows,groups:groups.length};}
-      state.phase='NORMALIZE_WEEKLY';return{completed:true,groups:groups.length};
-    }
-    var group=groups[state.replayIndex];
-    if(stage==='PREPARE'){
-      if((group.reverseTargets||[]).length){(group.reverseTargets||[]).forEach(function(x){if(state.reversedLoadIds.indexOf(String(x))<0)state.reversedLoadIds.push(String(x));});}
-      else if(state.allowedLoadIds.indexOf(String(group.loadId))<0)state.allowedLoadIds.push(String(group.loadId));
-      state.replayStage='WEEKLY';state.replayWork=null;markReplayGroup_(state,state.replayIndex,'RUNNING');
-      return{loadId:group.loadId,stage:'PREPARE',allowedLoads:state.allowedLoadIds.length,reversedLoads:state.reversedLoadIds.length};
-    }
-    var plan=replayPlan_(state,group),items=replayStageItems_(plan,stage),work=state.replayWork;
-    if(!work||String(work.loadId)!==String(group.loadId)||work.stage!==stage)work=state.replayWork={loadId:String(group.loadId),stage:stage,cursor:0,total:items.length,chunkSize:replayChunkSize_(stage)};
-    work.total=items.length;work.chunkSize=replayChunkSize_(stage);
-    if(work.cursor>=items.length){advanceReplayStage_(state,groups,group,stage);return{loadId:group.loadId,stage:stage,chunkComplete:true,totalItems:items.length,nextStage:state.replayStage};}
-    var result=applyReplayChunk_(state,group,stage,items,Number(work.cursor||0),Number(work.chunkSize||1));
-    work.cursor=Number(result.chunkEnd||work.cursor);state.replayWork=work;
-    if(work.cursor>=items.length){result.stageComplete=true;advanceReplayStage_(state,groups,group,stage);result.nextStage=state.replayStage;}else{result.stageComplete=false;result.nextCursor=work.cursor;}
-    return result;
-  }
+  function applyReplayStage_(state,group,stage){return withReplayContext_(state,function(){var plan=replayPlan_(state,group),result={stage:stage,loadId:group.loadId};if(stage==='WEEKLY'){var wr=v310BuildWeeklyRowsForTargets_(plan.weekly);v310ReplacePublishRowsBySeries_(AKORT_V300.SHEETS.PUBLISH_PRICES_WEEKLY,AKORT_V300.HEADERS.PUBLISH_PRICES_WEEKLY,plan.weeklySeriesIds,v300ObjectsToRows_(wr,AKORT_V300.HEADERS.PUBLISH_PRICES_WEEKLY),v300FormatRows_().weeklyPublish);result.rows=wr.length;result.series=plan.weeklySeriesIds.length;}else if(stage==='MONTHLY'){var mr=v310BuildMonthlyRowsForTargets_(plan.monthly);v310ReplacePublishRowsBySeries_(AKORT_V300.SHEETS.PUBLISH_PRICES_MONTHLY,AKORT_V300.HEADERS.PUBLISH_PRICES_MONTHLY,plan.monthlySeriesIds,v300ObjectsToRows_(mr,AKORT_V300.HEADERS.PUBLISH_PRICES_MONTHLY),v300FormatRows_().monthlyPublish);result.rows=mr.length;result.series=plan.monthlySeriesIds.length;}else if(stage==='INDUSTRY'){result.rows=replaceIndustrySeries_(plan.industrySeries);result.series=plan.industrySeries.length;}else if(stage==='AGGREGATES'){result.rows=plan.aggregates.length?v310UpdateAggregates_(plan.aggregates):0;result.combos=plan.aggregates.length;}return result;});}
+  function replayStep_(state){var groups=state.replayGroups||[];if(state.replayIndex>=groups.length){state.phase='NORMALIZE_WEEKLY';return{completed:true,groups:groups.length};}var group=groups[state.replayIndex],stage=state.replayStage||'PREPARE';if(stage==='PREPARE'){if((group.reverseTargets||[]).length){(group.reverseTargets||[]).forEach(function(x){if(state.reversedLoadIds.indexOf(String(x))<0)state.reversedLoadIds.push(String(x));});}else if(state.allowedLoadIds.indexOf(String(group.loadId))<0)state.allowedLoadIds.push(String(group.loadId));state.replayStage='WEEKLY';markReplayGroup_(state,state.replayIndex,'RUNNING');return{loadId:group.loadId,stage:'PREPARE',allowedLoads:state.allowedLoadIds.length,reversedLoads:state.reversedLoadIds.length};}var result=applyReplayStage_(state,group,stage);if(stage==='WEEKLY')state.replayStage='MONTHLY';else if(stage==='MONTHLY')state.replayStage='INDUSTRY';else if(stage==='INDUSTRY')state.replayStage='AGGREGATES';else{markReplayGroup_(state,state.replayIndex,'SUCCESS');state.replayIndex+=1;state.replayStage='PREPARE';if(state.replayIndex>=groups.length)state.phase='NORMALIZE_WEEKLY';}return result;}
   function rowIdentity_(sheetName,row){if(sheetName===AKORT_V300.SHEETS.PUBLISH_PRICES_WEEKLY)return[v317PriceSeriesKey_(row),v300DateKey_(row.observation_date)].join('|');if(sheetName===AKORT_V300.SHEETS.PUBLISH_PRICES_MONTHLY)return[v317PriceSeriesKey_(row),v300DateKey_(row.month_start)].join('|');if(sheetName===AKORT_V300.SHEETS.PUBLISH_INDUSTRY)return[v317IndustrySeriesKey_(row),v300DateKey_(row.period_start),v300DateKey_(row.period_end)].join('|');return[v317AggregateSeriesKey_(row),v300DateKey_(row.period_start),v300Text_(row.aggregate_id),v300Text_(row.aggregate_name),v300Text_(row.category_id),v300Text_(row.product_group),v300Text_(row.product_name)].join('|');}
   function normalizeIncrementalSheet_(state,sheetName,headers,dateField,formats){var full=SpreadsheetApp.openById(state.fullId).getSheetByName(sheetName),inc=SpreadsheetApp.openById(state.incrementalId).getSheetByName(sheetName),fullRows=v300ReadObjects_(full,headers),incRows=v300ReadObjects_(inc,headers);if(sheetName===AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES)v317SetLatestAggregateRows_(incRows);else v317SetLatestBySeriesRows_(incRows,dateField);var buckets={};incRows.forEach(function(r){var k=rowIdentity_(sheetName,r);(buckets[k]||(buckets[k]=[])).push(r);});var ordered=[],missing=0;fullRows.forEach(function(r){var k=rowIdentity_(sheetName,r),bucket=buckets[k];if(bucket&&bucket.length)ordered.push(rowValues_(headers,bucket.shift()));else missing++;});var extra=[];Object.keys(buckets).sort().forEach(function(k){(buckets[k]||[]).forEach(function(r){extra.push(rowValues_(headers,r));});});ordered=ordered.concat(extra);writeBuildSheet_(state.incrementalId,sheetName,headers,ordered,formats);return{sheet:sheetName,rows:ordered.length,missingAgainstFull:missing,extraAgainstFull:extra.length};}
   function serializeCell_(v,header){if(v===null||v===undefined||v==='')return'N:';if(Object.prototype.toString.call(v)==='[object Date]'||/(date|month_start|period_start|period_end)$/.test(header)) {var d=v300Date_(v);return d?'D:'+v300DateKey_(d):'S:'+String(v);}if(typeof v==='number')return'F:'+String(v);if(typeof v==='boolean')return'B:'+(v?'1':'0');return'S:'+JSON.stringify(String(v));}
   function sheetDigest_(ssId,sheetName,headers,chunkRows){var sh=SpreadsheetApp.openById(ssId).getSheetByName(sheetName),count=Math.max(0,sh.getLastRow()-1),parts=[];for(var start=2;start<=sh.getLastRow();start+=chunkRows){var n=Math.min(chunkRows,sh.getLastRow()-start+1),vals=sh.getRange(start,1,n,headers.length).getValues(),text=vals.map(function(row){return row.map(function(v,i){return serializeCell_(v,headers[i]);}).join('\u001f');}).join('\u001e');parts.push(AKORT.Core.sha256(text));}return{rows:count,hash:AKORT.Core.sha256(parts.join('|')),chunks:parts.length};}
   function appendReconRow_(state,sheetName,b,f,i,status,details){var t=table_(getDwh_(),'PUBLISH_RECONCILIATION',TABLES.PUBLISH_RECONCILIATION);appendObject_(t,{reconciliation_id:state.reconciliationId,checked_at:AKORT.Core.now(),full_build_id:state.fullId,incremental_build_id:state.incrementalId,sheet_name:sheetName,baseline_rows:b.rows,full_rows:f.rows,incremental_rows:i.rows,baseline_hash:b.hash,full_hash:f.hash,incremental_hash:i.hash,full_equals_baseline:b.rows===f.rows&&b.hash===f.hash,incremental_equals_full:f.rows===i.rows&&f.hash===i.hash,status:status,details_json:AKORT.Core.safeJson(details||{}),release_version:AKORT.Release.version});}
   function startReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIATION_START',function(){AKORT.EnvironmentGuard.assertDev();var stamp=Utilities.formatDate(new Date(),'Europe/Moscow','yyyyMMdd_HHmmss'),full=initBuildBook_(createTempBook_('AKORT_ALPHA6_FULL_'+stamp)),inc=initBuildBook_(createTempBook_('AKORT_ALPHA6_INCREMENTAL_'+stamp)),ctrl=createTempBook_('AKORT_ALPHA6_RECON_'+stamp);initControlBook_(ctrl);var state={reconciliationId:id_('RECON'),status:'RUNNING',phase:RECON_PHASES[0],fullId:full.getId(),incrementalId:inc.getId(),controlId:ctrl.getId(),startedAt:AKORT.Core.now(),updatedAt:AKORT.Core.now(),results:[],replayGroups:[],replayIndex:0,replayStage:'PREPARE',allowedLoadIds:[],reversedLoadIds:[],normalization:[]};saveRecon_(state);return AKORT.Result.success('Alpha.6 reconciliation initialized.',publicRecon_(state));},{lock:true,persistLogs:true});}
-  function publicRecon_(s){if(!s)return null;var w=s.replayWork||{};return{reconciliationId:s.reconciliationId,status:s.status,phase:s.phase,fullBuildUrl:'https://docs.google.com/spreadsheets/d/'+s.fullId+'/edit',incrementalBuildUrl:'https://docs.google.com/spreadsheets/d/'+s.incrementalId+'/edit',controlUrl:'https://docs.google.com/spreadsheets/d/'+s.controlId+'/edit',startedAt:s.startedAt,updatedAt:s.updatedAt,replay:{groupCount:(s.replayGroups||[]).length,currentIndex:s.replayIndex||0,currentStage:s.replayStage||'',currentLoadId:w.loadId||((s.replayGroups||[])[s.replayIndex]||{}).loadId||'',chunkCursor:Number(w.cursor||0),chunkTotal:Number(w.total||0),chunkSize:Number(w.chunkSize||0),allowedLoads:(s.allowedLoadIds||[]).length,reversedLoads:(s.reversedLoadIds||[]).length},rawReplayValidation:s.rawReplayValidation||[],normalization:s.normalization||[],results:s.results||[]};}
+  function publicRecon_(s){if(!s)return null;return{reconciliationId:s.reconciliationId,status:s.status,phase:s.phase,fullBuildUrl:'https://docs.google.com/spreadsheets/d/'+s.fullId+'/edit',incrementalBuildUrl:'https://docs.google.com/spreadsheets/d/'+s.incrementalId+'/edit',controlUrl:'https://docs.google.com/spreadsheets/d/'+s.controlId+'/edit',startedAt:s.startedAt,updatedAt:s.updatedAt,replay:{groupCount:(s.replayGroups||[]).length,currentIndex:s.replayIndex||0,currentStage:s.replayStage||'',allowedLoads:(s.allowedLoadIds||[]).length,reversedLoads:(s.reversedLoadIds||[]).length},rawReplayValidation:s.rawReplayValidation||[],normalization:s.normalization||[],results:s.results||[]};}
   function reconRowCount_(spreadsheetId,sheetName){
     var sh=SpreadsheetApp.openById(spreadsheetId).getSheetByName(sheetName);
     return sh?Math.max(0,sh.getLastRow()-1):0;
