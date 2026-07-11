@@ -2194,7 +2194,7 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
     else items.sort(function(a,b){return String(a).localeCompare(String(b));});
     return items;
   }
-  function replayChunkSize_(stage){if(stage==='WEEKLY'||stage==='MONTHLY')return 1;if(stage==='INDUSTRY')return 2;if(stage==='AGGREGATES')return 1;return 1;}
+  function replayChunkSize_(stage){if(stage==='WEEKLY'||stage==='MONTHLY')return 1;if(stage==='INDUSTRY')return 2;if(stage==='AGGREGATES')return 5;return 1;}
   function replaySeriesId_(d){return v300SeriesId_(d.datasetCode,d.categoryId,d.valueType,d.seriesType,d.indexType||'');}
   function v310UpdateAggregatesReplayChunk_(combos){
     var comboIndex={};(combos||[]).forEach(function(c){comboIndex[v310ComboKey_(c)]=true;});if(!Object.keys(comboIndex).length)return 0;
