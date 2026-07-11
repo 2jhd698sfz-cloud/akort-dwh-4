@@ -1058,25 +1058,8 @@ AKORT.SourceParserHandlers = (function () {
       AKORT.ExistingSourceParsers.markParserStage(operation.operation_id, 'COMMITTED');
       return state.commit;
     }
-    if (phase === 'UPDATE_PUBLISH') {
-      state.publishPlan = AKORT.IncrementalPublish.planLoad(state.loadId);
-      if (state.publishPlan.testOnly) {
-        state.publishUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: state.publishPlan.testMarker };
-        return state.publishUpdate;
-      }
-      AKORT.IncrementalPublish.appendImpact(operation.operation_id, state.loadId, state.publishPlan);
-      state.publishUpdate = AKORT.IncrementalPublish.applyPublish(state.publishPlan, operation.operation_id);
-      return state.publishUpdate;
-    }
-    if (phase === 'UPDATE_AGGREGATES') {
-      state.publishPlan = state.publishPlan || AKORT.IncrementalPublish.planLoad(state.loadId);
-      if (state.publishPlan.testOnly) {
-        state.aggregateUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: state.publishPlan.testMarker };
-        return state.aggregateUpdate;
-      }
-      state.aggregateUpdate = AKORT.IncrementalPublish.applyAggregates(state.publishPlan, operation.operation_id);
-      return state.aggregateUpdate;
-    }
+    if (phase === 'UPDATE_PUBLISH') return { skipped: true, reason: 'Publish update starts in alpha.6' };
+    if (phase === 'UPDATE_AGGREGATES') return { skipped: true, reason: 'Aggregate update starts after incremental Publish' };
     if (phase === 'UPDATE_STATUS') return { loadId: state.loadId, loadStatus: AKORT.RawStore.status(state.loadId).load.status };
     if (phase === 'QUICK_AUDIT') return { loadAudit: AKORT.RawStore.auditLoad(state.loadId), parserRows: state.parse.normalizedRowCount, parserIssues: state.parse.issueCount };
     throw AKORT.Core.error('SOURCE_PARSER_PHASE_UNSUPPORTED', 'Unsupported source parser phase.', { phase: phase, retryable: false });

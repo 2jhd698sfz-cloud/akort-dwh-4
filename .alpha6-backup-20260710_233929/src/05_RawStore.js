@@ -986,25 +986,8 @@ AKORT.RawStoreHandlers = (function () {
       state.commit = AKORT.RawStore.commitLoad(state.loadId);
       return state.commit;
     }
-    if (phase === 'UPDATE_PUBLISH') {
-      state.publishPlan = AKORT.IncrementalPublish.planLoad(state.loadId);
-      if (state.publishPlan.testOnly) {
-        state.publishUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: state.publishPlan.testMarker };
-        return state.publishUpdate;
-      }
-      AKORT.IncrementalPublish.appendImpact(context.operation.operation_id, state.loadId, state.publishPlan);
-      state.publishUpdate = AKORT.IncrementalPublish.applyPublish(state.publishPlan, context.operation.operation_id);
-      return state.publishUpdate;
-    }
-    if (phase === 'UPDATE_AGGREGATES') {
-      state.publishPlan = state.publishPlan || AKORT.IncrementalPublish.planLoad(state.loadId);
-      if (state.publishPlan.testOnly) {
-        state.aggregateUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: state.publishPlan.testMarker };
-        return state.aggregateUpdate;
-      }
-      state.aggregateUpdate = AKORT.IncrementalPublish.applyAggregates(state.publishPlan, context.operation.operation_id);
-      return state.aggregateUpdate;
-    }
+    if (phase === 'UPDATE_PUBLISH') return { skipped: true, reason: 'Publish update starts in alpha.6' };
+    if (phase === 'UPDATE_AGGREGATES') return { skipped: true, reason: 'Aggregate update starts in alpha.7' };
     if (phase === 'UPDATE_STATUS') return { loadId: state.loadId, loadStatus: AKORT.RawStore.status(state.loadId).load.status };
     if (phase === 'QUICK_AUDIT') {
       state.audit = AKORT.RawStore.auditLoad(state.loadId);
@@ -1028,28 +1011,10 @@ AKORT.RawStoreHandlers = (function () {
     if (phase === 'STAGE') return { staged: true, logicalOnly: true };
     if (phase === 'COMMIT_RAW') {
       state.reversal = AKORT.RawStore.reverseLoad(input.targetLoadId, context.operation.operation_id, input.reason || 'Operation Engine logical reversal');
-      state.loadId = state.reversal.reversalLoadId || '';
       return state.reversal;
     }
-    if (phase === 'UPDATE_PUBLISH') {
-      state.publishPlan = AKORT.IncrementalPublish.planReversal(state.reversal);
-      if (state.publishPlan.testOnly) {
-        state.publishUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: state.publishPlan.testMarker };
-        return state.publishUpdate;
-      }
-      AKORT.IncrementalPublish.appendImpact(context.operation.operation_id, state.loadId, state.publishPlan);
-      state.publishUpdate = AKORT.IncrementalPublish.applyPublish(state.publishPlan, context.operation.operation_id);
-      return state.publishUpdate;
-    }
-    if (phase === 'UPDATE_AGGREGATES') {
-      state.publishPlan = state.publishPlan || AKORT.IncrementalPublish.planReversal(state.reversal);
-      if (state.publishPlan.testOnly) {
-        state.aggregateUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: state.publishPlan.testMarker };
-        return state.aggregateUpdate;
-      }
-      state.aggregateUpdate = AKORT.IncrementalPublish.applyAggregates(state.publishPlan, context.operation.operation_id);
-      return state.aggregateUpdate;
-    }
+    if (phase === 'UPDATE_PUBLISH') return { skipped: true, reason: 'Publish update starts in alpha.6' };
+    if (phase === 'UPDATE_AGGREGATES') return { skipped: true, reason: 'Aggregate update starts in alpha.7' };
     if (phase === 'UPDATE_STATUS') return { reversed: true, targetLoadId: input.targetLoadId };
     if (phase === 'QUICK_AUDIT') return { ok: true, logicalReversal: true, result: state.reversal };
     throw AKORT.Core.error('RAW_HANDLER_PHASE_UNSUPPORTED', 'RAW_REVERSAL_V4 does not support this phase.', { phase: phase });

@@ -60,14 +60,6 @@
 //     parserProfileMinMargin: 15,
 //     parserFailOnUnmapped: true,
 //     parserTempConversionEnabled: true,
-//     parserStageBatchSize: 500,
-//     publishSchemaVersion: '4.0-publish-1',
-//     publishDependencyVersion: '4.0-dependency-1',
-//     publishEngineEnabled: true,
-//     publishWriteBatchSize: 1000,
-//     publishReconciliationChunkRows: 500,
-//     publishReconciliationTolerance: 0
+//     parserStageBatchSize: 500
 //   }
 // });
-
-// Alpha.6 uses Config.resources.publishSpreadsheetId and testResultsFolderId for DEV-only reconciliation files.
