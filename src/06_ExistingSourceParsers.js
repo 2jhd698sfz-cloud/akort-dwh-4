@@ -1019,6 +1019,21 @@ AKORT.SourceParserHandlers = (function () {
     };
   }
 
+  function storePublishPlanSummary_(state, plan) {
+    state.publishPlanSummary = AKORT.IncrementalPublish.summarizePlan(plan);
+    if (Object.prototype.hasOwnProperty.call(state, 'publishPlan')) delete state.publishPlan;
+    return state.publishPlanSummary;
+  }
+
+  function storedPublishPlanSummary_(state, planFactory) {
+    if (state.publishPlanSummary) {
+      if (Object.prototype.hasOwnProperty.call(state, 'publishPlan')) delete state.publishPlan;
+      return state.publishPlanSummary;
+    }
+    if (state.publishPlan) return storePublishPlanSummary_(state, state.publishPlan);
+    return storePublishPlanSummary_(state, planFactory());
+  }
+
   function execute(phase, context) {
     var operation = context.operation || {};
     var checkpoint = context.checkpoint || {};
@@ -1059,22 +1074,23 @@ AKORT.SourceParserHandlers = (function () {
       return state.commit;
     }
     if (phase === 'UPDATE_PUBLISH') {
-      state.publishPlan = AKORT.IncrementalPublish.planLoad(state.loadId);
-      if (state.publishPlan.testOnly) {
-        state.publishUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: state.publishPlan.testMarker };
+      var publishPlan = AKORT.IncrementalPublish.planLoad(state.loadId);
+      storePublishPlanSummary_(state, publishPlan);
+      if (publishPlan.testOnly) {
+        state.publishUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: publishPlan.testMarker };
         return state.publishUpdate;
       }
-      AKORT.IncrementalPublish.appendImpact(operation.operation_id, state.loadId, state.publishPlan);
-      state.publishUpdate = AKORT.IncrementalPublish.applyPublish(state.publishPlan, operation.operation_id);
+      AKORT.IncrementalPublish.appendImpact(operation.operation_id, state.loadId, publishPlan);
+      state.publishUpdate = AKORT.IncrementalPublish.applyPublish(publishPlan, operation.operation_id);
       return state.publishUpdate;
     }
     if (phase === 'UPDATE_AGGREGATES') {
-      state.publishPlan = state.publishPlan || AKORT.IncrementalPublish.planLoad(state.loadId);
-      if (state.publishPlan.testOnly) {
-        state.aggregateUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: state.publishPlan.testMarker };
+      var publishPlanSummary = storedPublishPlanSummary_(state, function () { return AKORT.IncrementalPublish.planLoad(state.loadId); });
+      if (publishPlanSummary.testOnly) {
+        state.aggregateUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: publishPlanSummary.testMarker };
         return state.aggregateUpdate;
       }
-      state.aggregateUpdate = AKORT.IncrementalPublish.applyAggregates(state.publishPlan, operation.operation_id);
+      state.aggregateUpdate = AKORT.IncrementalPublish.applyAggregates(publishPlanSummary, operation.operation_id);
       return state.aggregateUpdate;
     }
     if (phase === 'UPDATE_STATUS') return { loadId: state.loadId, loadStatus: AKORT.RawStore.status(state.loadId).load.status };
