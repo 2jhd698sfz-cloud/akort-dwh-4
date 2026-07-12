@@ -1,7 +1,7 @@
 var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
 /**
- * v4.0.0-alpha.6 Incremental Publish.
+ * v4.0.0-alpha.6.1 Incremental Publish.
  * The calculation kernel is a DEV-only namespaced adaptation of the verified 3.1.7 methodology.
  * Production spreadsheet and folder identifiers are intentionally absent.
  */
@@ -19,7 +19,7 @@ AKORT.IncrementalPublish = (function () {
   });
   var ALPHA6_IMPACT_JSON_MAX_CHARS = 30000;
   var AKORT_V300 = Object.freeze({
-    VERSION: '4.0.0-alpha.6',
+    VERSION: '4.0.0-alpha.6.1',
     TIMEZONE: 'Europe/Moscow',
     DATASETS: Object.freeze({
       ROSSTAT_WEEKLY: 'ROSSTAT_WEEKLY',
