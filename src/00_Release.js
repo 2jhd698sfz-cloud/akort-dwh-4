@@ -3,7 +3,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
 var AKORT_RELEASE_DEFINITION = {
   system: 'AKORT analytical monitoring system',
-  version: '4.0.0-alpha.6.2.1',
+  version: '4.0.0-alpha.6.2.2',
   channel: 'alpha',
   environment: 'DEV',
   schemaVersion: '4.0-core-1',
@@ -12,11 +12,11 @@ var AKORT_RELEASE_DEFINITION = {
   parserSchemaVersion: '4.0-parser-1',
   publishSchemaVersion: '4.0-publish-1',
   dependencySchemaVersion: '4.0-dependency-3',
-  dispatcherSchemaVersion: '4.0-dispatcher-3',
+  dispatcherSchemaVersion: '4.0-dispatcher-4',
   baselineLabel: 'VERIFIED_BASELINE_2026-07-10',
   baselineDate: '2026-07-10',
   productionCompatibility: '3.1.7',
-  purpose: 'Alpha.6.2.1 dispatcher hardening: durable control-book frontier storage, resumable empty-stage transitions, explicit aggregate-impact stage, monotonic progress accounting, no-progress watchdog, corrected quota classification and guarded rollback',
+  purpose: 'Alpha.6.2.2 reviewed resumable impact preview: aggregate-only planning, chunked RAW and reversal scans, self-healing durable schema, fault-injection coverage and preserved reconciliation recovery',
   serviceTables: Object.freeze(['SYSTEM_SETTINGS','RELEASE_REGISTRY','OPERATION_QUEUE','OPERATION_STEPS','SYSTEM_LOG','RAW_STAGE','RAW_LOAD_REGISTRY','RAW_REVERSAL_LOG','SOURCE_PROFILE_REGISTRY','PARSER_STAGE','PARSER_ISSUES','PUBLISH_IMPACT','PUBLISH_RUNS','PUBLISH_RECONCILIATION']),
   rawTargets: Object.freeze(['RAW_PRICES_WEEKLY','RAW_PRICES_MONTHLY','RAW_INDUSTRY']),
   publishTargets: Object.freeze(['PUBLISH_PRICES_WEEKLY','PUBLISH_PRICES_MONTHLY','PUBLISH_INDUSTRY']),
