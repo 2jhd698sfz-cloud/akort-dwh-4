@@ -1,0 +1,15 @@
+{
+  "release": "4.0.0-alpha.6.2.3",
+  "package_revision": "r2",
+  "created_at": "2026-07-14T07:27:03.188509+00:00",
+  "pre_hashes": {
+    "src/00_Release.js": "88147a43462faae7da292a4758886bd797eac1c0a40620de99f858d89e81ce15",
+    "src/07_IncrementalPublish.js": "5ad54c21918bfef638d057f8ec65d626687cb40acb0dc6929c81349538374af8",
+    "src/12_Alpha6Tests.js": "2cdcb1e0fc61927c429bdc1c6b3c8623ca6b3172f120fe5be726be1e4aeb973c"
+  },
+  "post_hashes": {
+    "src/00_Release.js": "c3b6919d8efff10e460f986295861429e9b459616a9dac44e837705112ccb4d3",
+    "src/07_IncrementalPublish.js": "41df124a2f871ffe1590065b33c14a6ddf13349c1fb6b6a755f2a069d3869c2e",
+    "src/12_Alpha6Tests.js": "b839112e7418ab57cfa4457458d11ac44475bdecd745330a47d88cedb4680f8a"
+  }
+}

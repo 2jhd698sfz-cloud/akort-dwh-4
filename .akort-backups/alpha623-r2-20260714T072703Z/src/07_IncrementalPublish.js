@@ -1,7 +1,7 @@
 var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
 /**
- * v4.0.0-alpha.6.2.3 Incremental Publish.
+ * v4.0.0-alpha.6.2.2 Incremental Publish.
  * The calculation kernel is a DEV-only namespaced adaptation of the verified 3.1.7 methodology.
  * Production spreadsheet and folder identifiers are intentionally absent.
  */
@@ -19,7 +19,7 @@ AKORT.IncrementalPublish = (function () {
   });
   var ALPHA6_IMPACT_JSON_MAX_CHARS = 30000;
   var AKORT_V300 = Object.freeze({
-    VERSION: '4.0.0-alpha.6.2.3',
+    VERSION: '4.0.0-alpha.6.2.2',
     TIMEZONE: 'Europe/Moscow',
     DATASETS: Object.freeze({
       ROSSTAT_WEEKLY: 'ROSSTAT_WEEKLY',
@@ -174,27 +174,13 @@ function v300ReadObjects_(sheet, expectedHeaders) {
 function v300ObjectsToRows_(objects, headers) {
   return objects.map(function (object) { return headers.map(function (header) { return object[header] === undefined ? '' : object[header]; }); });
 }
-function v300EnsureGridCapacity_(ss, sheet, requiredRows, requiredColumns) {
-  var rowsNeeded = Math.max(1, Number(requiredRows || 1));
-  var columnsNeeded = Math.max(1, Number(requiredColumns || 1));
-  var requests = [];
-  var missingRows = rowsNeeded - sheet.getMaxRows();
-  var missingColumns = columnsNeeded - sheet.getMaxColumns();
-  if (missingRows > 0) requests.push({appendDimension:{sheetId:sheet.getSheetId(),dimension:'ROWS',length:missingRows}});
-  if (missingColumns > 0) requests.push({appendDimension:{sheetId:sheet.getSheetId(),dimension:'COLUMNS',length:missingColumns}});
-  if (requests.length) {
-    Sheets.Spreadsheets.batchUpdate({requests:requests}, ss.getId());
-    SpreadsheetApp.flush();
-    sheet = ss.getSheetByName(sheet.getName()) || sheet;
-  }
-  return sheet;
-}
 function v300EnsureSheet_(ss, name, headers, rows, columns) {
-  var sheet = ss.getSheetByName(name);
+  let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = ss.insertSheet(name);
-  var requiredColumns = Math.max(headers ? headers.length : 1, columns || 1);
-  var requiredRows = Math.max(rows || 2, 2);
-  sheet = v300EnsureGridCapacity_(ss, sheet, requiredRows, requiredColumns);
+  const requiredColumns = Math.max(headers ? headers.length : 1, columns || 1);
+  if (sheet.getMaxColumns() < requiredColumns) sheet.insertColumnsAfter(sheet.getMaxColumns(), requiredColumns - sheet.getMaxColumns());
+  const requiredRows = Math.max(rows || 2, 2);
+  if (sheet.getMaxRows() < requiredRows) sheet.insertRowsAfter(sheet.getMaxRows(), requiredRows - sheet.getMaxRows());
   if (headers) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     v300StyleHeader_(sheet, headers.length);
@@ -225,9 +211,9 @@ function v300WriteTable_(ss, sheetName, headers, rows, formats) {
   return rows.length;
 }
 function v300AppendRows_(sheet, headers, rows) {
-  if (!rows || !rows.length) return 0;
-  var start = Math.max(2, sheet.getLastRow() + 1);
-  sheet = v300EnsureGridCapacity_(sheet.getParent(), sheet, start + rows.length - 1, headers.length);
+  if (!rows.length) return 0;
+  v300EnsureSheet_(sheet.getParent(), sheet.getName(), headers, sheet.getLastRow() + rows.length + 1, headers.length);
+  const start = Math.max(2, sheet.getLastRow() + 1);
   sheet.getRange(start, 1, rows.length, headers.length).setValues(rows);
   return rows.length;
 }
@@ -238,23 +224,19 @@ function v300ApplyFormats_(sheet, formats) {
   });
 }
 function v300DeleteRows_(ss, sheet, rowNumbers) {
-  if (!rowNumbers || !rowNumbers.length) return;
-  var sorted = rowNumbers.slice().map(Number).filter(function(row){return row >= 2;}).sort(function(a,b){return a-b;});
-  if (!sorted.length) return;
-  var groups = [];
-  var start = sorted[0], previous = sorted[0];
-  for (var i = 1; i < sorted.length; i += 1) {
+  if (!rowNumbers.length) return;
+  const sorted = rowNumbers.slice().sort(function (a, b) { return a - b; });
+  const groups = [];
+  let start = sorted[0], previous = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
     if (sorted[i] === previous + 1) { previous = sorted[i]; continue; }
-    groups.push([start, previous]);
-    start = previous = sorted[i];
+    groups.push([start, previous]); start = previous = sorted[i];
   }
   groups.push([start, previous]);
-  var maxColumns = Math.max(1, sheet.getMaxColumns());
-  var requests = groups.sort(function(a,b){return b[0]-a[0];}).map(function(group){
-    return {deleteRange:{range:{sheetId:sheet.getSheetId(),startRowIndex:group[0]-1,endRowIndex:group[1],startColumnIndex:0,endColumnIndex:maxColumns},shiftDimension:'ROWS'}};
+  const requests = groups.sort(function (a, b) { return b[0] - a[0]; }).map(function (group) {
+    return {deleteDimension: {range: {sheetId: sheet.getSheetId(), dimension: 'ROWS', startIndex: group[0] - 1, endIndex: group[1]}}};
   });
-  Sheets.Spreadsheets.batchUpdate({requests:requests}, ss.getId());
-  SpreadsheetApp.flush();
+  Sheets.Spreadsheets.batchUpdate({requests: requests}, ss.getId());
 }
 function v300UpsertByKey_(ss, sheetName, headers, objects, keyHeader, formats) {
   const sheet = v300EnsureSheet_(ss, sheetName, headers, 2, headers.length);
@@ -1923,7 +1905,17 @@ function v310ChangesFromPublishRow_(row, frequency) {
   return result;
 }
 
-
+function v310ReplacePublishRowsBySeries_(sheetName, headers, seriesIds, newRows, formats) {
+  const ss = v300Publish_();
+  const sheet = v300EnsureSheet_(ss, sheetName, headers, 2, headers.length);
+  const set = {};
+  seriesIds.forEach(function(id){ if (id) set[id] = true; });
+  const rows = v300ReadObjects_(sheet, headers), toDelete = [];
+  rows.forEach(function(r){ if (set[v300Text_(r.series_id)]) toDelete.push(r._rowNumber); });
+  if (toDelete.length) v300DeleteRows_(ss, sheet, toDelete);
+  for (let i = 0; i < newRows.length; i += 1000) v300AppendRows_(sheet, headers, newRows.slice(i, i + 1000));
+  if (formats) v300ApplyFormats_(sheet, formats);
+}
 
 function v310SetLatestBySeries_(rows, field) {
   const latest = {};
@@ -2053,48 +2045,17 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
     if(d.getMonth()===11){for(var i=1;i<=53;i++){try{out.push(v300DateKey_(v310pSundayOfIsoWeek_(d.getFullYear()+1,i)));}catch(ignore){}}}
     return v310Unique_(out.filter(Boolean));
   }
-    var v310SeriesReplaceTestAdapter_=null;
-  function v310SeriesReplaceSetTestAdapter_(adapter){v310SeriesReplaceTestAdapter_=adapter||null;}
-  function v310SeriesReplaceFault_(point, context){
-    var adapter=v310SeriesReplaceTestAdapter_;
-    if(adapter&&typeof adapter.onFaultPoint==='function')adapter.onFaultPoint(String(point||''),context||{});
-  }
-  function v310PublishSpreadsheet_(){
-    var adapter=v310SeriesReplaceTestAdapter_;
-    if(adapter&&adapter.publishSpreadsheet)return adapter.publishSpreadsheet;
-    return v300Publish_();
-  }
-  function v310RollbackFailure_(operation, context, primaryError, rollbackError){
-    var primaryText=String(primaryError&&primaryError.message||primaryError);
-    var rollbackText=String(rollbackError&&rollbackError.message||rollbackError);
-    var details={operation:String(operation||''),context:context||{},primaryError:String(primaryError&&primaryError.stack||primaryError),rollbackError:String(rollbackError&&rollbackError.stack||rollbackError)};
-    var error;
-    if(typeof AKORT!=='undefined'&&AKORT.Core&&typeof AKORT.Core.error==='function')error=AKORT.Core.error('PUBLISH_SERIES_REPLACE_ROLLBACK_FAILED','Publish series replacement failed and rollback also failed. Primary: '+primaryText+'; rollback: '+rollbackText,details);
-    else{error=new Error('Publish series replacement failed and rollback also failed. Primary: '+primaryText+'; rollback: '+rollbackText);error.code='PUBLISH_SERIES_REPLACE_ROLLBACK_FAILED';error.details=details;}
-    if(!error.code)error.code='PUBLISH_SERIES_REPLACE_ROLLBACK_FAILED';
-    if(!error.details)error.details=details;
-    return error;
-  }
   function v310ReplacePublishRowsBySeries_(sheetName,headers,seriesIds,newRows,formats){
-    var ss=v310PublishSpreadsheet_(),sheet=v300EnsureSheet_(ss,sheetName,headers,2,headers.length),set={},existing=v300ReadObjects_(sheet,headers),toDelete=[],backup=[];
+    var ss=v300Publish_(),sheet=v300EnsureSheet_(ss,sheetName,headers,2,headers.length),set={},existing=v300ReadObjects_(sheet,headers),toDelete=[],backup=[];
     (seriesIds||[]).forEach(function(id){if(id)set[String(id)]=true;});
     existing.forEach(function(r){if(set[v300Text_(r.series_id)]){toDelete.push(r._rowNumber);backup.push(rowValues_(headers,r));}});
     try{
       if(toDelete.length)v300DeleteRows_(ss,sheet,toDelete);
-      v310SeriesReplaceFault_('AFTER_DELETE_BEFORE_APPEND',{operation:'v310ReplacePublishRowsBySeries_',sheetName:sheetName,seriesIds:Object.keys(set),deletedRows:toDelete.length,replacementRows:(newRows||[]).length});
       for(var i=0;i<(newRows||[]).length;i+=1000)v300AppendRows_(sheet,headers,newRows.slice(i,i+1000));
       if(formats)v300ApplyFormats_(sheet,formats);
-    }catch(primaryError){
-      try{
-        var fresh=v300ReadObjects_(sheet,headers),del=[];
-        fresh.forEach(function(r){if(set[v300Text_(r.series_id)])del.push(r._rowNumber);});
-        if(del.length)v300DeleteRows_(ss,sheet,del);
-        v310SeriesReplaceFault_('ROLLBACK_BEFORE_APPEND',{operation:'v310ReplacePublishRowsBySeries_',sheetName:sheetName,seriesIds:Object.keys(set),rollbackDeleteRows:del.length,backupRows:backup.length});
-        if(backup.length)v300AppendRows_(sheet,headers,backup);
-      }catch(rollbackError){
-        throw v310RollbackFailure_('v310ReplacePublishRowsBySeries_',{sheetName:sheetName,seriesIds:Object.keys(set),deletedRows:toDelete.length,replacementRows:(newRows||[]).length,backupRows:backup.length},primaryError,rollbackError);
-      }
-      throw primaryError;
+    }catch(e){
+      try{var fresh=v300ReadObjects_(sheet,headers),del=[];fresh.forEach(function(r){if(set[v300Text_(r.series_id)])del.push(r._rowNumber);});if(del.length)v300DeleteRows_(ss,sheet,del);if(backup.length)v300AppendRows_(sheet,headers,backup);}catch(ignore){}
+      throw e;
     }
   }
   function v310UpdateAggregates_(combos){
@@ -2111,7 +2072,7 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
       alpha6NormalizeLatestSheet_(AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES,headers,'period_start',v317AggregateSeriesKey_);
       return rows.length;
     }catch(e){
-      try{var fresh=v300ReadObjects_(sheet,headers),del=[];fresh.forEach(function(r){var k=v310ComboKey_({frequency:r.frequency,datasetCode:r.dataset_code,period:v300DateKey_(r.period_start),valueType:r.value_type,indexType:r.index_type||''});if(comboIndex[k])del.push(r._rowNumber);});if(del.length)v300DeleteRows_(ss,sheet,del);if(backup.length)v300AppendRows_(sheet,headers,backup);}catch(rollbackError){throw v310RollbackFailure_('v310UpdateAggregates_',{},e,rollbackError);}
+      try{var fresh=v300ReadObjects_(sheet,headers),del=[];fresh.forEach(function(r){var k=v310ComboKey_({frequency:r.frequency,datasetCode:r.dataset_code,period:v300DateKey_(r.period_start),valueType:r.value_type,indexType:r.index_type||''});if(comboIndex[k])del.push(r._rowNumber);});if(del.length)v300DeleteRows_(ss,sheet,del);if(backup.length)v300AppendRows_(sheet,headers,backup);}catch(ignore){}
       throw e;
     }
   }
@@ -2242,33 +2203,7 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
   }
   function planCount_(plan,arrayField,countField){return plan&&Array.isArray(plan[arrayField])?plan[arrayField].length:Number(plan&&plan[countField]||0);}
 
-  function replaceIndustrySeries_(seriesIds){
-    if(!seriesIds||!seriesIds.length)return 0;
-    var allRows=v300BuildIndustryPublish_(),headers=AKORT_V300.HEADERS.PUBLISH_INDUSTRY,objects=rowsToObjects_(allRows,headers),set={};
-    seriesIds.forEach(function(x){set[String(x)]=true;});
-    var selected=objects.filter(function(r){return set[String(r.series_id)];}),ss=v310PublishSpreadsheet_(),sh=ss.getSheetByName(AKORT_V300.SHEETS.PUBLISH_INDUSTRY),existing=v300ReadObjects_(sh,headers),toDelete=[];
-    existing.forEach(function(r){if(set[String(r.series_id)])toDelete.push(r._rowNumber);});
-    var backup=existing.filter(function(r){return set[String(r.series_id)];}).map(function(r){return rowValues_(headers,r);});
-    try{
-      if(toDelete.length)v300DeleteRows_(ss,sh,toDelete);
-      v310SeriesReplaceFault_('AFTER_DELETE_BEFORE_APPEND',{operation:'replaceIndustrySeries_',sheetName:AKORT_V300.SHEETS.PUBLISH_INDUSTRY,seriesIds:Object.keys(set),deletedRows:toDelete.length});
-      var rows=v300ObjectsToRows_(selected,headers);
-      for(var i=0;i<rows.length;i+=1000)v300AppendRows_(sh,headers,rows.slice(i,i+1000));
-      v300ApplyFormats_(sh,v300FormatRows_().industryPublish);
-      return rows.length;
-    }catch(primaryError){
-      try{
-        var fresh=v300ReadObjects_(sh,headers),del=[];
-        fresh.forEach(function(r){if(set[String(r.series_id)])del.push(r._rowNumber);});
-        if(del.length)v300DeleteRows_(ss,sh,del);
-        v310SeriesReplaceFault_('ROLLBACK_BEFORE_APPEND',{operation:'replaceIndustrySeries_',sheetName:AKORT_V300.SHEETS.PUBLISH_INDUSTRY,seriesIds:Object.keys(set),rollbackDeleteRows:del.length,backupRows:backup.length});
-        if(backup.length)v300AppendRows_(sh,headers,backup);
-      }catch(rollbackError){
-        throw v310RollbackFailure_('replaceIndustrySeries_',{sheetName:AKORT_V300.SHEETS.PUBLISH_INDUSTRY,seriesIds:Object.keys(set),deletedRows:toDelete.length,backupRows:backup.length},primaryError,rollbackError);
-      }
-      throw primaryError;
-    }
-  }
+  function replaceIndustrySeries_(seriesIds){if(!seriesIds||!seriesIds.length)return 0;var allRows=v300BuildIndustryPublish_(),headers=AKORT_V300.HEADERS.PUBLISH_INDUSTRY,objects=rowsToObjects_(allRows,headers),set={};seriesIds.forEach(function(x){set[String(x)]=true;});var selected=objects.filter(function(r){return set[String(r.series_id)];}),ss=v300Publish_(),sh=ss.getSheetByName(AKORT_V300.SHEETS.PUBLISH_INDUSTRY),existing=v300ReadObjects_(sh,headers),toDelete=[];existing.forEach(function(r){if(set[String(r.series_id)])toDelete.push(r._rowNumber);});var backup=existing.filter(function(r){return set[String(r.series_id)];}).map(function(r){return rowValues_(headers,r);});try{if(toDelete.length)v300DeleteRows_(ss,sh,toDelete);var rows=v300ObjectsToRows_(selected,headers);for(var i=0;i<rows.length;i+=1000)v300AppendRows_(sh,headers,rows.slice(i,i+1000));v300ApplyFormats_(sh,v300FormatRows_().industryPublish);return rows.length;}catch(e){try{var fresh=v300ReadObjects_(sh,headers),del=[];fresh.forEach(function(r){if(set[String(r.series_id)])del.push(r._rowNumber);});if(del.length)v300DeleteRows_(ss,sh,del);if(backup.length)v300AppendRows_(sh,headers,backup);}catch(ignore){}throw e;}}
   function applyPublish(plan,operationId){var rt=runtimeSettings_();if(!rt.enabled)throw AKORT.Core.error('PUBLISH_ENGINE_DISABLED','Incremental Publish is disabled.');var started=AKORT.Core.now(),runId=id_('PUBRUN'),t=table_(getDwh_(),'PUBLISH_RUNS',TABLES.PUBLISH_RUNS),w=0,m=0,i=0;try{if(plan.weeklySeriesIds.length){var wr=v310BuildWeeklyRowsForTargets_(plan.weekly);v310ReplacePublishRowsBySeries_(AKORT_V300.SHEETS.PUBLISH_PRICES_WEEKLY,AKORT_V300.HEADERS.PUBLISH_PRICES_WEEKLY,plan.weeklySeriesIds,v300ObjectsToRows_(wr,AKORT_V300.HEADERS.PUBLISH_PRICES_WEEKLY),v300FormatRows_().weeklyPublish);w=wr.length;}if(plan.monthlySeriesIds.length){var mr=v310BuildMonthlyRowsForTargets_(plan.monthly);v310ReplacePublishRowsBySeries_(AKORT_V300.SHEETS.PUBLISH_PRICES_MONTHLY,AKORT_V300.HEADERS.PUBLISH_PRICES_MONTHLY,plan.monthlySeriesIds,v300ObjectsToRows_(mr,AKORT_V300.HEADERS.PUBLISH_PRICES_MONTHLY),v300FormatRows_().monthlyPublish);m=mr.length;}if(plan.industrySeries.length)i=replaceIndustrySeries_(plan.industrySeries);appendObject_(t,{publish_run_id:runId,operation_id:operationId||'',load_id:plan.loadId||'',mode:'INCREMENTAL_PUBLISH',status:'SUCCESS',weekly_series_count:plan.weeklySeriesIds.length,monthly_series_count:plan.monthlySeriesIds.length,industry_series_count:plan.industrySeries.length,aggregate_combo_count:plan.aggregates.length,publish_rows_written:w+m+i,aggregate_rows_written:0,started_at:started,finished_at:AKORT.Core.now(),error_code:'',error_message:'',release_version:AKORT.Release.version});return{runId:runId,weeklyRows:w,monthlyRows:m,industryRows:i,publishRows:w+m+i};}catch(e){appendObject_(t,{publish_run_id:runId,operation_id:operationId||'',load_id:plan.loadId||'',mode:'INCREMENTAL_PUBLISH',status:'FAILED',weekly_series_count:plan.weeklySeriesIds.length,monthly_series_count:plan.monthlySeriesIds.length,industry_series_count:plan.industrySeries.length,aggregate_combo_count:plan.aggregates.length,publish_rows_written:0,aggregate_rows_written:0,started_at:started,finished_at:AKORT.Core.now(),error_code:e.code||'PUBLISH_UPDATE_FAILED',error_message:e.message||String(e),release_version:AKORT.Release.version});throw e;}}
   function applyAggregates(plan,operationId){
     var started=AKORT.Core.now(),runId=id_('PUBRUN'),t=table_(getDwh_(),'PUBLISH_RUNS',TABLES.PUBLISH_RUNS),count=planCount_(plan,'aggregates','aggregateComboCount'),weeklyCount=planCount_(plan,'weeklySeriesIds','weeklySeriesCount'),monthlyCount=planCount_(plan,'monthlySeriesIds','monthlySeriesCount'),industryCount=planCount_(plan,'industrySeries','industrySeriesCount');
@@ -2443,45 +2378,6 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
     if(preview.invalidIndexTypes)throw AKORT.Core.error('AGGREGATE_IMPACT_INDEX_TYPE_INVALID','Aggregate impact preview contains an empty index type.',preview);
     state.aggregateImpactPreview=(state.aggregateImpactPreview||[]).filter(function(old){return String(old.loadId)!==String(group.loadId);});state.aggregateImpactPreview.push(preview);var groupSheet=SpreadsheetApp.openById(state.controlId).getSheetByName('REPLAY_GROUPS');if(groupSheet)groupSheet.getRange(state.replayIndex+2,6).setValue(AKORT.Core.safeJson(preview));state.impactWork=null;return{completed:true,loadId:group.loadId,stage:'IMPACT_PREVIEW',target:replayTarget_('IMPACT_PREVIEW'),impactPhase:'COMPLETE',preview:preview};
   }
-  function v300StorageMutationProbe_(){
-    var ss=SpreadsheetApp.create('AKORT_ALPHA623_STORAGE_PROBE_'+Utilities.formatDate(new Date(),AKORT_V300.TIMEZONE,'yyyyMMdd_HHmmss'));
-    var file=DriveApp.getFileById(ss.getId()),sh=ss.getSheets()[0],headers=['series_id','period','value'];
-    try{
-      sh.setName('PROBE');
-      if(sh.getMaxRows()>10)sh.deleteRows(11,sh.getMaxRows()-10);
-      sh.getRange(1,1,7,3).setValues([headers,['S1','P1',1],['S1','P2',2],['S1','P3',3],['S2','P1',10],['S2','P2',20],['S2','P3',30]]);
-      var beforeMaxRows=sh.getMaxRows();
-      v300DeleteRows_(ss,sh,[2,3,4]);
-      sh=ss.getSheetByName('PROBE');
-      var afterDeleteMaxRows=sh.getMaxRows();
-      if(afterDeleteMaxRows!==beforeMaxRows)throw new Error('Grid row capacity changed after deleteRange replacement preparation.');
-      var replacement=[];for(var i=1;i<=8;i+=1)replacement.push(['S1','N'+i,100+i]);
-      v300AppendRows_(sh,headers,replacement);
-      sh=ss.getSheetByName('PROBE');
-      var rows=v300ReadObjects_(sh,headers),counts={S1:0,S2:0};
-      rows.forEach(function(r){if(counts[v300Text_(r.series_id)]!==undefined)counts[v300Text_(r.series_id)]+=1;});
-      if(counts.S1!==8||counts.S2!==3)throw new Error('Storage mutation probe lost or duplicated series rows.');
-      if(sh.getMaxRows()<12)throw new Error('appendDimension did not expand the grid.');
-      return{beforeMaxRows:beforeMaxRows,afterDeleteMaxRows:afterDeleteMaxRows,afterAppendMaxRows:sh.getMaxRows(),seriesCounts:counts,lastRow:sh.getLastRow()};
-    }finally{try{file.setTrashed(true);}catch(ignore){}}
-  }
-  function v300SeriesReplacementRollbackProbe_(){
-    var ss=SpreadsheetApp.create('AKORT_ALPHA623_REPLACEMENT_PROBE_'+Utilities.formatDate(new Date(),AKORT_V300.TIMEZONE,'yyyyMMdd_HHmmss'));
-    var file=DriveApp.getFileById(ss.getId()),sh=ss.getSheets()[0],headers=['series_id','period','value'],combinedCode='';
-    try{
-      sh.setName('PROBE');
-      sh.getRange(1,1,5,3).setValues([headers,['S1','OLD1',1],['S1','OLD2',2],['S2','KEEP1',10],['S2','KEEP2',20]]);
-      v310SeriesReplaceSetTestAdapter_({publishSpreadsheet:ss,onFaultPoint:function(point){if(point==='AFTER_DELETE_BEFORE_APPEND')throw new Error('INJECTED_PRIMARY_REPLACEMENT_FAILURE');if(point==='ROLLBACK_BEFORE_APPEND')throw new Error('INJECTED_ROLLBACK_FAILURE');}});
-      try{v310ReplacePublishRowsBySeries_('PROBE',headers,['S1'],[['S1','NEW1',101],['S1','NEW2',102]],null);}catch(error){combinedCode=String(error&&error.code||'');}
-      if(combinedCode!=='PUBLISH_SERIES_REPLACE_ROLLBACK_FAILED')throw new Error('Combined rollback diagnostic was not emitted by the active replacement function.');
-      v310SeriesReplaceSetTestAdapter_({publishSpreadsheet:ss});
-      v310ReplacePublishRowsBySeries_('PROBE',headers,['S1'],[['S1','NEW1',101],['S1','NEW2',102]],null);
-      var rows=v300ReadObjects_(ss.getSheetByName('PROBE'),headers),counts={S1:0,S2:0};
-      rows.forEach(function(r){if(counts[v300Text_(r.series_id)]!==undefined)counts[v300Text_(r.series_id)]+=1;});
-      if(counts.S1!==2||counts.S2!==2)throw new Error('Retry through the active replacement function lost or duplicated rows.');
-      return{combinedCode:combinedCode,seriesCounts:counts};
-    }finally{v310SeriesReplaceSetTestAdapter_(null);try{file.setTrashed(true);}catch(ignore){}}
-  }
   function withReplayContext_(state,fn){ALPHA6_REPLAY_ALLOWED_LOADS=mapFromArray_(state.allowedLoadIds);ALPHA6_REPLAY_REVERSED_LOADS=mapFromArray_(state.reversedLoadIds);ALPHA6_PUBLISH_OVERRIDE_ID=state.incrementalId;try{return fn();}finally{ALPHA6_PUBLISH_OVERRIDE_ID='';ALPHA6_REPLAY_ALLOWED_LOADS=null;ALPHA6_REPLAY_REVERSED_LOADS=null;}}
   function replayDescriptorKey_(d){return[v300Text_(d.datasetCode),v300Text_(d.categoryId),v300ValueType_(d.valueType),v300IndexType_(d.indexType||''),v300Text_(d.seriesType)].join('|');}
   function replayStageItems_(plan,stage){
@@ -2509,7 +2405,7 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
       for(var i=0;i<rows.length;i+=1000)v300AppendRows_(sheet,headers,rows.slice(i,i+1000));
       return rows.length;
     }catch(e){
-      try{var fresh=v300ReadObjects_(sheet,headers),del=[];fresh.forEach(function(r){var k=v310ComboKey_({frequency:r.frequency,datasetCode:r.dataset_code,period:v300DateKey_(r.period_start),valueType:r.value_type,indexType:r.index_type||''});if(comboIndex[k])del.push(r._rowNumber);});if(del.length)v300DeleteRows_(ss,sheet,del);if(backup.length)v300AppendRows_(sheet,headers,backup);}catch(rollbackError){throw v310RollbackFailure_('v310UpdateAggregatesReplayChunk_',{},e,rollbackError);}
+      try{var fresh=v300ReadObjects_(sheet,headers),del=[];fresh.forEach(function(r){var k=v310ComboKey_({frequency:r.frequency,datasetCode:r.dataset_code,period:v300DateKey_(r.period_start),valueType:r.value_type,indexType:r.index_type||''});if(comboIndex[k])del.push(r._rowNumber);});if(del.length)v300DeleteRows_(ss,sheet,del);if(backup.length)v300AppendRows_(sheet,headers,backup);}catch(ignore){}
       throw e;
     }
   }
@@ -2729,9 +2625,9 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
     else{state.noOpRuns=Number(state.noOpRuns||0)+1;state.noProgressRuns=decision.noProgressRuns;state.progressStatus=decision.warning?'IDLE':'ACTIVE';}
     return decision;
   }
-  function startReconciliationDispatcher(){return AKORT.Core.safeRun('PUBLISH_RECONCILIATION_DISPATCHER_START',function(){AKORT.EnvironmentGuard.assertDev();var lifecycleLock=LockService.getUserLock();if(!lifecycleLock.tryLock(1000))return AKORT.Result.failure('RECONCILIATION_DISPATCHER_WORKER_ACTIVE','A dispatcher worker is still active. Wait for the in-flight step to finish before starting a new dispatcher run.',dispatcherPublic_(dispatcherLoad_()));try{var recon=loadRecon_();if(!recon)return AKORT.Result.failure('RECONCILIATION_NOT_STARTED','Run AKORT_alpha6StartReconciliation first.');if(recon.scope!=='ALPHA6_NON_AGGREGATE')return AKORT.Result.failure('LEGACY_RECONCILIATION_REQUIRES_RESET','Reset the archived four-table checkpoint and start the corrected three-table reconciliation before enabling the dispatcher.',publicRecon_(recon));if(recon.status==='SUCCESS')return AKORT.Result.success('Reconciliation is already complete.',{dispatcher:dispatcherPublic_(dispatcherLoad_()),reconciliation:publicRecon_(recon)});if(recon.status==='FAILED')return AKORT.Result.failure('PUBLISH_RECONCILIATION_FAILED','Reconciliation is in failed status.',publicRecon_(recon));var currentState=dispatcherLoad_(),currentControl=dispatcherControlLoad_();if(dispatcherControlMatches_(currentControl,currentState)){dispatcherEnsureTrigger_();return AKORT.Result.success('Alpha.6.2.3 persistent reconciliation dispatcher is already active.',dispatcherPublic_(currentState));}var removed=dispatcherDeleteTriggers_(),now=AKORT.Core.now(),runId=id_('DISPATCHER'),fingerprint=reconciliationFingerprint_(recon),control={runId:runId,reconciliationId:recon.reconciliationId||'',enabled:true,status:'SCHEDULED',startedAt:now,stopReason:'',requestId:id_('CONTROL'),schemaVersion:'4.0-dispatcher-4'},state={runId:runId,reconciliationId:recon.reconciliationId||'',schemaVersion:'4.0-dispatcher-4',enabled:true,status:'SCHEDULED',startedAt:now,updatedAt:now,lastStartedAt:'',lastFinishedAt:'',lastProgressAt:recon.updatedAt||now,lastProgressFingerprint:fingerprint,nextRunAt:new Date(Date.now()+60000).toISOString(),nextRetryAt:'',attempts:0,workerExecutions:0,successfulSteps:0,noOpRuns:0,noProgressRuns:0,skippedLockedRuns:0,consecutiveErrors:0,interruptedRuns:0,lastDurationMs:0,lastCheckpointCommitted:recon.updatedAt||'',lastObservedCheckpointAt:recon.updatedAt||'',nextAction:'CONTINUE_RECONCILIATION',lastError:null,lastResult:null,removedTriggersOnStart:removed,triggerCountOnStart:0};dispatcherControlSave_(control);dispatcherCleanupStateKeys_(runId);dispatcherSave_(state);try{state.triggerCountOnStart=dispatcherEnsureTrigger_();dispatcherSave_(state);}catch(triggerError){dispatcherRequestStop_('TRIGGER_CREATION_FAILED');dispatcherDeleteTriggers_();throw triggerError;}return AKORT.Result.success('Alpha.6.2.3 persistent reconciliation dispatcher started.',dispatcherPublic_(state));}finally{try{lifecycleLock.releaseLock();}catch(ignore){}}},{lock:false,persistLogs:true});}
-  function stopReconciliationDispatcher(){return AKORT.Core.safeRun('PUBLISH_RECONCILIATION_DISPATCHER_STOP',function(){AKORT.EnvironmentGuard.assertDev();var control=dispatcherRequestStop_('STOPPED_MANUALLY'),state=dispatcherLoad_()||{runId:control.runId||'',startedAt:'',attempts:0,successfulSteps:0,skippedLockedRuns:0,consecutiveErrors:0,interruptedRuns:0,noProgressRuns:0,noOpRuns:0},removed=dispatcherDeleteTriggers_();state.enabled=false;state.status='STOPPED_MANUALLY';state.nextRunAt='';state.nextRetryAt='';state.lastFinishedAt=AKORT.Core.now();state.nextAction='NONE';state.removedTriggersOnStop=removed;dispatcherSave_(state);return AKORT.Result.success('Alpha.6.2.3 reconciliation dispatcher stop requested. Any in-flight step may finish, but cannot re-enable the dispatcher.',dispatcherPublic_(state));},{lock:false,persistLogs:true});}
-  function reconciliationDispatcherStatus(){return AKORT.Result.success('Alpha.6.2.3 reconciliation dispatcher status loaded.',dispatcherPublic_(dispatcherLoad_()));}
+  function startReconciliationDispatcher(){return AKORT.Core.safeRun('PUBLISH_RECONCILIATION_DISPATCHER_START',function(){AKORT.EnvironmentGuard.assertDev();var lifecycleLock=LockService.getUserLock();if(!lifecycleLock.tryLock(1000))return AKORT.Result.failure('RECONCILIATION_DISPATCHER_WORKER_ACTIVE','A dispatcher worker is still active. Wait for the in-flight step to finish before starting a new dispatcher run.',dispatcherPublic_(dispatcherLoad_()));try{var recon=loadRecon_();if(!recon)return AKORT.Result.failure('RECONCILIATION_NOT_STARTED','Run AKORT_alpha6StartReconciliation first.');if(recon.scope!=='ALPHA6_NON_AGGREGATE')return AKORT.Result.failure('LEGACY_RECONCILIATION_REQUIRES_RESET','Reset the archived four-table checkpoint and start the corrected three-table reconciliation before enabling the dispatcher.',publicRecon_(recon));if(recon.status==='SUCCESS')return AKORT.Result.success('Reconciliation is already complete.',{dispatcher:dispatcherPublic_(dispatcherLoad_()),reconciliation:publicRecon_(recon)});if(recon.status==='FAILED')return AKORT.Result.failure('PUBLISH_RECONCILIATION_FAILED','Reconciliation is in failed status.',publicRecon_(recon));var currentState=dispatcherLoad_(),currentControl=dispatcherControlLoad_();if(dispatcherControlMatches_(currentControl,currentState)){dispatcherEnsureTrigger_();return AKORT.Result.success('Alpha.6.2.2 persistent reconciliation dispatcher is already active.',dispatcherPublic_(currentState));}var removed=dispatcherDeleteTriggers_(),now=AKORT.Core.now(),runId=id_('DISPATCHER'),fingerprint=reconciliationFingerprint_(recon),control={runId:runId,reconciliationId:recon.reconciliationId||'',enabled:true,status:'SCHEDULED',startedAt:now,stopReason:'',requestId:id_('CONTROL'),schemaVersion:'4.0-dispatcher-4'},state={runId:runId,reconciliationId:recon.reconciliationId||'',schemaVersion:'4.0-dispatcher-4',enabled:true,status:'SCHEDULED',startedAt:now,updatedAt:now,lastStartedAt:'',lastFinishedAt:'',lastProgressAt:recon.updatedAt||now,lastProgressFingerprint:fingerprint,nextRunAt:new Date(Date.now()+60000).toISOString(),nextRetryAt:'',attempts:0,workerExecutions:0,successfulSteps:0,noOpRuns:0,noProgressRuns:0,skippedLockedRuns:0,consecutiveErrors:0,interruptedRuns:0,lastDurationMs:0,lastCheckpointCommitted:recon.updatedAt||'',lastObservedCheckpointAt:recon.updatedAt||'',nextAction:'CONTINUE_RECONCILIATION',lastError:null,lastResult:null,removedTriggersOnStart:removed,triggerCountOnStart:0};dispatcherControlSave_(control);dispatcherCleanupStateKeys_(runId);dispatcherSave_(state);try{state.triggerCountOnStart=dispatcherEnsureTrigger_();dispatcherSave_(state);}catch(triggerError){dispatcherRequestStop_('TRIGGER_CREATION_FAILED');dispatcherDeleteTriggers_();throw triggerError;}return AKORT.Result.success('Alpha.6.2.2 persistent reconciliation dispatcher started.',dispatcherPublic_(state));}finally{try{lifecycleLock.releaseLock();}catch(ignore){}}},{lock:false,persistLogs:true});}
+  function stopReconciliationDispatcher(){return AKORT.Core.safeRun('PUBLISH_RECONCILIATION_DISPATCHER_STOP',function(){AKORT.EnvironmentGuard.assertDev();var control=dispatcherRequestStop_('STOPPED_MANUALLY'),state=dispatcherLoad_()||{runId:control.runId||'',startedAt:'',attempts:0,successfulSteps:0,skippedLockedRuns:0,consecutiveErrors:0,interruptedRuns:0,noProgressRuns:0,noOpRuns:0},removed=dispatcherDeleteTriggers_();state.enabled=false;state.status='STOPPED_MANUALLY';state.nextRunAt='';state.nextRetryAt='';state.lastFinishedAt=AKORT.Core.now();state.nextAction='NONE';state.removedTriggersOnStop=removed;dispatcherSave_(state);return AKORT.Result.success('Alpha.6.2.2 reconciliation dispatcher stop requested. Any in-flight step may finish, but cannot re-enable the dispatcher.',dispatcherPublic_(state));},{lock:false,persistLogs:true});}
+  function reconciliationDispatcherStatus(){return AKORT.Result.success('Alpha.6.2.2 reconciliation dispatcher status loaded.',dispatcherPublic_(dispatcherLoad_()));}
   function reconciliationDispatcherWorker(){
     var workerLock=LockService.getUserLock();
     if(!workerLock.tryLock(1000))return AKORT.Result.success('Another dispatcher worker is still active; this tick was skipped without changing durable dispatcher state.',{skipped:true,reason:'WORKER_OVERLAP'});
@@ -2749,7 +2645,7 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
       var startedMs=Date.now(),beforeFingerprint=reconciliationFingerprint_(recon);state.status='RUNNING';state.lastStartedAt=new Date(startedMs).toISOString();state.lastFinishedAt='';state.nextRunAt=new Date(startedMs+60000).toISOString();state.nextRetryAt='';state.nextAction='CONTINUE_RECONCILIATION';state.attempts=Number(state.attempts||0)+1;state.workerExecutions=Number(state.workerExecutions||0)+1;dispatcherSave_(state);
       try{
         var result=continueReconciliation(),fresh=loadRecon_();state.lastFinishedAt=AKORT.Core.now();state.lastDurationMs=Date.now()-startedMs;state.lastResult=dispatcherResultSummary_(result);if(!dispatcherRunActive_(state))return dispatcherStoppedDuringStep_(state);
-        if(fresh&&(fresh.status==='SUCCESS'||fresh.status==='FAILED')){dispatcherApplyProgress_(state,beforeFingerprint,fresh);return fresh.status==='SUCCESS'?AKORT.Result.success('Alpha.6.2.3 reconciliation completed; dispatcher stopped.',dispatcherTerminalState_(state,fresh,'RECONCILIATION_'+fresh.status)):AKORT.Result.failure('PUBLISH_RECONCILIATION_FAILED','Alpha.6.2.3 reconciliation failed; dispatcher stopped.',dispatcherTerminalState_(state,fresh,'RECONCILIATION_'+fresh.status));}
+        if(fresh&&(fresh.status==='SUCCESS'||fresh.status==='FAILED')){dispatcherApplyProgress_(state,beforeFingerprint,fresh);return fresh.status==='SUCCESS'?AKORT.Result.success('Alpha.6.2.2 reconciliation completed; dispatcher stopped.',dispatcherTerminalState_(state,fresh,'RECONCILIATION_'+fresh.status)):AKORT.Result.failure('PUBLISH_RECONCILIATION_FAILED','Alpha.6.2.2 reconciliation failed; dispatcher stopped.',dispatcherTerminalState_(state,fresh,'RECONCILIATION_'+fresh.status));}
         if(!result||result.ok===false){var msg=(result&&result.message)||'Reconciliation step failed.';if(/Could not acquire script lock/i.test(msg)){state.skippedLockedRuns=Number(state.skippedLockedRuns||0)+1;state.status='SKIPPED_LOCKED';state.nextAction='RETRY_NEXT_TICK';state.lastError=null;dispatcherSave_(state);return AKORT.Result.success('Another reconciliation execution owns the script lock; this tick was skipped.',dispatcherPublic_(state));}return dispatcherScheduleRetry_(state,dispatcherClassifyError_({code:(result&&result.code)||'STEP_FAILED',message:msg}),fresh);}
         var decision=dispatcherApplyProgress_(state,beforeFingerprint,fresh);state.consecutiveErrors=0;state.nextRetryAt='';state.lastError=null;
         if(decision.stop){state.lastError={code:'RECONCILIATION_NO_PROGRESS',message:'The reconciliation semantic fingerprint did not change for '+decision.noProgressRuns+' completed worker executions.',at:AKORT.Core.now()};return AKORT.Result.failure('RECONCILIATION_NO_PROGRESS','Dispatcher stopped because reconciliation made no semantic progress.',dispatcherTerminalState_(state,fresh,'RECONCILIATION_NO_PROGRESS'));}
@@ -2761,5 +2657,5 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
 
   function statusSummary(){var ss=getDwh_(),tables={};Object.keys(TABLES).forEach(function(n){var sh=ss.getSheetByName(n);tables[n]=sh?{rows:Math.max(0,sh.getLastRow()-1),columns:sh.getLastColumn()}:null;});return{release:AKORT.Release.manifest(),manifestHash:AKORT.Core.manifestHash(),publishSchemaVersion:AKORT.Release.publishSchemaVersion,dependencySchemaVersion:AKORT.Release.dependencySchemaVersion,dispatcherSchemaVersion:AKORT.Release.dispatcherSchemaVersion,scopeCorrection:clone_(ALPHA6_SCOPE),runtimeSettings:runtimeSettings_(),serviceTables:tables,reconciliation:publicRecon_(loadRecon_()),dispatcher:dispatcherPublic_(dispatcherLoad_())};}
 
-  return {Tables:clone_(TABLES),install:install,createPublishBackup:createPublishBackup,runtimeSettings:runtimeSettings_,planLoad:planLoad,planReversal:planReversal,planFromAffected:planFromAffected_,summarizePlan:summarizePlan_,appendImpact:appendImpact_,applyPublish:applyPublish,applyAggregates:applyAggregates,statusSummary:statusSummary,startReconciliation:startReconciliation,continueReconciliation:continueReconciliation,reconciliationStatus:reconciliationStatus,resetReconciliation:resetReconciliation,startReconciliationDispatcher:startReconciliationDispatcher,stopReconciliationDispatcher:stopReconciliationDispatcher,reconciliationDispatcherStatus:reconciliationDispatcherStatus,reconciliationDispatcherWorker:reconciliationDispatcherWorker,Test:{storageMutationProbe:v300StorageMutationProbe_,seriesReplacementRollbackProbe:v300SeriesReplacementRollbackProbe_,weeklyDependentPeriods:v310WeeklyDependentPeriods_,monthlyDependentPeriods:v310MonthlyDependentPeriods_,weeklyDynamics:v310CalculateWeeklyDynamics_,monthlyDynamics:v310CalculateMonthlyDynamics_,industryDynamics:v300CalculateIndustryDynamics_,setLatestPrices:v317SetLatestBySeriesRows_,setLatestAggregates:v317SetLatestAggregateRows_,expandAffected:v310ExpandAffectedTargets_,aggregateIndexTypes:v310AggregateIndexTypes_,frontierKey:v310AggregateFrontierKey_,seriesId:v300SeriesId_,aggregateSeriesKey:v317AggregateSeriesKey_,selectReplayLatest:v300SelectReplayLatest_,buildWeeklyRows:v310BuildWeeklyRowsForTargets_,buildMonthlyRows:v310BuildMonthlyRowsForTargets_,buildImpactRecords:buildImpactRecords_,jsonArrayChunks:jsonArrayChunks_,dispatcherControlMatches:dispatcherControlMatches_,dispatcherStateKey:dispatcherStateKey_,impactPreviewComboKey:impactPreviewComboKey_,impactPreviewHeaders:impactPreviewHeaders_,impactPreviewSheet:impactPreviewSheet_,impactPreviewAggregateCombos:impactPreviewAggregateCombos_,replayImpactPreviewStep:replayImpactPreviewStep_,setImpactTestAdapter:impactPreviewSetTestAdapter_,replayTarget:replayTarget_,nextReplayStage:nextReplayStage_,reconciliationFingerprint:reconciliationFingerprint_,dispatcherProgressDecision:dispatcherProgressDecision_,dispatcherClassifyError:dispatcherClassifyError_,dispatcherRetryDelayMs:dispatcherRetryDelayMs_,dispatcherResultSummary:dispatcherResultSummary_,utf8Bytes:utf8Bytes_}};
+  return {Tables:clone_(TABLES),install:install,createPublishBackup:createPublishBackup,runtimeSettings:runtimeSettings_,planLoad:planLoad,planReversal:planReversal,planFromAffected:planFromAffected_,summarizePlan:summarizePlan_,appendImpact:appendImpact_,applyPublish:applyPublish,applyAggregates:applyAggregates,statusSummary:statusSummary,startReconciliation:startReconciliation,continueReconciliation:continueReconciliation,reconciliationStatus:reconciliationStatus,resetReconciliation:resetReconciliation,startReconciliationDispatcher:startReconciliationDispatcher,stopReconciliationDispatcher:stopReconciliationDispatcher,reconciliationDispatcherStatus:reconciliationDispatcherStatus,reconciliationDispatcherWorker:reconciliationDispatcherWorker,Test:{weeklyDependentPeriods:v310WeeklyDependentPeriods_,monthlyDependentPeriods:v310MonthlyDependentPeriods_,weeklyDynamics:v310CalculateWeeklyDynamics_,monthlyDynamics:v310CalculateMonthlyDynamics_,industryDynamics:v300CalculateIndustryDynamics_,setLatestPrices:v317SetLatestBySeriesRows_,setLatestAggregates:v317SetLatestAggregateRows_,expandAffected:v310ExpandAffectedTargets_,aggregateIndexTypes:v310AggregateIndexTypes_,frontierKey:v310AggregateFrontierKey_,seriesId:v300SeriesId_,aggregateSeriesKey:v317AggregateSeriesKey_,selectReplayLatest:v300SelectReplayLatest_,buildWeeklyRows:v310BuildWeeklyRowsForTargets_,buildMonthlyRows:v310BuildMonthlyRowsForTargets_,buildImpactRecords:buildImpactRecords_,jsonArrayChunks:jsonArrayChunks_,dispatcherControlMatches:dispatcherControlMatches_,dispatcherStateKey:dispatcherStateKey_,impactPreviewComboKey:impactPreviewComboKey_,impactPreviewHeaders:impactPreviewHeaders_,impactPreviewSheet:impactPreviewSheet_,impactPreviewAggregateCombos:impactPreviewAggregateCombos_,replayImpactPreviewStep:replayImpactPreviewStep_,setImpactTestAdapter:impactPreviewSetTestAdapter_,replayTarget:replayTarget_,nextReplayStage:nextReplayStage_,reconciliationFingerprint:reconciliationFingerprint_,dispatcherProgressDecision:dispatcherProgressDecision_,dispatcherClassifyError:dispatcherClassifyError_,dispatcherRetryDelayMs:dispatcherRetryDelayMs_,dispatcherResultSummary:dispatcherResultSummary_,utf8Bytes:utf8Bytes_}};
 })();

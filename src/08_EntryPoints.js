@@ -140,3 +140,69 @@ function AKORT_alpha4SmokeStatus() {
 function AKORT_alpha4SmokeReset() {
   return AKORT_printResult_(AKORT.Alpha4Tests.reset());
 }
+function AKORT_probeIncrementalRead() {
+  var id = '1ds8KXqdc-jir_dUCrTshRug4vG7hlqSiwxAbm6VhAbQ';
+  var result = {};
+
+  try {
+    var ss = SpreadsheetApp.openById(id);
+    var sheet = ss.getSheetByName('PUBLISH_PRICES_WEEKLY');
+
+    result = {
+      ok: true,
+      spreadsheetName: ss.getName(),
+      sheetName: sheet.getName(),
+      lastRow: sheet.getLastRow(),
+      lastColumn: sheet.getLastColumn(),
+      sample: sheet.getRange(1, 1, 2, 2).getDisplayValues()
+    };
+  } catch (error) {
+    result = {
+      ok: false,
+      message: String(error.message || error),
+      stack: String(error.stack || '')
+    };
+  }
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+function AKORT_probeIncrementalWrite() {
+  var id = '1ds8KXqdc-jir_dUCrTshRug4vG7hlqSiwxAbm6VhAbQ';
+  var probeSheetName = '__AKORT_ACCESS_PROBE__';
+  var result = {};
+
+  try {
+    var ss = SpreadsheetApp.openById(id);
+    var sheet = ss.getSheetByName(probeSheetName);
+
+    if (!sheet) {
+      sheet = ss.insertSheet(probeSheetName);
+    }
+
+    sheet.clear();
+    sheet.getRange('A1:B2').setValues([
+      ['probe', 'value'],
+      [new Date().toISOString(), 'OK']
+    ]);
+
+    SpreadsheetApp.flush();
+
+    result = {
+      ok: true,
+      writtenValue: sheet.getRange('B2').getDisplayValue()
+    };
+
+    ss.deleteSheet(sheet);
+    SpreadsheetApp.flush();
+  } catch (error) {
+    result = {
+      ok: false,
+      message: String(error.message || error),
+      stack: String(error.stack || '')
+    };
+  }
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
