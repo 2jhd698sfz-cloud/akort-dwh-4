@@ -14,6 +14,9 @@ function AKORT_alpha6StartReconciliationDispatcher(){return AKORT_printResult_(A
 function AKORT_alpha6StopReconciliationDispatcher(){return AKORT_printResult_(AKORT.IncrementalPublish.stopReconciliationDispatcher());}
 function AKORT_alpha6ReconciliationDispatcherStatus(){return AKORT_printResult_(AKORT.IncrementalPublish.reconciliationDispatcherStatus());}
 function AKORT_alpha6ReconciliationDispatcherWorker(){return AKORT.IncrementalPublish.reconciliationDispatcherWorker();}
+function AKORT_alpha624RecoverFailedReconciliation(){return AKORT_printResult_(AKORT.IncrementalPublish.recoverFailedReconciliation());}
+function AKORT_alpha624PreRecoveryParityTest(){return AKORT_printResult_(AKORT.Core.safeRun('ALPHA624_PRE_RECOVERY_PARITY_TEST',function(){AKORT.EnvironmentGuard.assertDev();return AKORT.Result.success('Alpha.6.2.4 markup and monthly-index parity passed.',AKORT.IncrementalPublish.Test.parityProbe());},{lock:true,persistLogs:true}));}
+function AKORT_alpha624MarkupParityTest(){return AKORT_alpha624PreRecoveryParityTest();}
 
 
 /** Alpha.5: register the release and install parser profiles, staging and issue tables. */
