@@ -2443,28 +2443,178 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
     if(preview.invalidIndexTypes)throw AKORT.Core.error('AGGREGATE_IMPACT_INDEX_TYPE_INVALID','Aggregate impact preview contains an empty index type.',preview);
     state.aggregateImpactPreview=(state.aggregateImpactPreview||[]).filter(function(old){return String(old.loadId)!==String(group.loadId);});state.aggregateImpactPreview.push(preview);var groupSheet=SpreadsheetApp.openById(state.controlId).getSheetByName('REPLAY_GROUPS');if(groupSheet)groupSheet.getRange(state.replayIndex+2,6).setValue(AKORT.Core.safeJson(preview));state.impactWork=null;return{completed:true,loadId:group.loadId,stage:'IMPACT_PREVIEW',target:replayTarget_('IMPACT_PREVIEW'),impactPhase:'COMPLETE',preview:preview};
   }
-  function v300StorageMutationProbe_(){
-    var ss=SpreadsheetApp.create('AKORT_ALPHA623_STORAGE_PROBE_'+Utilities.formatDate(new Date(),AKORT_V300.TIMEZONE,'yyyyMMdd_HHmmss'));
-    var file=DriveApp.getFileById(ss.getId()),sh=ss.getSheets()[0],headers=['series_id','period','value'];
-    try{
-      sh.setName('PROBE');
-      if(sh.getMaxRows()>10)sh.deleteRows(11,sh.getMaxRows()-10);
-      sh.getRange(1,1,7,3).setValues([headers,['S1','P1',1],['S1','P2',2],['S1','P3',3],['S2','P1',10],['S2','P2',20],['S2','P3',30]]);
-      var beforeMaxRows=sh.getMaxRows();
-      v300DeleteRows_(ss,sh,[2,3,4]);
-      sh=ss.getSheetByName('PROBE');
-      var afterDeleteMaxRows=sh.getMaxRows();
-      if(afterDeleteMaxRows!==beforeMaxRows)throw new Error('Grid row capacity changed after deleteRange replacement preparation.');
-      var replacement=[];for(var i=1;i<=8;i+=1)replacement.push(['S1','N'+i,100+i]);
-      v300AppendRows_(sh,headers,replacement);
-      sh=ss.getSheetByName('PROBE');
-      var rows=v300ReadObjects_(sh,headers),counts={S1:0,S2:0};
-      rows.forEach(function(r){if(counts[v300Text_(r.series_id)]!==undefined)counts[v300Text_(r.series_id)]+=1;});
-      if(counts.S1!==8||counts.S2!==3)throw new Error('Storage mutation probe lost or duplicated series rows.');
-      if(sh.getMaxRows()<12)throw new Error('appendDimension did not expand the grid.');
-      return{beforeMaxRows:beforeMaxRows,afterDeleteMaxRows:afterDeleteMaxRows,afterAppendMaxRows:sh.getMaxRows(),seriesCounts:counts,lastRow:sh.getLastRow()};
-    }finally{try{file.setTrashed(true);}catch(ignore){}}
+  function v300StorageMutationProbe_() {
+  var ss = SpreadsheetApp.create(
+    'AKORT_ALPHA623_STORAGE_PROBE_' +
+    Utilities.formatDate(
+      new Date(),
+      AKORT_V300.TIMEZONE,
+      'yyyyMMdd_HHmmss'
+    )
+  );
+
+  var spreadsheetId = ss.getId();
+  var file = DriveApp.getFileById(spreadsheetId);
+  var sh = ss.getSheets()[0];
+  var headers = ['series_id', 'period', 'value'];
+
+  try {
+    sh.setName('PROBE');
+
+    if (sh.getMaxRows() > 10) {
+      sh.deleteRows(11, sh.getMaxRows() - 10);
+    }
+
+    sh.getRange(1, 1, 7, 3).setValues([
+      headers,
+      ['S1', 'P1', 1],
+      ['S1', 'P2', 2],
+      ['S1', 'P3', 3],
+      ['S2', 'P1', 10],
+      ['S2', 'P2', 20],
+      ['S2', 'P3', 30]
+    ]);
+
+    /*
+     * Критично: завершаем операции SpreadsheetApp до вызова
+     * Advanced Sheets API внутри v300DeleteRows_.
+     */
+    SpreadsheetApp.flush();
+
+    /*
+     * Получаем новый объект книги после flush, чтобы тест не зависел
+     * от локального кэша исходного SpreadsheetApp-объекта.
+     */
+    ss = SpreadsheetApp.openById(spreadsheetId);
+    sh = ss.getSheetByName('PROBE');
+
+    var beforeMaxRows = sh.getMaxRows();
+    var beforeLastRow = sh.getLastRow();
+    var beforeRows = sh
+      .getRange(1, 1, beforeLastRow, headers.length)
+      .getValues();
+
+    v300DeleteRows_(ss, sh, [2, 3, 4]);
+
+    /*
+     * v300DeleteRows_ использует Advanced Sheets API. Повторно открываем
+     * книгу перед проверкой результата через SpreadsheetApp.
+     */
+    SpreadsheetApp.flush();
+    ss = SpreadsheetApp.openById(spreadsheetId);
+    sh = ss.getSheetByName('PROBE');
+
+    var afterDeleteMaxRows = sh.getMaxRows();
+    var afterDeleteLastRow = sh.getLastRow();
+    var afterDeleteRows = sh
+      .getRange(
+        1,
+        1,
+        Math.max(1, afterDeleteLastRow),
+        headers.length
+      )
+      .getValues();
+
+    if (afterDeleteMaxRows !== beforeMaxRows) {
+      throw new Error(JSON.stringify({
+        message:
+          'Grid row capacity changed after deleteRange replacement preparation.',
+        beforeMaxRows: beforeMaxRows,
+        afterDeleteMaxRows: afterDeleteMaxRows,
+        beforeRows: beforeRows,
+        afterDeleteRows: afterDeleteRows
+      }));
+    }
+
+    var replacement = [];
+
+    for (var i = 1; i <= 8; i += 1) {
+      replacement.push([
+        'S1',
+        'N' + i,
+        100 + i
+      ]);
+    }
+
+    v300AppendRows_(sh, headers, replacement);
+
+    SpreadsheetApp.flush();
+    ss = SpreadsheetApp.openById(spreadsheetId);
+    sh = ss.getSheetByName('PROBE');
+
+    var afterAppendLastRow = sh.getLastRow();
+    var afterAppendRows = sh
+      .getRange(
+        1,
+        1,
+        Math.max(1, afterAppendLastRow),
+        headers.length
+      )
+      .getValues();
+
+    var rows = v300ReadObjects_(sh, headers);
+    var counts = {
+      S1: 0,
+      S2: 0
+    };
+
+    rows.forEach(function (row) {
+      var seriesId = v300Text_(row.series_id);
+
+      if (counts[seriesId] !== undefined) {
+        counts[seriesId] += 1;
+      }
+    });
+
+    if (counts.S1 !== 8 || counts.S2 !== 3) {
+      throw new Error(JSON.stringify({
+        message:
+          'Storage mutation probe lost or duplicated series rows.',
+        expectedCounts: {
+          S1: 8,
+          S2: 3
+        },
+        actualCounts: counts,
+        beforeMaxRows: beforeMaxRows,
+        afterDeleteMaxRows: afterDeleteMaxRows,
+        afterAppendMaxRows: sh.getMaxRows(),
+        beforeLastRow: beforeLastRow,
+        afterDeleteLastRow: afterDeleteLastRow,
+        afterAppendLastRow: afterAppendLastRow,
+        beforeRows: beforeRows,
+        afterDeleteRows: afterDeleteRows,
+        afterAppendRows: afterAppendRows
+      }));
+    }
+
+    if (sh.getMaxRows() < 12) {
+      throw new Error(JSON.stringify({
+        message:
+          'appendDimension did not expand the grid.',
+        expectedMinimumRows: 12,
+        actualMaxRows: sh.getMaxRows(),
+        actualLastRow: afterAppendLastRow,
+        actualCounts: counts,
+        afterAppendRows: afterAppendRows
+      }));
+    }
+
+    return {
+      beforeMaxRows: beforeMaxRows,
+      afterDeleteMaxRows: afterDeleteMaxRows,
+      afterAppendMaxRows: sh.getMaxRows(),
+      beforeLastRow: beforeLastRow,
+      afterDeleteLastRow: afterDeleteLastRow,
+      afterAppendLastRow: afterAppendLastRow,
+      seriesCounts: counts,
+      lastRow: afterAppendLastRow
+    };
+  } finally {
+    try {
+      file.setTrashed(true);
+    } catch (ignore) {}
   }
+}
   function v300SeriesReplacementRollbackProbe_(){
     var ss=SpreadsheetApp.create('AKORT_ALPHA623_REPLACEMENT_PROBE_'+Utilities.formatDate(new Date(),AKORT_V300.TIMEZONE,'yyyyMMdd_HHmmss'));
     var file=DriveApp.getFileById(ss.getId()),sh=ss.getSheets()[0],headers=['series_id','period','value'],combinedCode='';

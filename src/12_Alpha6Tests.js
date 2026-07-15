@@ -42,3 +42,89 @@ AKORT.Alpha6Tests = (function(){
     var ok=tests.every(function(x){return x.status==='PASS';});return ok?AKORT.Result.success('Alpha.6 corrected Incremental Publish smoke test passed.',{tests:tests,status:AKORT.IncrementalPublish.statusSummary()}):AKORT.Result.failure('ALPHA6_SMOKE_TEST_FAILED','One or more corrected alpha.6 checks failed.',{tests:tests});},{lock:true,persistLogs:true});}
   return{runSmokeTest:runSmokeTest};
 })();
+function AKORT_alpha623Diagnostics() {
+  function serializeError_(error) {
+    return {
+      name: String(error && error.name || ''),
+      code: String(error && error.code || ''),
+      message: String(error && error.message || error || ''),
+      stack: String(error && error.stack || ''),
+      details: error && error.details ? error.details : null
+    };
+  }
+
+  function run_(id, fn) {
+    try {
+      return {
+        id: id,
+        status: 'PASS',
+        data: fn()
+      };
+    } catch (error) {
+      return {
+        id: id,
+        status: 'FAIL',
+        error: serializeError_(error)
+      };
+    }
+  }
+
+  var incrementalPublish =
+    typeof AKORT !== 'undefined' &&
+    AKORT.IncrementalPublish;
+
+  var testApi =
+    incrementalPublish &&
+    incrementalPublish.Test;
+
+  if (!testApi) {
+    throw new Error(
+      'AKORT.IncrementalPublish.Test is not available.'
+    );
+  }
+
+  if (typeof testApi.storageMutationProbe !== 'function') {
+    throw new Error(
+      'storageMutationProbe is not exported.'
+    );
+  }
+
+  if (typeof testApi.seriesReplacementRollbackProbe !== 'function') {
+    throw new Error(
+      'seriesReplacementRollbackProbe is not exported.'
+    );
+  }
+
+  var result = {
+    release: '4.0.0-alpha.6.2.3',
+    tests: [
+      run_(
+        'series_replacement_grid_mutation_safe',
+        function () {
+          return testApi.storageMutationProbe();
+        }
+      ),
+      run_(
+        'series_replacement_actual_function_rollback_and_retry',
+        function () {
+          return testApi.seriesReplacementRollbackProbe();
+        }
+      )
+    ]
+  };
+
+  result.failed = result.tests.filter(function (test) {
+    return test.status !== 'PASS';
+  });
+
+  result.failedCount = result.failed.length;
+
+  console.log(JSON.stringify({
+    release: result.release,
+    failedCount: result.failedCount,
+    failed: result.failed,
+    tests: result.tests
+  }));
+
+  return result;
+}
