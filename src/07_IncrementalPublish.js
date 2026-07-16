@@ -2788,9 +2788,45 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
     return{recovery:true,frequency:frequency,chunkStart:cursor,chunkEnd:end,total:descriptors.length,series:expectedIds.length,rows:objects.length,stageComplete:complete,nextPhase:state.phase};
   }
   function alpha624FilteredParityCompare_(fullRows,incrementalRows,headers,sheetName,predicate,label){
-    function canonical(rows){return(rows||[]).filter(predicate).sort(function(a,b){return rowIdentity_(sheetName,a).localeCompare(rowIdentity_(sheetName,b));}).map(function(r){return headers.map(function(h){return serializeCell_(r[h],h);}).join('\u001f');});}
-    var full=canonical(fullRows),incremental=canonical(incrementalRows),mismatch=-1,max=Math.max(full.length,incremental.length);for(var i=0;i<max;i+=1){if(full[i]!==incremental[i]){mismatch=i;break;}}
-    return{sheet:sheetName,scope:label,fullRows:full.length,incrementalRows:incremental.length,equal:mismatch<0,firstMismatchIndex:mismatch,fullHash:AKORT.Core.sha256(full.join('\u001e')),incrementalHash:AKORT.Core.sha256(incremental.join('\u001e'))};
+    function parityCell(r,h){
+      if(sheetName===AKORT_V300.SHEETS.PUBLISH_PRICES_MONTHLY&&h==='period_label'){
+        var raw=r[h],text=v300Text_(raw),labelKey='';
+        if(Object.prototype.toString.call(raw)==='[object Date]'&&!isNaN(raw.getTime()))labelKey=v300MonthKey_(raw);
+        else if(/^\d{4}-\d{2}(?:-\d{2})?$/.test(text))labelKey=text.slice(0,7);
+        if(labelKey){
+          var monthKey=v300MonthKey_(r.month_start);
+          return monthKey&&labelKey!==monthKey?'INVALID_MONTH_LABEL:'+labelKey+'|MONTH_START:'+monthKey:'M:'+labelKey;
+        }
+      }
+      return serializeCell_(r[h],h);
+    }
+    function canonical(rows){
+      return(rows||[]).filter(predicate).map(function(r){
+        var cells=headers.map(function(h){return parityCell(r,h);});
+        return{identity:rowIdentity_(sheetName,r),cells:cells,text:cells.join('\u001f')};
+      }).sort(function(a,b){
+        var identityOrder=a.identity.localeCompare(b.identity);
+        return identityOrder||a.text.localeCompare(b.text);
+      });
+    }
+    var full=canonical(fullRows),incremental=canonical(incrementalRows),mismatch=-1,max=Math.max(full.length,incremental.length);
+    for(var i=0;i<max;i+=1){if(!full[i]||!incremental[i]||full[i].text!==incremental[i].text){mismatch=i;break;}}
+    var result={sheet:sheetName,scope:label,fullRows:full.length,incrementalRows:incremental.length,equal:mismatch<0,firstMismatchIndex:mismatch,fullHash:AKORT.Core.sha256(full.map(function(x){return x.text;}).join('\u001e')),incrementalHash:AKORT.Core.sha256(incremental.map(function(x){return x.text;}).join('\u001e'))};
+    if(mismatch>=0){
+      var f=full[mismatch]||null,n=incremental[mismatch]||null,diffs=[];
+      headers.forEach(function(h,index){
+        var fv=f?f.cells[index]:'<MISSING_ROW>',nv=n?n.cells[index]:'<MISSING_ROW>';
+        if(fv!==nv)diffs.push({field:h,full:fv,incremental:nv});
+      });
+      result.firstMismatch={
+        index:mismatch,
+        fullIdentity:f?f.identity:'',
+        incrementalIdentity:n?n.identity:'',
+        differingFieldCount:diffs.length,
+        fieldDiffs:diffs.slice(0,25)
+      };
+    }
+    return result;
   }
   function alpha624ParityProbe_(){
     var s=loadRecon_();if(!s||!s.fullId)throw AKORT.Core.error('ALPHA624_RECONCILIATION_REQUIRED','Parity requires the preserved Alpha.6 reconciliation Full workbook.');
