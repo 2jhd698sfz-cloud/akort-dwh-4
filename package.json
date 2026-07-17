@@ -5,6 +5,8 @@
   "description": "AKORT DWH 4.0 Apps Script development repository",
   "scripts": {
     "status:dev": "clasp status",
-    "deploy:dev": "bash scripts/deploy-dev.sh"
+    "deploy:dev": "bash scripts/deploy-dev.sh",
+    "test": "npm run test:alpha71-contract",
+    "test:alpha71-contract": "node tests/alpha71_contract_static.test.js"
   }
 }
