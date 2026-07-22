@@ -66,13 +66,13 @@ vm.runInContext(source, context, {filename:sourcePath});
 vm.runInContext(testsSource, context, {filename:testsPath});
 
 const result = context.AKORT.Alpha74UpsertTests.runPureTests();
-if (!result.ok || result.failed !== 0 || result.passed !== 65 || result.skipped !== 15 || result.total !== 80) {
+if (!result.ok || result.failed !== 0 || result.passed !== 88 || result.skipped !== 15 || result.total !== 103) {
   console.error(JSON.stringify(result, null, 2));
-  throw new Error('Alpha.7.4 candidate-r2 pure/model test matrix failed.');
+  throw new Error('Alpha.7.4 candidate-r3 pure/model test matrix failed.');
 }
 
 const required = [
-  "var VERSION = '4.0-incremental-aggregate-refresh-2'",
+  "var VERSION = '4.0-incremental-aggregate-refresh-3'",
   "RUNS: 'AGGREGATE_REFRESH_RUNS'",
   "QUEUE: 'AGGREGATE_REFRESH_QUEUE'",
   "BATCHES: 'AGGREGATE_REFRESH_BATCHES'",
@@ -83,6 +83,21 @@ const required = [
   "function calculateSlicesPhase_",
   "function proveCalculationQueue_",
   "function proveMutationQueue_",
+  "function proveWriteBatchPlan_",
+  "function buildWriteBatches_",
+  "function processMutationBatchesPhase_",
+  "function processRollbackBatchesPhase_",
+  "function scanChunkPartition_",
+  "function activeDeleteHintsFromRows_",
+  "function physicalTemplateIndex_",
+  "function validateTargetContractMetadata_",
+  "function assertValueOnlyChunk_",
+  "function assertAdvancedValueOnlyGrid_",
+  "function assertAdvancedValueOnlyRange_",
+  "function assertSheetValueOnlyStructure_",
+  "function mutationSizingPayload_",
+  "delete input.physical_templates;",
+  "ALPHA74_LEGACY_ACTIVE_RUN_BLOCKS_UPGRADE",
   "function verifyAffectedPhase_",
   "function verifyUnrelatedPhase_",
   "function rollbackVerifyAffectedPhase_",
@@ -95,6 +110,10 @@ const required = [
   "function categoryDefinitionsForRow_",
   "function readRowsForRun_",
   "version:'SHA256_LANES_V1'",
+  "EXACT_29_VALUE_AND_NUMBER_FORMAT_ONLY_V1",
+  "forward_attempt_count",
+  "rollback_attempt_count",
+  "write_batch_id",
   "calculation_queue_start_row",
   "mutation_queue_start_row",
   "result_artifact_id",
@@ -108,7 +127,7 @@ const required = [
   "regular_pipeline_enabled:false",
 ];
 for (const marker of required) {
-  if (!source.includes(marker)) throw new Error(`Missing candidate-r2 architecture marker: ${marker}`);
+  if (!source.includes(marker)) throw new Error(`Missing candidate-r3 architecture marker: ${marker}`);
 }
 const forbidden = [
   "replayPlanner_(request,scan.rows,true)",
@@ -118,6 +137,9 @@ const forbidden = [
   "readTable_(serviceSheets_().batches,BATCH_HEADERS)",
   "readTable_(serviceSheets_().backup,BACKUP_HEADERS)",
   "AGGREGATE_CANONICAL_REGISTRY",
+  "pending.slice(0,cfg.mutation_batch_rows)",
+  "else accumulateToken_(unrelated",
+  "run.phase='APPLY_DELETE'",
   "clasp push --force",
 ];
 for (const marker of forbidden) {
@@ -127,11 +149,11 @@ if (/function\s+AKORT_alpha74UpsertDispatcherWorker\(\)\{return AKORT_printResul
 if (!/while\(!TERMINAL\[text_\(result\.status\)\]/.test(source)) throw new Error('Dispatcher does not process multiple durable steps per invocation.');
 if (/function visibleSeriesKey_\(row\)[\s\S]{0,300}row\.aggregate_id/.test(source)) throw new Error('Physical series identity still depends on period-derived aggregate_id.');
 if (!source.includes("targetedCurrent_(targetSheet_(),slice,request,true,[])")) throw new Error('Rollback final verification does not use restored geometry.');
-const mutationStart = source.indexOf('function processMutationPhase_');
-const mutationEnd = source.indexOf('function verifyAffectedPhase_', mutationStart);
+const mutationStart = source.indexOf('function processMutationBatchesPhase_');
+const mutationEnd = source.indexOf('function processRollbackBatchesPhase_', mutationStart);
 const mutationSource = source.slice(mutationStart, mutationEnd);
 if (mutationSource.includes('getDataRange')) throw new Error('Mutation phase contains unbounded getDataRange.');
-if (!mutationSource.includes('proveMutationQueue_')) throw new Error('Mutation phase lacks exact model/queue proof.');
+if (!mutationSource.includes('proveMutationQueue_') || !mutationSource.includes('proveWriteBatchPlan_')) throw new Error('Mutation phase lacks exact model/queue/batch proof.');
 const verifyStart = source.indexOf('function verifyAffectedPhase_');
 const verifyEnd = source.indexOf('function rollbackSort_', verifyStart);
 const verifySource = source.slice(verifyStart, verifyEnd);
