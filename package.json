@@ -6,10 +6,11 @@
   "scripts": {
     "status:dev": "clasp status",
     "deploy:dev": "bash scripts/deploy-dev.sh",
-    "test": "npm run test:alpha71-contract && npm run test:alpha72-calculator && npm run test:alpha72-golden && npm run test:alpha73-special-revision",
+    "test": "npm run test:alpha71-contract && npm run test:alpha72-calculator && npm run test:alpha72-golden && npm run test:alpha73-special-revision && npm run test:alpha74-upsert",
     "test:alpha71-contract": "node tests/alpha71_contract_static.test.js",
     "test:alpha72-calculator": "node tests/alpha72_calculator_static.test.js",
     "test:alpha72-golden": "node tests/alpha72_golden_acceptance_static.test.js",
-    "test:alpha73-special-revision": "node tests/alpha73_special_revision_static.test.js"
+    "test:alpha73-special-revision": "node tests/alpha73_special_revision_static.test.js",
+    "test:alpha74-upsert": "node tests/alpha74_incremental_aggregate_upsert_static.test.js"
   }
 }
