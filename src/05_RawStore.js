@@ -716,7 +716,13 @@ AKORT.RawStore = (function () {
       var prior = readObjects_(reversalTable_(spreadsheet)).filter(function (row) {
         return String(row.target_load_id) === String(targetLoadId) && String(row.status) === 'SUCCESS';
       });
-      return { targetLoadId: targetLoadId, reused: true, reversedRows: Number(targetLoad.rows_reversed || 0), reversalLog: prior };
+      return {
+        targetLoadId: targetLoadId,
+        reversalLoadId: prior.length ? String(prior[0].reversal_load_id || '') : '',
+        reused: true,
+        reversedRows: Number(targetLoad.rows_reversed || 0),
+        reversalLog: prior
+      };
     }
     if (String(targetLoad.status) !== LOAD_STATUSES.COMMITTED) {
       throw AKORT.Core.error('RAW_LOAD_NOT_REVERSIBLE', 'Only a committed RAW load may be logically reversed.', {
@@ -1012,13 +1018,13 @@ AKORT.RawStoreHandlers = (function () {
       state.publishUpdate = AKORT.IncrementalPublish.applyPublish(publishPlan, context.operation.operation_id);
       return state.publishUpdate;
     }
-    if (phase === 'UPDATE_AGGREGATES') {
+    if (AKORT.AggregateIntegration.Phases.indexOf(phase) >= 0 || phase === 'FINALIZING') {
       var publishPlanSummary = storedPublishPlanSummary_(state, function () { return AKORT.IncrementalPublish.planLoad(state.loadId); });
-      if (publishPlanSummary.testOnly) {
-        state.aggregateUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: publishPlanSummary.testMarker };
-        return state.aggregateUpdate;
-      }
-      state.aggregateUpdate = AKORT.IncrementalPublish.applyAggregates(publishPlanSummary, context.operation.operation_id);
+      state.aggregateUpdate = AKORT.AggregateIntegration.execute(phase, context, {
+        loadId: state.loadId,
+        mode: 'REVISION',
+        testOnly: publishPlanSummary.testOnly === true
+      });
       return state.aggregateUpdate;
     }
     if (phase === 'UPDATE_STATUS') return { loadId: state.loadId, loadStatus: AKORT.RawStore.status(state.loadId).load.status };
@@ -1058,13 +1064,14 @@ AKORT.RawStoreHandlers = (function () {
       state.publishUpdate = AKORT.IncrementalPublish.applyPublish(reversalPublishPlan, context.operation.operation_id);
       return state.publishUpdate;
     }
-    if (phase === 'UPDATE_AGGREGATES') {
+    if (AKORT.AggregateIntegration.Phases.indexOf(phase) >= 0 || phase === 'FINALIZING') {
       var reversalPlanSummary = storedPublishPlanSummary_(state, function () { return AKORT.IncrementalPublish.planReversal(state.reversal); });
-      if (reversalPlanSummary.testOnly) {
-        state.aggregateUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: reversalPlanSummary.testMarker };
-        return state.aggregateUpdate;
-      }
-      state.aggregateUpdate = AKORT.IncrementalPublish.applyAggregates(reversalPlanSummary, context.operation.operation_id);
+      state.aggregateUpdate = AKORT.AggregateIntegration.execute(phase, context, {
+        loadId: state.loadId,
+        mode: 'REVERSAL',
+        reversal: state.reversal,
+        testOnly: reversalPlanSummary.testOnly === true
+      });
       return state.aggregateUpdate;
     }
     if (phase === 'UPDATE_STATUS') return { reversed: true, targetLoadId: input.targetLoadId };

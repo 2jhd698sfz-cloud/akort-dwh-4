@@ -2,6 +2,12 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
 function AKORT_printResult_(result) { console.log(JSON.stringify(result, null, 2)); return result; }
 
+function AKORT_alpha74Install(){return AKORT_printResult_(AKORT.IncrementalPublish.install());}
+function AKORT_alpha74Status(){return AKORT_printResult_(AKORT.Result.success('Alpha.7.4 aggregate integration status loaded.',AKORT.AggregateIntegration.statusSummary()));}
+function AKORT_alpha74SmokeTest(){return AKORT_printResult_(AKORT.Alpha74Tests.runSmokeTest());}
+function AKORT_alpha74ReadOnlyContractScan(){return AKORT_printResult_(AKORT.AggregateIntegration.readOnlyContractScan());}
+function AKORT_alpha74ReadOnlyPlan(operationId,loadId,mode){return AKORT_printResult_(AKORT.AggregateIntegration.planReadOnly(operationId,loadId,{mode:mode||'REVISION'}));}
+
 function AKORT_alpha6Install(){return AKORT_printResult_(AKORT.IncrementalPublish.install());}
 function AKORT_alpha6SmokeTest(){return AKORT_printResult_(AKORT.Alpha6Tests.runSmokeTest());}
 function AKORT_alpha6Status(){return AKORT_printResult_(AKORT.Result.success('Incremental Publish status loaded.',AKORT.IncrementalPublish.statusSummary()));}
@@ -142,70 +148,4 @@ function AKORT_alpha4SmokeStatus() {
 /** Alpha.6 hotfix 1: delete only ALPHA4_TEST_* artifacts and clear the checkpoint. */
 function AKORT_alpha4SmokeReset() {
   return AKORT_printResult_(AKORT.Alpha4Tests.reset());
-}
-function AKORT_probeIncrementalRead() {
-  var id = '1ds8KXqdc-jir_dUCrTshRug4vG7hlqSiwxAbm6VhAbQ';
-  var result = {};
-
-  try {
-    var ss = SpreadsheetApp.openById(id);
-    var sheet = ss.getSheetByName('PUBLISH_PRICES_WEEKLY');
-
-    result = {
-      ok: true,
-      spreadsheetName: ss.getName(),
-      sheetName: sheet.getName(),
-      lastRow: sheet.getLastRow(),
-      lastColumn: sheet.getLastColumn(),
-      sample: sheet.getRange(1, 1, 2, 2).getDisplayValues()
-    };
-  } catch (error) {
-    result = {
-      ok: false,
-      message: String(error.message || error),
-      stack: String(error.stack || '')
-    };
-  }
-
-  console.log(JSON.stringify(result, null, 2));
-  return result;
-}
-function AKORT_probeIncrementalWrite() {
-  var id = '1ds8KXqdc-jir_dUCrTshRug4vG7hlqSiwxAbm6VhAbQ';
-  var probeSheetName = '__AKORT_ACCESS_PROBE__';
-  var result = {};
-
-  try {
-    var ss = SpreadsheetApp.openById(id);
-    var sheet = ss.getSheetByName(probeSheetName);
-
-    if (!sheet) {
-      sheet = ss.insertSheet(probeSheetName);
-    }
-
-    sheet.clear();
-    sheet.getRange('A1:B2').setValues([
-      ['probe', 'value'],
-      [new Date().toISOString(), 'OK']
-    ]);
-
-    SpreadsheetApp.flush();
-
-    result = {
-      ok: true,
-      writtenValue: sheet.getRange('B2').getDisplayValue()
-    };
-
-    ss.deleteSheet(sheet);
-    SpreadsheetApp.flush();
-  } catch (error) {
-    result = {
-      ok: false,
-      message: String(error.message || error),
-      stack: String(error.stack || '')
-    };
-  }
-
-  console.log(JSON.stringify(result, null, 2));
-  return result;
 }

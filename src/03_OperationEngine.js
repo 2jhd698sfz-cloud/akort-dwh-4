@@ -8,9 +8,16 @@ AKORT.OperationEngine = (function () {
     'STAGE',
     'COMMIT_RAW',
     'UPDATE_PUBLISH',
-    'UPDATE_AGGREGATES',
+    'PREPARING_AGGREGATE_IMPACT',
+    'MATERIALIZING_AGGREGATE_INPUTS',
+    'CALCULATING_AGGREGATE_SLICES',
+    'STAGING_AGGREGATE_ROWS',
+    'UPDATING_AGGREGATES',
+    'UPDATING_AGGREGATE_LATEST',
+    'RECONCILING_AGGREGATES',
     'UPDATE_STATUS',
     'QUICK_AUDIT',
+    'FINALIZING',
     'SUCCESS'
   ];
 
@@ -22,10 +29,17 @@ AKORT.OperationEngine = (function () {
     PARSE: 'STAGE',
     STAGE: 'COMMIT_RAW',
     COMMIT_RAW: 'UPDATE_PUBLISH',
-    UPDATE_PUBLISH: 'UPDATE_AGGREGATES',
-    UPDATE_AGGREGATES: 'UPDATE_STATUS',
+    UPDATE_PUBLISH: 'PREPARING_AGGREGATE_IMPACT',
+    PREPARING_AGGREGATE_IMPACT: 'MATERIALIZING_AGGREGATE_INPUTS',
+    MATERIALIZING_AGGREGATE_INPUTS: 'CALCULATING_AGGREGATE_SLICES',
+    CALCULATING_AGGREGATE_SLICES: 'STAGING_AGGREGATE_ROWS',
+    STAGING_AGGREGATE_ROWS: 'UPDATING_AGGREGATES',
+    UPDATING_AGGREGATES: 'UPDATING_AGGREGATE_LATEST',
+    UPDATING_AGGREGATE_LATEST: 'RECONCILING_AGGREGATES',
+    RECONCILING_AGGREGATES: 'UPDATE_STATUS',
     UPDATE_STATUS: 'QUICK_AUDIT',
-    QUICK_AUDIT: 'SUCCESS'
+    QUICK_AUDIT: 'FINALIZING',
+    FINALIZING: 'SUCCESS'
   };
 
   var STATUSES = {
@@ -34,6 +48,7 @@ AKORT.OperationEngine = (function () {
     PAUSED: 'PAUSED',
     RETRY_PENDING: 'RETRY_PENDING',
     FAILED: 'FAILED',
+    FAILED_REQUIRES_REVIEW: 'FAILED_REQUIRES_REVIEW',
     DEAD_LETTER: 'DEAD_LETTER',
     CANCELLED: 'CANCELLED',
     SUCCESS: 'SUCCESS'
@@ -42,13 +57,14 @@ AKORT.OperationEngine = (function () {
   var TERMINAL_STATUSES = {
     SUCCESS: true,
     FAILED: true,
+    FAILED_REQUIRES_REVIEW: true,
     DEAD_LETTER: true,
     CANCELLED: true
   };
 
   var SETTINGS = {
     OPERATION_SCHEMA_VERSION: {
-      value: '4.0-operation-1',
+      value: '4.0-operation-2',
       type: 'STRING',
       description: 'Operation Engine checkpoint and state-machine contract version'
     },
@@ -171,6 +187,13 @@ AKORT.OperationEngine = (function () {
     if (checkpoint.control.stopRequested === undefined) checkpoint.control.stopRequested = false;
     checkpoint.meta = checkpoint.meta || {};
     checkpoint.lease = checkpoint.lease || null;
+    checkpoint.aggregate = checkpoint.aggregate || {
+      schemaVersion: '4.0-aggregate-stage-1',
+      status: 'NOT_STARTED',
+      calculationCursor: 0,
+      stagingCursor: 0,
+      batchNo: 0
+    };
     return checkpoint;
   }
 
@@ -201,8 +224,50 @@ AKORT.OperationEngine = (function () {
     return index;
   }
 
+  function assertSchemaMigrationReady_(spreadsheet) {
+    var settingsTable = table_(spreadsheet, 'SYSTEM_SETTINGS');
+    var settings = readObjects_(settingsTable);
+    var installed = settings.filter(function (row) {
+      return String(row.setting_key) === 'OPERATION_SCHEMA_VERSION' &&
+        (String(row.is_active) === '1' || row.is_active === true);
+    })[0];
+    if (installed && String(installed.setting_value || '') === String(SETTINGS.OPERATION_SCHEMA_VERSION.value)) {
+      return { checked: true, fromVersion: String(installed.setting_value || ''), activeOperations: [] };
+    }
+
+    var queue = table_(spreadsheet, 'OPERATION_QUEUE');
+    var active = readObjects_(queue).filter(function (row) {
+      return !TERMINAL_STATUSES[String(row.status || '')];
+    }).map(function (row) {
+      return {
+        operationId: String(row.operation_id || ''),
+        status: String(row.status || ''),
+        phase: String(row.current_phase || '')
+      };
+    });
+    if (active.length > 0) {
+      throw AKORT.Core.error(
+        'OPERATION_SCHEMA_MIGRATION_BLOCKED',
+        'Operation schema cannot be upgraded while non-terminal operations exist.',
+        {
+          retryable: false,
+          fromVersion: installed ? String(installed.setting_value || '') : '',
+          toVersion: SETTINGS.OPERATION_SCHEMA_VERSION.value,
+          activeOperations: active
+        }
+      );
+    }
+    return {
+      checked: true,
+      fromVersion: installed ? String(installed.setting_value || '') : '',
+      toVersion: SETTINGS.OPERATION_SCHEMA_VERSION.value,
+      activeOperations: []
+    };
+  }
+
   function upsertSettings_() {
     var spreadsheet = getDwh_();
+    var migration = assertSchemaMigrationReady_(spreadsheet);
     var settingsTable = table_(spreadsheet, 'SYSTEM_SETTINGS');
     var rows = readObjects_(settingsTable);
     var byKey = {};
@@ -250,21 +315,31 @@ AKORT.OperationEngine = (function () {
       }
     });
 
-    return actions;
+    return { migration: migration, actions: actions };
   }
 
   function install() {
+    var preflight = AKORT.Core.safeRun('OPERATION_SCHEMA_MIGRATION_PREFLIGHT', function () {
+      AKORT.EnvironmentGuard.assertDev();
+      return AKORT.Result.success(
+        'Operation schema migration preflight passed.',
+        assertSchemaMigrationReady_(getDwh_())
+      );
+    }, { lock: true, persistLogs: true });
+    if (!preflight.ok) return preflight;
+
     var coreResult = AKORT.Core.install();
     if (!coreResult.ok) return coreResult;
 
     return AKORT.Core.safeRun('OPERATION_ENGINE_INSTALL', function (context) {
       AKORT.EnvironmentGuard.assertDev();
-      var actions = upsertSettings_();
+      var installation = upsertSettings_();
       var settings = runtimeSettings_();
       context.logger.info('Operation Engine installed', {
         operationSchemaVersion: AKORT.Release.operationSchemaVersion,
         settings: settings,
-        settingActions: actions
+        settingActions: installation.actions,
+        migration: installation.migration
       }, { eventCode: 'OPERATION_ENGINE_INSTALLED' });
 
       return AKORT.Result.success('Operation Engine installed successfully.', {
@@ -273,7 +348,9 @@ AKORT.OperationEngine = (function () {
         coreRegistration: coreResult.data ? coreResult.data.registration : null,
         operationSchemaVersion: AKORT.Release.operationSchemaVersion,
         phases: PHASES.slice(),
-        settingActions: actions,
+        settingActions: installation.actions,
+        migration: installation.migration,
+        migrationPreflight: preflight.data,
         runtimeSettings: settings
       });
     }, { lock: true, persistLogs: true });
@@ -329,7 +406,14 @@ AKORT.OperationEngine = (function () {
           idempotencyKey: options.idempotencyKey || '',
           createdAt: AKORT.Core.now()
         },
-        lease: null
+        lease: null,
+        aggregate: {
+          schemaVersion: '4.0-aggregate-stage-1',
+          status: 'NOT_STARTED',
+          calculationCursor: 0,
+          stagingCursor: 0,
+          batchNo: 0
+        }
       };
       var operation = {
         operation_id: operationId,
@@ -506,6 +590,30 @@ AKORT.OperationEngine = (function () {
     operation.error_code = caught && caught.code ? caught.code : 'UNEXPECTED_ERROR';
     operation.error_message = caught && caught.message ? caught.message : String(caught);
 
+    if (details && details.requiresReview === true) {
+      operation.status = STATUSES.FAILED_REQUIRES_REVIEW;
+      operation.finished_at = AKORT.Core.now();
+      checkpoint.nextPhase = phase;
+      clearLease_(operation, checkpoint);
+      appendStep_(
+        spreadsheet,
+        operation,
+        phase,
+        STATUSES.FAILED_REQUIRES_REVIEW,
+        startedAt,
+        checkpoint,
+        null,
+        caught
+      );
+      saveObject_(operationTable, operation);
+      logger.error('Operation stopped for manual review', {
+        phase: phase,
+        errorCode: operation.error_code,
+        errorMessage: operation.error_message
+      }, { operationId: operation.operation_id, eventCode: 'OPERATION_REQUIRES_REVIEW' });
+      return AKORT.Result.failure(operation.error_code, operation.error_message, resultData_(spreadsheet, operation));
+    }
+
     if (retryable) {
       operation.attempt_no = Number(operation.attempt_no || 0) + 1;
       var exhausted = operation.attempt_no >= Number(operation.max_attempts || 1);
@@ -567,6 +675,13 @@ AKORT.OperationEngine = (function () {
     }
     if (operation.status === STATUSES.FAILED) {
       return AKORT.Result.failure(operation.error_code || 'OPERATION_FAILED', operation.error_message || 'Operation is in failed status.', resultData_(spreadsheet, operation));
+    }
+    if (operation.status === STATUSES.FAILED_REQUIRES_REVIEW) {
+      return AKORT.Result.failure(
+        operation.error_code || 'OPERATION_REQUIRES_REVIEW',
+        operation.error_message || 'Operation requires manual review.',
+        resultData_(spreadsheet, operation)
+      );
     }
     if (operation.status === STATUSES.CANCELLED) {
       return AKORT.Result.failure('OPERATION_CANCELLED', 'Operation was cancelled.', resultData_(spreadsheet, operation));
@@ -632,6 +747,30 @@ AKORT.OperationEngine = (function () {
         });
       } catch (caught) {
         return handlePhaseError_(spreadsheet, operationTable, operation, checkpoint, phase, phaseStartedAt, caught, context.logger);
+      }
+
+      if (outcome && outcome.repeatPhase === true) {
+        checkpoint.nextPhase = phase;
+        operation.current_phase = phase;
+        appendStep_(spreadsheet, operation, phase, 'CHECKPOINT', phaseStartedAt, checkpoint, outcome, null);
+        saveCheckpoint_(operation, checkpoint);
+        saveObject_(operationTable, operation);
+        context.logger.info('Operation phase checkpoint saved', {
+          phase: phase,
+          nextPhase: phase
+        }, {
+          operationId: operation.operation_id,
+          eventCode: 'OPERATION_PHASE_CHECKPOINT'
+        });
+        return pause_(
+          spreadsheet,
+          operationTable,
+          operation,
+          checkpoint,
+          'Operation phase saved a bounded-work checkpoint.',
+          context.logger,
+          'OPERATION_PHASE_CHECKPOINT'
+        );
       }
 
       var next = NEXT_PHASE[phase];

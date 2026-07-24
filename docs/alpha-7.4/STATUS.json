@@ -2,9 +2,15 @@
   "project": "AKORT DWH 4.0",
   "milestone": "Alpha.7.4",
   "architecture": "INTEGRATION_INTO_EXISTING_OPERATION_ENGINE",
-  "status": "DOCUMENTATION_COMPLETE_CODE_NOT_STARTED",
+  "status": "PURE_STATIC_IMPLEMENTED_AWAITING_ISOLATED_READ_ONLY_GATES",
   "physical_writes_allowed": false,
   "regular_pipeline_allowed": false,
+  "operation_schema_version": "4.0-operation-2",
+  "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
+  "implementation_release": "4.0.0-alpha.7.4",
+  "completed_gates": [0, 2],
+  "partially_completed_gates": [1, 7],
+  "next_gate": 3,
   "accepted_base_commit": "52590c8e036d49b9f76f87341b69881a916c851d",
   "accepted_base_tag": "v4.0.0-alpha.7.3-accepted",
   "active_branch": "codex/alpha-7.4-integration-reset",
@@ -14,6 +20,7 @@
     "docs/alpha-7.4/README.md",
     "docs/alpha-7.4/INTEGRATION_MAP_ALPHA3_ALPHA6.md",
     "docs/alpha-7.4/FINAL_CONTRACT.md",
-    "docs/alpha-7.4/IMPLEMENTATION_GATES.md"
+    "docs/alpha-7.4/IMPLEMENTATION_GATES.md",
+    "docs/alpha-7.4/RUNTIME_CONTEXT_CONTRACT.md"
   ]
 }

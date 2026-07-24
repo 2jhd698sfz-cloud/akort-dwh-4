@@ -1,0 +1,352 @@
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const root = path.resolve(__dirname, '..');
+const context = vm.createContext({ console, Date, JSON, Math, Object, Array, String, Number, Boolean, Error, RegExp, isFinite });
+context.AKORT = {
+  Core: {
+    sha256(value) {
+      const crypto = require('crypto');
+      return crypto.createHash('sha256').update(String(value)).digest('hex');
+    },
+    now() { return '2026-07-24T00:00:00.000Z'; },
+    error(code, message, details) {
+      const error = new Error(message);
+      error.code = code;
+      error.details = details || {};
+      return error;
+    }
+  }
+};
+
+function load(file) {
+  vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), context, { filename: file });
+}
+
+load('src/13_Alpha71AggregateContract.js');
+load('src/21_Alpha74AggregateIntegration.js');
+
+const A = context.AKORT.AggregateIntegration;
+const C = context.AKORT.AggregateContract;
+const tests = [];
+function test(name, fn) { tests.push({ name, fn }); }
+
+function calcRow(period, allowed = true) {
+  const series = 'D|weekly|group|G|price|wow|SUM_CONTRIBUTIONS|W|M';
+  return {
+    row_type: 'AGGREGATE_RESULT',
+    calculation_id: 'CALC',
+    aggregate_series_key: series,
+    aggregate_row_key: `${series}|${period}`,
+    dataset_code: 'D',
+    frequency: 'weekly',
+    aggregate_level: 'group',
+    aggregate_subject_id: 'G',
+    aggregate_name: 'Group G',
+    category_id: '',
+    value_type: 'price',
+    index_type: 'wow',
+    period_start: period,
+    calculation_method: 'SUM_CONTRIBUTIONS',
+    weight_rule_id: 'W',
+    membership_rule_id: 'M',
+    category_value: null,
+    category_change_pp: null,
+    category_weight: null,
+    aggregate_change_pp: 1.25,
+    contribution_to_group_change_pp: null,
+    contribution_to_basket_change_pp: null,
+    contribution_to_total_cpi_pp: null,
+    aggregate_value: null,
+    aggregate_base_value: null,
+    applied_members_count: 2,
+    applied_weight_sum: 1,
+    publication_allowed: allowed
+  };
+}
+
+function identity() {
+  return { operationId: 'OP1', loadId: 'LOAD1', planId: 'PLAN1', planFingerprint: 'PLAN_FP' };
+}
+
+function stage(period, allowed = true) {
+  return A.Test.buildStageRecord(calcRow(period, allowed), {
+    ...identity(),
+    calculationId: 'CALC',
+    weightSnapshotId: 'W_SNAPSHOT'
+  });
+}
+
+function target(period, rowNumber, value = 1) {
+  const row = A.Test.projectPublishRow(calcRow(period, true), { weightSnapshotId: 'W_SNAPSHOT' });
+  row.aggregate_change_pp = value;
+  row.__row = rowNumber;
+  return row;
+}
+
+function unrelated(rowNumber) {
+  const row = { ...target('2026-01-01', rowNumber) };
+  row.dataset_code = 'OTHER';
+  row.aggregate_id = 'OTHER_GROUP';
+  row.aggregate_name = 'Other group';
+  return row;
+}
+
+test('A74 metadata and schemas are exact', () => {
+  assert.equal(A.Version, '4.0-aggregate-integration-1');
+  assert.equal(A.OperationSchemaVersion, '4.0-operation-2');
+  assert.deepEqual(Array.from(A.Phases), [
+    'PREPARING_AGGREGATE_IMPACT',
+    'MATERIALIZING_AGGREGATE_INPUTS',
+    'CALCULATING_AGGREGATE_SLICES',
+    'STAGING_AGGREGATE_ROWS',
+    'UPDATING_AGGREGATES',
+    'UPDATING_AGGREGATE_LATEST',
+    'RECONCILING_AGGREGATES'
+  ]);
+  assert.deepEqual(Array.from(A.StageHeaders), [
+    'operation_id', 'load_id', 'plan_id', 'plan_fingerprint', 'calculation_id',
+    'aggregate_series_key', 'aggregate_row_key', 'period_start', 'action',
+    'row_payload_json', 'row_fingerprint', 'expected_target_fingerprint',
+    'stage_status', 'created_at', 'verified_at', 'release_version'
+  ]);
+  assert.equal(C.Headers.length, 29);
+  assert(!A.StageHeaders.some(header => /row_number|physical/i.test(header)));
+});
+
+test('PUBLISH_IMPACT is scoped, parsed and deduplicated', () => {
+  const record = {
+    impact_id: 'I1',
+    operation_id: 'OP1',
+    load_id: 'LOAD1',
+    frequency: 'weekly',
+    dataset_code: 'D',
+    category_id: 'C',
+    value_type: 'price',
+    source_period: '2026-01-01',
+    aggregate_combos_json: JSON.stringify([{ frequency: 'weekly', datasetCode: 'D', period: '2026-01-08', valueType: 'price', indexType: 'wow' }]),
+    series_ids_json: '["S1"]',
+    affected_periods_json: '["2026-01-08"]'
+  };
+  const result = A.Test.normalizeImpactRecords([record, { ...record }], 'OP1', 'LOAD1');
+  assert.equal(result.recordCount, 1);
+  assert.equal(result.aggregateComboCount, 1);
+  assert.throws(
+    () => A.Test.normalizeImpactRecords([{ ...record, load_id: 'OTHER' }], 'OP1', 'LOAD1'),
+    error => error.code === 'AGGREGATE_IMPACT_SCOPE_MISMATCH'
+  );
+});
+
+test('stage rows preserve logical identity and exact 29-column payload', () => {
+  const row = stage('2026-01-08');
+  const validation = A.Test.validateStageRows([row], identity());
+  assert.equal(validation.rowCount, 1);
+  assert.equal(validation.seriesCount, 1);
+  assert.deepEqual(Object.keys(JSON.parse(row.row_payload_json)).sort(), Array.from(C.Headers).sort());
+  assert.equal(row.action, 'UPSERT');
+  assert.equal(stage('2026-01-08', false).action, 'DELETE');
+});
+
+test('full logical-series replacement retains unaffected periods and updates latest atomically', () => {
+  const staged = [stage('2026-01-08')];
+  const other = unrelated(4);
+  const replacement = A.Test.buildSeriesReplacement([
+    target('2026-01-01', 2, 0.5),
+    target('2026-01-08', 3, 0.75),
+    other
+  ], staged);
+  assert.equal(replacement.affectedSeriesKeys.length, 1);
+  assert.equal(replacement.replacementRows.length, 2);
+  assert.deepEqual(Array.from(replacement.deletePhysicalRows), [3, 2]);
+  const latest = replacement.replacementRows.filter(row => Number(row.is_latest_period) === 1);
+  assert.equal(latest.length, 1);
+  assert.equal(latest[0].period_start, '2026-01-08');
+  assert.notEqual(replacement.beforeFingerprint, replacement.afterFingerprint);
+  const afterTarget = [other].concat(replacement.replacementRows);
+  assert.equal(A.Test.currentAffectedFingerprint(afterTarget, staged), replacement.afterFingerprint);
+  const reconciliation = A.Test.reconcileTarget(afterTarget, staged, replacement);
+  assert.equal(reconciliation.ok, true);
+});
+
+test('non-publishable result deletes only its logical period and restores prior latest', () => {
+  const staged = [stage('2026-01-08', false)];
+  const replacement = A.Test.buildSeriesReplacement([
+    target('2026-01-01', 2),
+    target('2026-01-08', 3)
+  ], staged);
+  assert.equal(replacement.replacementRows.length, 1);
+  assert.equal(replacement.replacementRows[0].period_start, '2026-01-01');
+  assert.equal(replacement.replacementRows[0].is_latest_period, 1);
+});
+
+test('lost-response recovery distinguishes before, after and third state', () => {
+  assert.equal(A.Test.classifyRecovery('BEFORE', 'AFTER', 'BEFORE'), 'BEFORE');
+  assert.equal(A.Test.classifyRecovery('BEFORE', 'AFTER', 'AFTER'), 'AFTER');
+  assert.equal(A.Test.classifyRecovery('BEFORE', 'AFTER', 'MIXED'), 'THIRD_STATE');
+  assert.equal(A.Test.classifyRecovery('SAME', 'SAME', 'SAME'), 'AFTER');
+});
+
+test('bounded phase execution checkpoints and recovers to SUCCESS', () => {
+  const impact = {
+    impact_id: 'I1',
+    operation_id: 'OP1',
+    load_id: 'LOAD1',
+    frequency: 'weekly',
+    dataset_code: 'D',
+    category_id: 'C',
+    value_type: 'price',
+    source_period: '2026-01-01',
+    aggregate_combos_json: JSON.stringify([{ frequency: 'weekly', datasetCode: 'D', period: '2026-01-08', valueType: 'price', indexType: 'wow' }]),
+    series_ids_json: '["S1"]',
+    affected_periods_json: '["2026-01-08"]'
+  };
+  let artifact = null;
+  let artifactPersistenceCalls = 0;
+  let stageRows = [];
+  let intent = null;
+  let targetRows = [target('2025-12-25', 2), unrelated(3)];
+  let finalized = false;
+  const plan = {
+    ok: true,
+    plan_id: 'PLAN1',
+    fingerprint: 'PLAN_FP',
+    calculator_shared_input: {
+      price_inputs: [],
+      weight_snapshot: { snapshot_id: 'W_SNAPSHOT', hash: 'W_HASH', rule_rows: [] },
+      membership_snapshot: { snapshot_id: 'M_SNAPSHOT', hash: 'M_HASH', rule_rows: [] },
+      coverage_rules: [],
+      base_inputs: [],
+      options: {}
+    },
+    calculator_batches: ['2026-01-01', '2026-01-08'].map((period, index) => ({
+      calculation_id: `B${index}`,
+      impact_items: [{ combo_key: `K${index}`, target_period: period }],
+      aggregate_definitions: [{ definition_id: `D${index}`, dataset_code: 'D', frequency: 'weekly', value_type: 'price', index_type: 'wow' }]
+    }))
+  };
+  context.AKORT.AggregateCalculator = {
+    Test: { sha256: context.AKORT.Core.sha256 },
+    calculateBatch(request) {
+      const period = request.impact_items[0].target_period;
+      return { ok: true, rows: [{ ...calcRow(period), calculation_id: request.calculation_id }] };
+    }
+  };
+  const adapter = {
+    runtimeSettings() {
+      return {
+        PUBLISH_AGGREGATE_EXECUTION_ENABLED: true,
+        PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED: true,
+        PUBLISH_AGGREGATE_CALCULATION_GROUPS_PER_STEP: 1,
+        PUBLISH_AGGREGATE_ATOMIC_MAX_ROWS: 100,
+        PUBLISH_AGGREGATE_ATOMIC_MAX_CELLS: 2900,
+        PUBLISH_AGGREGATE_ARTIFACT_CHUNK_CHARS: 30000
+      };
+    },
+    readImpactRecords() { return [impact]; },
+    materializeArtifact() { return { plan }; },
+    persistInputArtifact(_identity, value) {
+      artifact = JSON.parse(JSON.stringify(value));
+      artifactPersistenceCalls += 1;
+      return {
+        complete: artifactPersistenceCalls > 1,
+        persistedChunks: artifactPersistenceCalls,
+        totalChunks: 2
+      };
+    },
+    readInputArtifact() { return JSON.parse(JSON.stringify(artifact)); },
+    upsertCalculatedRows(_identity, records) {
+      records.forEach(record => {
+        const existing = stageRows.find(row => row.aggregate_row_key === record.aggregate_row_key);
+        if (!existing) stageRows.push(JSON.parse(JSON.stringify(record)));
+      });
+      return { total: stageRows.length };
+    },
+    readCalculatedRows() { return JSON.parse(JSON.stringify(stageRows)); },
+    updateStageStatus() {},
+    updateStageExpectedFingerprint() {},
+    persistPublishIntent(_identity, value) { intent = JSON.parse(JSON.stringify(value)); },
+    readPublishIntent() { return intent && JSON.parse(JSON.stringify(intent)); },
+    readTargetRows() { return JSON.parse(JSON.stringify(targetRows)); },
+    atomicReplace(replacement) {
+      const unaffected = targetRows.filter(row => A.Test.publicSignature(row) !== A.Test.publicSignature(replacement.replacementRows[0]));
+      targetRows = unaffected.concat(replacement.replacementRows.map((row, index) => ({ ...row, __row: unaffected.length + index + 2 })));
+    },
+    recordReconciliation() {},
+    finalize() { finalized = true; }
+  };
+  const executionContext = {
+    operation: { operation_id: 'OP1' },
+    checkpoint: { aggregate: { schemaVersion: '4.0-aggregate-stage-1', status: 'NOT_STARTED', calculationCursor: 0, stagingCursor: 0, batchNo: 0 } }
+  };
+  const options = { adapter, loadId: 'LOAD1', mode: 'REVISION' };
+  A.execute('PREPARING_AGGREGATE_IMPACT', executionContext, options);
+  const materializing = A.execute('MATERIALIZING_AGGREGATE_INPUTS', executionContext, options);
+  assert.equal(materializing.repeatPhase, true);
+  const materialized = A.execute('MATERIALIZING_AGGREGATE_INPUTS', executionContext, options);
+  assert.equal(materialized.repeatPhase, false);
+  const first = A.execute('CALCULATING_AGGREGATE_SLICES', executionContext, options);
+  assert.equal(first.repeatPhase, true);
+  const second = A.execute('CALCULATING_AGGREGATE_SLICES', executionContext, options);
+  assert.equal(second.repeatPhase, false);
+  A.execute('STAGING_AGGREGATE_ROWS', executionContext, options);
+  A.execute('UPDATING_AGGREGATES', executionContext, options);
+  A.execute('UPDATING_AGGREGATE_LATEST', executionContext, options);
+  A.execute('RECONCILING_AGGREGATES', executionContext, options);
+  A.execute('FINALIZING', executionContext, options);
+  assert.equal(executionContext.checkpoint.aggregate.status, 'SUCCESS');
+  assert.equal(finalized, true);
+});
+
+test('disabled-by-default gate prevents all adapter reads and writes', () => {
+  let touched = false;
+  const adapter = {
+    runtimeSettings() { return {}; },
+    readImpactRecords() { touched = true; return []; },
+    finalize() {}
+  };
+  const executionContext = { operation: { operation_id: 'OP1' }, checkpoint: {} };
+  const result = A.execute('PREPARING_AGGREGATE_IMPACT', executionContext, { adapter, loadId: 'LOAD1' });
+  assert.equal(result.skipped, true);
+  assert.equal(touched, false);
+  assert.equal(executionContext.checkpoint.aggregate.status, 'SKIPPED_DISABLED');
+});
+
+test('repository wiring removes deferred executor and hard-coded write probes', () => {
+  const engine = fs.readFileSync(path.join(root, 'src/03_OperationEngine.js'), 'utf8');
+  const raw = fs.readFileSync(path.join(root, 'src/05_RawStore.js'), 'utf8');
+  const parser = fs.readFileSync(path.join(root, 'src/06_ExistingSourceParsers.js'), 'utf8');
+  const entries = fs.readFileSync(path.join(root, 'src/08_EntryPoints.js'), 'utf8');
+  const release = fs.readFileSync(path.join(root, 'src/00_Release.js'), 'utf8');
+  assert(engine.includes("value: '4.0-operation-2'"));
+  assert(engine.includes("FAILED_REQUIRES_REVIEW"));
+  assert(!raw.includes('IncrementalPublish.applyAggregates'));
+  assert(!parser.includes('IncrementalPublish.applyAggregates'));
+  assert(!entries.includes('AKORT_probeIncrementalWrite'));
+  assert(!entries.includes('AKORT_probeIncrementalRead'));
+  assert(entries.includes('AKORT_alpha74ReadOnlyContractScan'));
+  assert(entries.includes('AKORT_alpha74ReadOnlyPlan'));
+  assert(release.includes("'AGGREGATE_STAGE'"));
+  assert(release.includes("'FINALIZING'"));
+  const releaseContext = vm.createContext({ console, Object, JSON });
+  releaseContext.AKORT = {};
+  vm.runInContext(release, releaseContext, { filename: 'src/00_Release.js' });
+  for (const sourceFile of Array.from(releaseContext.AKORT.Release.sourceFiles)) {
+    assert(fs.existsSync(path.join(root, 'src', sourceFile)), `release source file is missing: ${sourceFile}`);
+  }
+});
+
+let failed = 0;
+for (const item of tests) {
+  try {
+    item.fn();
+    console.log(`PASS ${item.name}`);
+  } catch (error) {
+    failed += 1;
+    console.error(`FAIL ${item.name}`);
+    console.error(error.stack || error);
+  }
+}
+console.log(JSON.stringify({ suite: 'alpha74_aggregate_integration_static', total: tests.length, failed }, null, 2));
+if (failed) process.exit(1);

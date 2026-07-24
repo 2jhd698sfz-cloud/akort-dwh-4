@@ -13,25 +13,25 @@
 
 ## Gate 1 — Pre-code
 
-- [ ] Проверено отсутствие runtime-кода withdrawn candidates.
+- [x] Проверено отсутствие runtime-кода withdrawn candidates.
 - [ ] Устранена или административно закрыта stale `RUNNING` операция.
 - [ ] Подтверждена canonical Config resource map.
-- [ ] Зафиксирован operation schema migration `4.0-operation-2`.
-- [ ] Утверждён `AGGREGATE_STAGE` schema.
-- [ ] Определены atomic request limits и fail-closed behavior.
-- [ ] Получен GO на coding.
+- [x] Зафиксирован operation schema migration `4.0-operation-2`.
+- [x] Утверждён `AGGREGATE_STAGE` schema.
+- [x] Определены atomic request limits и fail-closed behavior.
+- [x] Получен GO на coding.
 
 ## Gate 2 — Pure/static implementation
 
-- [ ] Operation Engine расширен aggregate phases.
-- [ ] Alpha.6 impact подключён как authoritative input.
-- [ ] Alpha.7.3 planner интегрирован.
-- [ ] Alpha.7.2 calculator интегрирован.
-- [ ] Durable staging реализован.
-- [ ] Logical-series publish adapter реализован.
-- [ ] Physical row identity отсутствует.
-- [ ] Separate dispatcher/queue отсутствует.
-- [ ] Unit/static tests проходят.
+- [x] Operation Engine расширен aggregate phases.
+- [x] Alpha.6 impact подключён как authoritative input.
+- [x] Alpha.7.3 planner интегрирован.
+- [x] Alpha.7.2 calculator интегрирован.
+- [x] Durable staging реализован.
+- [x] Logical-series publish adapter реализован.
+- [x] Physical row identity отсутствует.
+- [x] Separate dispatcher/queue отсутствует.
+- [x] Unit/static tests проходят.
 
 ## Gate 3 — Isolated read-only
 
@@ -77,8 +77,8 @@
 
 - [ ] Independent final review.
 - [ ] Нет blocker/critical/major.
-- [ ] Release manifest и sourceFiles актуальны.
-- [ ] README/package/runtime version синхронизированы.
+- [x] Release manifest и sourceFiles актуальны.
+- [x] README/package/runtime version синхронизированы.
 - [ ] Machine-readable evidence сохранены.
 - [ ] Accepted commit/tag созданы.
 - [ ] Alpha.7.4 = `ACCEPTED_AND_CLOSED`.

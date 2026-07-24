@@ -33,6 +33,12 @@ AKORT.Core = (function () {
       'finished_at', 'checkpoint_json', 'result_json', 'error_code', 'error_message',
       'release_version'
     ],
+    AGGREGATE_STAGE: [
+      'operation_id', 'load_id', 'plan_id', 'plan_fingerprint', 'calculation_id',
+      'aggregate_series_key', 'aggregate_row_key', 'period_start', 'action',
+      'row_payload_json', 'row_fingerprint', 'expected_target_fingerprint',
+      'stage_status', 'created_at', 'verified_at', 'release_version'
+    ],
     SYSTEM_LOG: [
       'log_id', 'logged_at', 'level', 'component', 'operation_id', 'step_id',
       'execution_id', 'event_code', 'message', 'details_json', 'release_version'

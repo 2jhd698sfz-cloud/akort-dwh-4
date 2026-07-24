@@ -1084,13 +1084,13 @@ AKORT.SourceParserHandlers = (function () {
       state.publishUpdate = AKORT.IncrementalPublish.applyPublish(publishPlan, operation.operation_id);
       return state.publishUpdate;
     }
-    if (phase === 'UPDATE_AGGREGATES') {
+    if (AKORT.AggregateIntegration.Phases.indexOf(phase) >= 0 || phase === 'FINALIZING') {
       var publishPlanSummary = storedPublishPlanSummary_(state, function () { return AKORT.IncrementalPublish.planLoad(state.loadId); });
-      if (publishPlanSummary.testOnly) {
-        state.aggregateUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: publishPlanSummary.testMarker };
-        return state.aggregateUpdate;
-      }
-      state.aggregateUpdate = AKORT.IncrementalPublish.applyAggregates(publishPlanSummary, operation.operation_id);
+      state.aggregateUpdate = AKORT.AggregateIntegration.execute(phase, context, {
+        loadId: state.loadId,
+        mode: 'REVISION',
+        testOnly: publishPlanSummary.testOnly === true
+      });
       return state.aggregateUpdate;
     }
     if (phase === 'UPDATE_STATUS') return { loadId: state.loadId, loadStatus: AKORT.RawStore.status(state.loadId).load.status };

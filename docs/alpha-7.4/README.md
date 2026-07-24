@@ -2,7 +2,7 @@
 
 ## Статус
 
-`DOCUMENTATION COMPLETE / CODE NOT STARTED / PHYSICAL WRITES PROHIBITED`
+`PURE/STATIC IMPLEMENTATION COMPLETE / ISOLATED READ-ONLY GATES PENDING / PHYSICAL WRITES PROHIBITED`
 
 Дата фиксации: 24 июля 2026 года.
 
@@ -41,6 +41,7 @@
 - `INTEGRATION_MAP_ALPHA3_ALPHA6.md` — source-level карта повторного использования существующего кода.
 - `FINAL_CONTRACT.md` — окончательный инженерный контракт реализации.
 - `IMPLEMENTATION_GATES.md` — обязательные gates до принятия Alpha.7.4.
+- `RUNTIME_CONTEXT_CONTRACT.md` — безопасный контракт authoritative definitions и snapshots без публичных resource IDs.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -56,6 +57,19 @@
 - `SUCCESS` до read-back и reconciliation;
 - перенос full replay, performance или operational enablement в Alpha.7.5.
 
+## Реализованный локальный контур
+
+- Operation Engine `4.0-operation-2` с агрегатными фазами и bounded-phase checkpoint;
+- `AGGREGATE_STAGE` с immutable input artifact, calculated rows и durable publish intent;
+- authoritative `PUBLISH_IMPACT` → Alpha.7.3 planner → Alpha.7.2 calculator;
+- полная замена затронутых логических серий без сохранения физических номеров строк;
+- один atomic Sheets API request для regular affected-set;
+- read-back, latest validation, lost-response recovery и third-state fail-closed;
+- два feature flags `FALSE` по умолчанию;
+- unit/static regression suite.
+
+Следующий обязательный этап — Gate 3: isolated read-only проверки на authoritative DEV данных. Развёртывание и физические записи пока запрещены.
+
 ## Coding gate
 
 Кодирование разрешается только от этой ветки после проверки:
@@ -65,3 +79,5 @@
 3. integration map и final contract не противоречат нормативным документам v4.0;
 4. в DEV нет активной или зависшей операции;
 5. physical execution остаётся выключенным до отдельного live-write gate.
+
+Gate выполнен 24 июля 2026 года. Это не является приёмкой Alpha.7.4 и не разрешает live-write.
