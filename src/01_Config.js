@@ -26,7 +26,8 @@ AKORT.Config = (function () {
         testFilesFolderId: p[PROPERTY_PREFIX + 'TEST_FILES_FOLDER_ID'],
         testResultsFolderId: p[PROPERTY_PREFIX + 'TEST_RESULTS_FOLDER_ID'],
         releasesFolderId: p[PROPERTY_PREFIX + 'RELEASES_FOLDER_ID'],
-        docsFolderId: p[PROPERTY_PREFIX + 'DOCS_FOLDER_ID']
+        docsFolderId: p[PROPERTY_PREFIX + 'DOCS_FOLDER_ID'],
+        alpha71BaselinePublishSpreadsheetId: p[PROPERTY_PREFIX + 'ALPHA71_BASELINE_PUBLISH_SPREADSHEET_ID']
       },
       expectedNames: {
         dwh: p[PROPERTY_PREFIX + 'EXPECTED_DWH_NAME'] || 'АКОРТ — DWH TECH 4.0 DEV',

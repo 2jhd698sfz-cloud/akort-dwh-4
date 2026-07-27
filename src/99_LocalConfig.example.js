@@ -15,7 +15,8 @@
 //     testFilesFolderId: 'TEST_FILES_FOLDER_ID',
 //     testResultsFolderId: 'TEST_RESULTS_FOLDER_ID',
 //     releasesFolderId: 'RELEASES_FOLDER_ID',
-//     docsFolderId: 'DOCS_FOLDER_ID'
+//     docsFolderId: 'DOCS_FOLDER_ID',
+//     alpha71BaselinePublishSpreadsheetId: 'IMMUTABLE_ALPHA71_BASELINE_PUBLISH_ID'
 //   },
 //   expectedNames: {
 //     dwh: 'АКОРТ — DWH TECH 4.0 DEV',

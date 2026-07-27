@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 3 ACCEPTED / GATE 4 HARNESS READY / ISOLATED PHYSICAL ACCEPTANCE PENDING / REGULAR PIPELINE PROHIBITED`
+`GATE 4 ACCEPTED / GATE 5 HARNESS READY / FULL RECONCILIATION PENDING / REGULAR PIPELINE PROHIBITED`
 
 Дата фиксации: 27 июля 2026 года.
 
@@ -44,6 +44,7 @@
 - `RUNTIME_CONTEXT_CONTRACT.md` — безопасный контракт authoritative definitions и snapshots без публичных resource IDs.
 - `GATE3_ACCEPTANCE_HARNESS.md` — read-only acceptance harness, DEV entrypoints и evidence contract.
 - `GATE4_ACCEPTANCE_HARNESS.md` — isolated physical/fault harness, feature-flag order и evidence contract.
+- `GATE5_ACCEPTANCE_HARNESS.md` — full build, sequential replay, exact reconciliation, quota и automatic continuation contract.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -82,13 +83,20 @@ Gate 3 закрыт 27 июля 2026 года. Authoritative read-only contract 
 подтвердил 61 636 строк без logical-key duplicates, latest failures и future
 rows. DEV acceptance harness успешно выполнил `NEW_PERIOD`, `REVISION` и
 `REVERSAL` для weekly и monthly contexts: шесть fixture runs, `0` data-plane
-writes, неизменный target fingerprint и один JSON evidence file. Физические
-записи по-прежнему запрещены; следующий этап — отдельный Gate 4.
+writes, неизменный target fingerprint и один JSON evidence file. На этом этапе
+физические записи оставались запрещены до отдельной приёмки Gate 4.
 
-Gate 4 harness подготовлен локально. Его нормативный DEV-запуск остаётся
-pending: рабочая Publish будет прочитана до и после, а физические
-INSERT/UPDATE/DELETE/NOOP и fault scenarios будут выполнены только в отдельной
-таблице canonical Test Files folder. Regular pipeline останется выключенным.
+Gate 4 закрыт 27 июля 2026 года на изолированной таблице canonical Test Files:
+INSERT/UPDATE/DELETE/NOOP, lost-response recovery, latest, reversal, семь
+timeout phases и third-state fail-closed получили PASS. Рабочая Publish не
+изменилась, regular pipeline остался выключенным.
+
+Для Gate 5 подготовлен persistent trigger-driven harness. Он создаёт отдельные
+baseline snapshot, live snapshot, full build и sequential replay workbooks,
+воспроизводит accepted load/reversal order и сравнивает все четыре aggregate
+targets по exact canonical digest. Ручной `Continue` не используется; quota и
+transient retry выполняются автоматически. Gate 5 остаётся открытым до
+нормативного DEV `SUCCESS`.
 
 ## Gate 1 migration cleanup
 

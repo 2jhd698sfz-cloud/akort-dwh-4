@@ -2955,7 +2955,130 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
   }
   function resetReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIATION_RESET',function(){AKORT.EnvironmentGuard.assertDev();var control=dispatcherRequestStop_('RESET_REQUESTED'),removed=dispatcherDeleteTriggers_(),state=dispatcherLoad_()||{runId:control.runId||'',startedAt:'',attempts:0,successfulSteps:0,skippedLockedRuns:0,consecutiveErrors:0,interruptedRuns:0},scriptLock=LockService.getScriptLock();state.enabled=false;state.status='RESET_REQUESTED';state.nextRunAt='';state.nextAction='NONE';state.removedTriggersOnReset=removed;dispatcherSave_(state);if(!scriptLock.tryLock(1000))return AKORT.Result.failure('RECONCILIATION_RESET_BUSY','Dispatcher stop was recorded, but a reconciliation step is still in flight. Run reset again after the worker finishes.',{dispatcher:dispatcherPublic_(state),reconciliation:publicRecon_(loadRecon_())});try{var props=PropertiesService.getScriptProperties();props.deleteProperty(RECON_STATE_KEY);Object.keys(props.getProperties()).forEach(function(key){if(/^AKORT_ALPHA6_RECONCILIATION_DISPATCHER_STATE_V[1-5]/.test(key)||/^AKORT_ALPHA6_RECONCILIATION_DISPATCHER_CONTROL_V[1-3]$/.test(key))props.deleteProperty(key);});state.status='STOPPED_BY_RECONCILIATION_RESET';state.lastFinishedAt=AKORT.Core.now();dispatcherSave_(state);control=dispatcherControlLoad_()||control;control.enabled=false;control.status='STOPPED_BY_RECONCILIATION_RESET';control.stopReason='STOPPED_BY_RECONCILIATION_RESET';dispatcherControlSave_(control);return AKORT.Result.success('Alpha.6 reconciliation checkpoint cleared safely. Dispatcher stopped. Temporary reports were not deleted.',dispatcherPublic_(state));}finally{try{scriptLock.releaseLock();}catch(ignore){}}},{lock:false,persistLogs:true});}
 
+  /**
+   * Gate 5 is an acceptance-only bridge to the accepted Alpha.6 reconstruction
+   * oracle. Every write is restricted to an isolated Test Files spreadsheet,
+   * requires execution=TRUE and regularPipeline=FALSE, and is never used by the
+   * regular Operation Engine.
+   */
+  function gate5AssertIsolated_(spreadsheetId) {
+    AKORT.EnvironmentGuard.assertDev();
+    var settings=runtimeSettings_(),config=AKORT.Config.load({includeSystemSettings:false}),id=String(spreadsheetId||'');
+    if(!settings.aggregateExecutionEnabled||settings.aggregateRegularPipelineEnabled)throw AKORT.Core.error('ALPHA74_GATE5_FLAGS_INVALID','Gate 5 requires aggregate execution enabled and the regular aggregate pipeline disabled.',{executionEnabled:settings.aggregateExecutionEnabled,regularPipelineEnabled:settings.aggregateRegularPipelineEnabled});
+    if(!id)throw AKORT.Core.error('ALPHA74_GATE5_TARGET_MISSING','Gate 5 requires an isolated spreadsheet ID.');
+    if(id===String(config.resources.publishSpreadsheetId||''))throw AKORT.Core.error('ALPHA74_GATE5_LIVE_TARGET_FORBIDDEN','Gate 5 cannot write to the DataLens-connected DEV Publish spreadsheet.');
+    var parents=DriveApp.getFileById(id).getParents(),allowed=false;
+    while(parents.hasNext()){if(String(parents.next().getId())===String(config.resources.testFilesFolderId||'')){allowed=true;break;}}
+    if(!allowed)throw AKORT.Core.error('ALPHA74_GATE5_TARGET_OUTSIDE_TEST_FILES','Gate 5 writes are restricted to the canonical DEV Test Files folder.',{spreadsheetId:id});
+    return SpreadsheetApp.openById(id);
+  }
+  function gate5EnsureSheet_(spreadsheet,name,headers) {
+    var sheet=spreadsheet.getSheetByName(name);
+    if(!sheet){
+      var first=spreadsheet.getSheets()[0];
+      if(first&&spreadsheet.getSheets().length===1&&first.getLastRow()<=1&&first.getLastColumn()<=1&&String(first.getRange(1,1).getValue()||'')==='') {
+        first.setName(name);sheet=first;
+      }else sheet=spreadsheet.insertSheet(name);
+    }
+    var actual=sheet.getLastColumn()?sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(String):[];
+    var blank=!actual.length||actual.every(function(value){return String(value||'')==='';});
+    if(sheet.getLastRow()===0||blank)sheet.getRange(1,1,1,headers.length).setValues([headers]);
+    else if(JSON.stringify(actual.slice(0,headers.length))!==JSON.stringify(headers)||actual.slice(headers.length).some(function(value){return String(value||'')!=='';}))throw AKORT.Core.error('ALPHA74_GATE5_SCHEMA_MISMATCH','Gate 5 isolated sheet has an unexpected schema.',{sheet:name,expected:headers,actual:actual});
+    sheet.setFrozenRows(1);
+    return sheet;
+  }
+  function gate5InitializeBook_(spreadsheetId) {
+    var spreadsheet=gate5AssertIsolated_(spreadsheetId),specs=[
+      [AKORT_V300.SHEETS.PUBLISH_PRICES_WEEKLY,AKORT_V300.HEADERS.PUBLISH_PRICES_WEEKLY],
+      [AKORT_V300.SHEETS.PUBLISH_PRICES_MONTHLY,AKORT_V300.HEADERS.PUBLISH_PRICES_MONTHLY],
+      [AKORT_V300.SHEETS.PUBLISH_INDUSTRY,AKORT_V300.HEADERS.PUBLISH_INDUSTRY],
+      [AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES,AKORT_V300.HEADERS.PUBLISH_PRICE_AGGREGATES]
+    ];
+    specs.forEach(function(spec){gate5EnsureSheet_(spreadsheet,spec[0],spec[1]);});
+    return{spreadsheetId:spreadsheetId,sheets:specs.map(function(spec){return spec[0];})};
+  }
+  function gate5DeleteAggregateKeys_(spreadsheetId,keys) {
+    var spreadsheet=gate5AssertIsolated_(spreadsheetId),sheet=spreadsheet.getSheetByName(AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES),headers=AKORT_V300.HEADERS.PUBLISH_PRICE_AGGREGATES,index={},rows=v300ReadObjects_(sheet,headers),numbers=[];
+    (keys||[]).forEach(function(key){index[String(key)]=true;});
+    rows.forEach(function(row){if(index[rowIdentity_(AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES,row)])numbers.push(row._rowNumber);});
+    if(numbers.length)v300DeleteRows_(spreadsheet,sheet,numbers);
+    return numbers.length;
+  }
+  function gate5FullBuildStage_(spreadsheetId,stage) {
+    gate5InitializeBook_(spreadsheetId);
+    var spreadsheet=gate5AssertIsolated_(spreadsheetId),headers=AKORT_V300.HEADERS.PUBLISH_PRICE_AGGREGATES,rows=[],count=0;
+    ALPHA6_PUBLISH_OVERRIDE_ID=spreadsheetId;
+    try{
+      if(stage==='WEEKLY'){
+        rows=v300BuildWeeklyPublish_();
+        writeBuildSheet_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_PRICES_WEEKLY,AKORT_V300.HEADERS.PUBLISH_PRICES_WEEKLY,rows,v300FormatRows_().weeklyPublish);count=rows.length;
+      }else if(stage==='MONTHLY'){
+        rows=v300BuildMonthlyPublish_();
+        writeBuildSheet_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_PRICES_MONTHLY,AKORT_V300.HEADERS.PUBLISH_PRICES_MONTHLY,rows,v300FormatRows_().monthlyPublish);count=rows.length;
+      }else if(stage==='INDUSTRY'){
+        rows=v300BuildIndustryPublish_();
+        writeBuildSheet_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_INDUSTRY,AKORT_V300.HEADERS.PUBLISH_INDUSTRY,rows,v300FormatRows_().industryPublish);count=rows.length;
+      }else if(stage==='AGGREGATES_WEEKLY'){
+        reconClearData_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES,headers);
+        rows=reconNormalizeAggregateDates_(v304AggregateFromPublish_(AKORT_V300.SHEETS.PUBLISH_PRICES_WEEKLY,AKORT_V300.HEADERS.PUBLISH_PRICES_WEEKLY,'weekly',v304WeightIndex_()));
+        count=reconAppendObjects_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES,headers,rows);
+      }else if(stage==='AGGREGATES_MONTHLY'){
+        var aggregateSheet=spreadsheet.getSheetByName(AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES),existing=v300ReadObjects_(aggregateSheet,headers),monthlyRows=existing.filter(function(row){return String(row.frequency)==='monthly';}).map(function(row){return row._rowNumber;});
+        if(monthlyRows.length)v300DeleteRows_(spreadsheet,aggregateSheet,monthlyRows);
+        rows=reconNormalizeAggregateDates_(v304AggregateFromPublish_(AKORT_V300.SHEETS.PUBLISH_PRICES_MONTHLY,AKORT_V300.HEADERS.PUBLISH_PRICES_MONTHLY,'monthly',v304WeightIndex_()));
+        count=reconAppendObjects_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES,headers,rows);
+      }else if(stage==='AGGREGATES_SPECIAL'){
+        rows=reconNormalizeAggregateDates_(v315BuildAllSpecialRows_());
+        var keys=rows.map(function(row){return rowIdentity_(AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES,row);});
+        gate5DeleteAggregateKeys_(spreadsheetId,keys);
+        count=reconAppendObjects_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES,headers,rows);
+      }else if(stage==='AGGREGATES_LATEST'){
+        count=reconFinalizeAggregateLatest_({fullId:spreadsheetId});
+      }else throw AKORT.Core.error('ALPHA74_GATE5_FULL_STAGE_INVALID','Unsupported Gate 5 full-build stage.',{stage:stage});
+    }finally{ALPHA6_PUBLISH_OVERRIDE_ID='';}
+    return{stage:stage,rowsProcessed:Number(count||0),aggregateRows:reconRowCount_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES)};
+  }
+  function gate5ReplayGroups_(){return clone_(collectReplayGroups_());}
+  function gate5ValidateReplayRaw_(groups){return clone_(validateFinalReplayRaw_(groups||[]));}
+  function gate5ReplayContext_(spreadsheetId,allowedLoadIds,reversedLoadIds,fn) {
+    var state={incrementalId:spreadsheetId,allowedLoadIds:(allowedLoadIds||[]).slice(),reversedLoadIds:(reversedLoadIds||[]).slice()};
+    gate5AssertIsolated_(spreadsheetId);
+    return withReplayContext_(state,fn);
+  }
+  function gate5ReplayItems_(spreadsheetId,allowedLoadIds,reversedLoadIds,group,stage,frontierKeys) {
+    return gate5ReplayContext_(spreadsheetId,allowedLoadIds,reversedLoadIds,function(){
+      var items=replayStageItemsForGroup_(group||{},stage),frontier={};
+      (frontierKeys||[]).forEach(function(key){frontier[String(key)]=true;});
+      if(stage==='AGGREGATES'&&Object.keys(frontier).length)items=items.filter(function(item){return frontier[v310AggregateFrontierKey_(item.frequency,item.datasetCode,item.period)]===true;});
+      return clone_(items);
+    });
+  }
+  function gate5ApplyReplayChunk_(spreadsheetId,allowedLoadIds,reversedLoadIds,group,stage,items) {
+    if(stage==='AGGREGATES')throw AKORT.Core.error('ALPHA74_GATE5_AGGREGATE_WRITE_BOUNDARY_REQUIRED','Gate 5 aggregate rows must pass through the Alpha.7.4 logical-series boundary.');
+    return gate5ReplayContext_(spreadsheetId,allowedLoadIds,reversedLoadIds,function(){
+      return applyReplayChunk_({incrementalId:spreadsheetId,allowedLoadIds:allowedLoadIds||[],reversedLoadIds:reversedLoadIds||[]},group||{},stage,items||[],0,(items||[]).length);
+    });
+  }
+  function gate5BuildAggregateRows_(spreadsheetId,allowedLoadIds,reversedLoadIds,combos) {
+    return gate5ReplayContext_(spreadsheetId,allowedLoadIds,reversedLoadIds,function(){
+      var comboIndex={};
+      (combos||[]).forEach(function(combo){comboIndex[v310ComboKey_(combo)]=true;});
+      return clone_(reconNormalizeAggregateDates_(v310BuildAggregateRowsForCombos_(comboIndex)));
+    });
+  }
+  function gate5FinalizeLatest_(spreadsheetId,allowedLoadIds,reversedLoadIds) {
+    return gate5ReplayContext_(spreadsheetId,allowedLoadIds,reversedLoadIds,function(){
+      return replayFinalizeAggregateLatest_({incrementalId:spreadsheetId,allowedLoadIds:allowedLoadIds||[],reversedLoadIds:reversedLoadIds||[]});
+    });
+  }
+  function gate5FrontierKeys_(spreadsheetId){gate5AssertIsolated_(spreadsheetId);return aggregateFrontierKeysFromBuild_(spreadsheetId);}
+  function gate5CanonicalSort_(spreadsheetId) {
+    var spreadsheet=gate5AssertIsolated_(spreadsheetId),sheet=spreadsheet.getSheetByName(AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES),rows=Math.max(0,sheet.getLastRow()-1);
+    if(rows>1)sheet.getRange(2,1,rows,AKORT_V300.HEADERS.PUBLISH_PRICE_AGGREGATES.length).sort(reconSortSpec_(AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES));
+    return rows;
+  }
+
   function statusSummary(){var ss=getDwh_(),tables={};Object.keys(TABLES).forEach(function(n){var sh=ss.getSheetByName(n);tables[n]=sh?{rows:Math.max(0,sh.getLastRow()-1),columns:sh.getLastColumn()}:null;});return{release:AKORT.Release.manifest(),manifestHash:AKORT.Core.manifestHash(),publishSchemaVersion:AKORT.Release.publishSchemaVersion,dependencySchemaVersion:AKORT.Release.dependencySchemaVersion,dispatcherSchemaVersion:AKORT.Release.dispatcherSchemaVersion,scopeCorrection:clone_(ALPHA6_SCOPE),runtimeSettings:runtimeSettings_(),serviceTables:tables,reconciliation:publicRecon_(loadRecon_()),dispatcher:dispatcherPublic_(dispatcherLoad_())};}
 
-  return {Tables:clone_(TABLES),install:install,createPublishBackup:createPublishBackup,runtimeSettings:runtimeSettings_,planLoad:planLoad,planReversal:planReversal,planFromAffected:planFromAffected_,summarizePlan:summarizePlan_,appendImpact:appendImpact_,applyPublish:applyPublish,applyAggregates:applyAggregates,statusSummary:statusSummary,startReconciliation:startReconciliation,continueReconciliation:continueReconciliation,reconciliationStatus:reconciliationStatus,resetReconciliation:resetReconciliation,recoverFailedReconciliation:recoverFailedReconciliation,startReconciliationDispatcher:startReconciliationDispatcher,stopReconciliationDispatcher:stopReconciliationDispatcher,reconciliationDispatcherStatus:reconciliationDispatcherStatus,reconciliationDispatcherWorker:reconciliationDispatcherWorker,Test:{storageMutationProbe:v300StorageMutationProbe_,seriesReplacementRollbackProbe:v300SeriesReplacementRollbackProbe_,weeklyDependentPeriods:v310WeeklyDependentPeriods_,monthlyDependentPeriods:v310MonthlyDependentPeriods_,weeklyDynamics:v310CalculateWeeklyDynamics_,monthlyDynamics:v310CalculateMonthlyDynamics_,industryDynamics:v300CalculateIndustryDynamics_,setLatestPrices:v317SetLatestBySeriesRows_,setLatestAggregates:v317SetLatestAggregateRows_,expandAffected:v310ExpandAffectedTargets_,aggregateIndexTypes:v310AggregateIndexTypes_,frontierKey:v310AggregateFrontierKey_,seriesId:v300SeriesId_,aggregateSeriesKey:v317AggregateSeriesKey_,selectReplayLatest:v300SelectReplayLatest_,buildWeeklyRows:v310BuildWeeklyRowsForTargets_,buildMonthlyRows:v310BuildMonthlyRowsForTargets_,monthlyDescriptors:v310MonthlyDescriptors_,seriesIdsForTargets:seriesIdsForTargets_,buildDerivedMonthlyMarkupSeries:v310BuildDerivedMonthlyMarkupSeries_,parityProbe:alpha624ParityProbe_,markupParityProbe:alpha624ParityProbe_,buildImpactRecords:buildImpactRecords_,jsonArrayChunks:jsonArrayChunks_,dispatcherControlMatches:dispatcherControlMatches_,dispatcherStateKey:dispatcherStateKey_,impactPreviewComboKey:impactPreviewComboKey_,impactPreviewHeaders:impactPreviewHeaders_,impactPreviewSheet:impactPreviewSheet_,impactPreviewAggregateCombos:impactPreviewAggregateCombos_,replayImpactPreviewStep:replayImpactPreviewStep_,setImpactTestAdapter:impactPreviewSetTestAdapter_,replayTarget:replayTarget_,nextReplayStage:nextReplayStage_,reconciliationFingerprint:reconciliationFingerprint_,dispatcherProgressDecision:dispatcherProgressDecision_,dispatcherClassifyError:dispatcherClassifyError_,dispatcherRetryDelayMs:dispatcherRetryDelayMs_,dispatcherResultSummary:dispatcherResultSummary_,utf8Bytes:utf8Bytes_}};
+  return {Tables:clone_(TABLES),install:install,createPublishBackup:createPublishBackup,runtimeSettings:runtimeSettings_,planLoad:planLoad,planReversal:planReversal,planFromAffected:planFromAffected_,summarizePlan:summarizePlan_,appendImpact:appendImpact_,applyPublish:applyPublish,applyAggregates:applyAggregates,statusSummary:statusSummary,startReconciliation:startReconciliation,continueReconciliation:continueReconciliation,reconciliationStatus:reconciliationStatus,resetReconciliation:resetReconciliation,recoverFailedReconciliation:recoverFailedReconciliation,startReconciliationDispatcher:startReconciliationDispatcher,stopReconciliationDispatcher:stopReconciliationDispatcher,reconciliationDispatcherStatus:reconciliationDispatcherStatus,reconciliationDispatcherWorker:reconciliationDispatcherWorker,Gate5:Object.freeze({initializeBook:gate5InitializeBook_,fullBuildStage:gate5FullBuildStage_,replayGroups:gate5ReplayGroups_,validateReplayRaw:gate5ValidateReplayRaw_,replayItems:gate5ReplayItems_,applyReplayChunk:gate5ApplyReplayChunk_,buildAggregateRows:gate5BuildAggregateRows_,finalizeAggregateLatest:gate5FinalizeLatest_,frontierKeys:gate5FrontierKeys_,canonicalSort:gate5CanonicalSort_}),Test:{storageMutationProbe:v300StorageMutationProbe_,seriesReplacementRollbackProbe:v300SeriesReplacementRollbackProbe_,weeklyDependentPeriods:v310WeeklyDependentPeriods_,monthlyDependentPeriods:v310MonthlyDependentPeriods_,weeklyDynamics:v310CalculateWeeklyDynamics_,monthlyDynamics:v310CalculateMonthlyDynamics_,industryDynamics:v300CalculateIndustryDynamics_,setLatestPrices:v317SetLatestBySeriesRows_,setLatestAggregates:v317SetLatestAggregateRows_,expandAffected:v310ExpandAffectedTargets_,aggregateIndexTypes:v310AggregateIndexTypes_,frontierKey:v310AggregateFrontierKey_,seriesId:v300SeriesId_,aggregateSeriesKey:v317AggregateSeriesKey_,selectReplayLatest:v300SelectReplayLatest_,buildWeeklyRows:v310BuildWeeklyRowsForTargets_,buildMonthlyRows:v310BuildMonthlyRowsForTargets_,monthlyDescriptors:v310MonthlyDescriptors_,seriesIdsForTargets:seriesIdsForTargets_,buildDerivedMonthlyMarkupSeries:v310BuildDerivedMonthlyMarkupSeries_,parityProbe:alpha624ParityProbe_,markupParityProbe:alpha624ParityProbe_,buildImpactRecords:buildImpactRecords_,jsonArrayChunks:jsonArrayChunks_,dispatcherControlMatches:dispatcherControlMatches_,dispatcherStateKey:dispatcherStateKey_,impactPreviewComboKey:impactPreviewComboKey_,impactPreviewHeaders:impactPreviewHeaders_,impactPreviewSheet:impactPreviewSheet_,impactPreviewAggregateCombos:impactPreviewAggregateCombos_,replayImpactPreviewStep:replayImpactPreviewStep_,setImpactTestAdapter:impactPreviewSetTestAdapter_,replayTarget:replayTarget_,nextReplayStage:nextReplayStage_,reconciliationFingerprint:reconciliationFingerprint_,dispatcherProgressDecision:dispatcherProgressDecision_,dispatcherClassifyError:dispatcherClassifyError_,dispatcherRetryDelayMs:dispatcherRetryDelayMs_,dispatcherResultSummary:dispatcherResultSummary_,utf8Bytes:utf8Bytes_}};
 })();

@@ -2,13 +2,14 @@
   "project": "AKORT DWH 4.0",
   "milestone": "Alpha.7.4",
   "architecture": "INTEGRATION_INTO_EXISTING_OPERATION_ENGINE",
-  "status": "GATE_4_ACCEPTED_REGULAR_PIPELINE_DISABLED",
+  "status": "GATE_5_HARNESS_READY_DEV_ACCEPTANCE_PENDING",
   "physical_writes_allowed": false,
   "isolated_gate_4_physical_writes_allowed": true,
+  "isolated_gate_5_physical_writes_allowed": true,
   "regular_pipeline_allowed": false,
   "operation_schema_version": "4.0-operation-2",
   "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
-  "implementation_release": "4.0.0-alpha.7.4.1",
+  "implementation_release": "4.0.0-alpha.7.4.2",
   "completed_gates": [0, 1, 2, 3, 4],
   "partially_completed_gates": [7],
   "next_gate": 5,
@@ -128,6 +129,30 @@
     "evidence_hash": "94d109cffad762d4242f59acd4b6ae3186ad7fd4da08a43d1bee6c11cd208c64",
     "evidence_bytes": 9255
   },
+  "gate_5_acceptance_harness": {
+    "version": "4.0-alpha74-gate5-acceptance-1",
+    "evidence_schema": "4.0-alpha74-gate5-evidence-1",
+    "state_schema": "4.0-alpha74-gate5-state-1",
+    "target_mode": "ISOLATED_FULL_BUILD_AND_SEQUENTIAL_REPLAY",
+    "live_publish_access": "READ_ONLY_BEFORE_AFTER",
+    "artifacts": [
+      "BASELINE_CANONICAL",
+      "LIVE_SNAPSHOT",
+      "FULL_BUILD",
+      "SEQUENTIAL_REPLAY"
+    ],
+    "automation": "PERSISTENT_EVERY_MINUTE_TRIGGER",
+    "manual_continuation_allowed": false,
+    "feature_flags_required": {
+      "PUBLISH_AGGREGATE_EXECUTION_ENABLED": true,
+      "PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED": false
+    },
+    "exact_reconciliation_required": true,
+    "quota_acceptance_required": true,
+    "live_publish_physical_writes_allowed": 0,
+    "local_regression_passed": true,
+    "dev_execution_passed": false
+  },
   "accepted_base_commit": "52590c8e036d49b9f76f87341b69881a916c851d",
   "accepted_base_tag": "v4.0.0-alpha.7.3-accepted",
   "active_branch": "codex/alpha-7.4-integration-reset",
@@ -140,6 +165,7 @@
     "docs/alpha-7.4/IMPLEMENTATION_GATES.md",
     "docs/alpha-7.4/RUNTIME_CONTEXT_CONTRACT.md",
     "docs/alpha-7.4/GATE3_ACCEPTANCE_HARNESS.md",
-    "docs/alpha-7.4/GATE4_ACCEPTANCE_HARNESS.md"
+    "docs/alpha-7.4/GATE4_ACCEPTANCE_HARNESS.md",
+    "docs/alpha-7.4/GATE5_ACCEPTANCE_HARNESS.md"
   ]
 }

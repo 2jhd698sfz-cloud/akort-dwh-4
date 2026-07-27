@@ -16,6 +16,10 @@ function AKORT_alpha74Gate3ReversalPlan(){return AKORT_printResult_(AKORT.Alpha7
 function AKORT_alpha74Gate3Acceptance(){return AKORT_printResult_(AKORT.Alpha74Gate3Acceptance.runAndSaveEvidence());}
 function AKORT_alpha74Gate4Status(){return AKORT_printResult_(AKORT.Alpha74Gate4Acceptance.status());}
 function AKORT_alpha74Gate4Acceptance(){return AKORT_printResult_(AKORT.Alpha74Gate4Acceptance.runAndSaveEvidence());}
+function AKORT_alpha74Gate5Status(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.status());}
+function AKORT_alpha74Gate5Start(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.start());}
+function AKORT_alpha74Gate5Worker(){return AKORT.Alpha74Gate5Acceptance.worker();}
+function AKORT_alpha74Gate5Stop(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.stop());}
 
 function AKORT_alpha6Install(){return AKORT_printResult_(AKORT.IncrementalPublish.install());}
 function AKORT_alpha6SmokeTest(){return AKORT_printResult_(AKORT.Alpha6Tests.runSmokeTest());}

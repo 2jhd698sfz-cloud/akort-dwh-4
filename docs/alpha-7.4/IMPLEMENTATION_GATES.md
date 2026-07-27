@@ -52,18 +52,18 @@ Gate закрыт результатом `AKORT_alpha74Gate3Acceptance()` в DEV
 
 ## Gate 4 — Isolated physical/fault
 
-- [ ] INSERT/UPDATE/DELETE/NOOP.
-- [ ] Atomic affected-set publication.
-- [ ] Lost-response recovery.
-- [ ] Timeout before/after every long phase.
-- [ ] Third-state fail-closed.
-- [ ] Unrelated rows unchanged.
-- [ ] Latest correctness.
-- [ ] Standard logical reversal.
+- [x] INSERT/UPDATE/DELETE/NOOP.
+- [x] Atomic affected-set publication.
+- [x] Lost-response recovery.
+- [x] Timeout before/after every long phase.
+- [x] Third-state fail-closed.
+- [x] Unrelated rows unchanged.
+- [x] Latest correctness.
+- [x] Standard logical reversal.
 
-Локальный Gate 4 harness и regression suite подготовлены. Чек-лист остаётся
-открытым до `SUCCESS` нормативного DEV-запуска
-`AKORT_alpha74Gate4Acceptance()` и проверки сохранённого evidence.
+Gate закрыт результатом `AKORT_alpha74Gate4Acceptance()` в DEV
+27 июля 2026 года. Все нормативные scenarios и семь timeout phases получили
+PASS; DataLens-connected Publish осталась неизменной.
 
 ## Gate 5 — Full reconciliation/performance
 
@@ -73,6 +73,11 @@ Gate закрыт результатом `AKORT_alpha74Gate3Acceptance()` в DEV
 - [ ] Baseline parity.
 - [ ] Maximum-volume/quota acceptance.
 - [ ] No manual continuation.
+
+Локальный Gate 5 trigger-driven harness и regression suite подготовлены.
+Чек-лист остаётся открытым до terminal `SUCCESS` нормативного DEV-запуска
+`AKORT_alpha74Gate5Start()`, exact reconciliation и проверки JSON evidence.
+Regular pipeline остаётся выключенным.
 
 ## Gate 6 — Authoritative DEV
 
