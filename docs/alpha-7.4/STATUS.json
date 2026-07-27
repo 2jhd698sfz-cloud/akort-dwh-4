@@ -2,15 +2,15 @@
   "project": "AKORT DWH 4.0",
   "milestone": "Alpha.7.4",
   "architecture": "INTEGRATION_INTO_EXISTING_OPERATION_ENGINE",
-  "status": "GATE_3_ACCEPTANCE_HARNESS_IMPLEMENTED_DEV_EXECUTION_PENDING",
+  "status": "GATE_3_ACCEPTED_GATE_4_PENDING",
   "physical_writes_allowed": false,
   "regular_pipeline_allowed": false,
   "operation_schema_version": "4.0-operation-2",
   "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
   "implementation_release": "4.0.0-alpha.7.4",
-  "completed_gates": [0, 1, 2],
-  "partially_completed_gates": [3, 7],
-  "next_gate": 3,
+  "completed_gates": [0, 1, 2, 3],
+  "partially_completed_gates": [7],
+  "next_gate": 4,
   "gate_1_cleanup_evidence": {
     "completed_at": "2026-07-27T07:11:22.541Z",
     "legacy_operations_closed": 4,
@@ -51,7 +51,43 @@
       "PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED": false
     },
     "local_regression_passed": true,
-    "dev_execution_passed": false
+    "dev_execution_passed": true
+  },
+  "gate_3_acceptance_evidence": {
+    "completed_at": "2026-07-27T11:39:55.112Z",
+    "status": "SUCCESS",
+    "runtime_context_fingerprint": "5c043f59dc3458df6fbf14e7e4486aa027dc096b5dda52df57f128d9dc6b03a8",
+    "scenario_count": 3,
+    "fixture_runs_passed": 6,
+    "scenario_results": {
+      "NEW_PERIOD": {
+        "planned_items": 5,
+        "blocked_items": 5
+      },
+      "REVISION": {
+        "planned_items": 10,
+        "blocked_items": 0
+      },
+      "REVERSAL": {
+        "planned_items": 10,
+        "blocked_items": 0
+      }
+    },
+    "target_rows_before": 61636,
+    "target_rows_after": 61636,
+    "target_fingerprint_before": "6f2dc34330bf43f4ee36797bb1f0c391ac3b5545b3e9f0983c6150aa55aef957",
+    "target_fingerprint_after": "6f2dc34330bf43f4ee36797bb1f0c391ac3b5545b3e9f0983c6150aa55aef957",
+    "aggregate_stage_last_row_before": 1,
+    "aggregate_stage_last_row_after": 1,
+    "publish_impact_last_row_before": 1,
+    "publish_impact_last_row_after": 1,
+    "feature_flags_disabled_before_and_after": true,
+    "data_plane_writes": 0,
+    "evidence_file_writes": 1,
+    "physical_writes": false,
+    "evidence_file_name": "ALPHA74_GATE3_ACCEPTANCE_20260727113953.json",
+    "evidence_hash": "325cf6b5cf33585f42e8ccd09b56ec3f37f657c2ecb0037d5350d4b00dbd5dcc",
+    "evidence_bytes": 8561
   },
   "accepted_base_commit": "52590c8e036d49b9f76f87341b69881a916c851d",
   "accepted_base_tag": "v4.0.0-alpha.7.3-accepted",

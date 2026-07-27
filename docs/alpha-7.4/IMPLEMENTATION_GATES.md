@@ -40,15 +40,15 @@
 - [x] Snapshot/fingerprint checks.
 - [x] Parameterless DEV acceptance harness.
 - [x] Machine-readable evidence contract.
-- [ ] New period plan.
-- [ ] Revision plan.
-- [ ] Reversal plan.
+- [x] New period plan.
+- [x] Revision plan.
+- [x] Reversal plan.
 - [x] No future periods.
 - [x] No physical writes.
 
-Сценарные пункты закрываются только результатом
-`AKORT_alpha74Gate3Acceptance()` в DEV. Локальные pure/static tests не заменяют
-DEV evidence.
+Gate закрыт результатом `AKORT_alpha74Gate3Acceptance()` в DEV
+27 июля 2026 года. Все три сценария и шесть weekly/monthly fixture runs
+завершены успешно; before/after data-plane fingerprint совпал.
 
 ## Gate 4 — Isolated physical/fault
 
@@ -85,6 +85,6 @@ DEV evidence.
 - [ ] Нет blocker/critical/major.
 - [x] Release manifest и sourceFiles актуальны.
 - [x] README/package/runtime version синхронизированы.
-- [ ] Machine-readable evidence сохранены.
+- [x] Machine-readable evidence сохранены.
 - [ ] Accepted commit/tag созданы.
 - [ ] Alpha.7.4 = `ACCEPTED_AND_CLOSED`.

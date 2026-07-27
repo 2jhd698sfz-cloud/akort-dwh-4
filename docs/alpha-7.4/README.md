@@ -71,12 +71,12 @@
 
 Gate 1 завершён: точный подтверждённый профиль из четырёх legacy DEV-операций закрыт через fail-closed cleanup, а audit trail сохранён. Независимая проверка подтвердила четыре `CANCELLED` queue rows, четыре новых step rows и отсутствие изменений RAW, Publish и aggregate rows.
 
-В Gate 3 пройден authoritative read-only contract scan для 61 636 строк:
-logical-key duplicates, latest failures и future rows отсутствуют, fingerprint
-зафиксирован, physical writes не выполнялись. Acceptance harness для read-only
-планов `NEW_PERIOD`, `REVISION` и `REVERSAL` реализован и проходит локальную
-pure/static регрессию. До DEV acceptance-run пункты сценариев остаются
-незакрытыми. Физические записи по-прежнему запрещены.
+Gate 3 закрыт 27 июля 2026 года. Authoritative read-only contract scan
+подтвердил 61 636 строк без logical-key duplicates, latest failures и future
+rows. DEV acceptance harness успешно выполнил `NEW_PERIOD`, `REVISION` и
+`REVERSAL` для weekly и monthly contexts: шесть fixture runs, `0` data-plane
+writes, неизменный target fingerprint и один JSON evidence file. Физические
+записи по-прежнему запрещены; следующий этап — отдельный Gate 4.
 
 ## Gate 1 migration cleanup
 

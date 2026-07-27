@@ -119,3 +119,28 @@ resource ID.
 
 PASS Gate 3 не разрешает physical execution. Следующий шаг — отдельный Gate 4
 с изолированными physical/fault tests и самостоятельным разрешением.
+
+## Результат DEV acceptance
+
+Нормативный запуск завершён 27 июля 2026 года со статусом `SUCCESS`.
+
+- runtime context fingerprint:
+  `5c043f59dc3458df6fbf14e7e4486aa027dc096b5dda52df57f128d9dc6b03a8`;
+- `NEW_PERIOD`: 5 planned и 5 ожидаемо blocked items;
+- `REVISION`: 10 planned, 0 blocked items;
+- `REVERSAL`: 10 planned, 0 blocked items;
+- target before/after: 61 636 logical rows;
+- target fingerprint before/after:
+  `6f2dc34330bf43f4ee36797bb1f0c391ac3b5545b3e9f0983c6150aa55aef957`;
+- `AGGREGATE_STAGE` last row before/after: `1`;
+- `PUBLISH_IMPACT` last row before/after: `1`;
+- оба feature flags before/after: `FALSE`;
+- data-plane writes: `0`;
+- evidence files created: `1`;
+- evidence file: `ALPHA74_GATE3_ACCEPTANCE_20260727113953.json`;
+- evidence SHA-256:
+  `325cf6b5cf33585f42e8ccd09b56ec3f37f657c2ecb0037d5350d4b00dbd5dcc`;
+- evidence size: 8 561 bytes.
+
+В публичной документации не фиксируются внутренние file ID, URL и resource
+IDs. Файл проверен непосредственно в canonical Test Results folder.
