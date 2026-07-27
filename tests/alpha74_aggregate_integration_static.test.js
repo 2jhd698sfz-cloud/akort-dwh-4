@@ -320,6 +320,7 @@ test('repository wiring removes deferred executor and hard-coded write probes', 
   const entries = fs.readFileSync(path.join(root, 'src/08_EntryPoints.js'), 'utf8');
   const release = fs.readFileSync(path.join(root, 'src/00_Release.js'), 'utf8');
   const gate1Cleanup = fs.readFileSync(path.join(root, 'src/23_Alpha74Gate1Cleanup.js'), 'utf8');
+  const gate3Acceptance = fs.readFileSync(path.join(root, 'src/24_Alpha74Gate3Acceptance.js'), 'utf8');
   assert(engine.includes("value: '4.0-operation-2'"));
   assert(engine.includes("FAILED_REQUIRES_REVIEW"));
   assert(!raw.includes('IncrementalPublish.applyAggregates'));
@@ -330,6 +331,11 @@ test('repository wiring removes deferred executor and hard-coded write probes', 
   assert(entries.includes('AKORT_alpha74ReadOnlyPlan'));
   assert(entries.includes('AKORT_alpha74Gate1LegacyStatus'));
   assert(entries.includes('AKORT_alpha74Gate1CloseLegacyOperations'));
+  assert(entries.includes('AKORT_alpha74Gate3RuntimeContextStatus'));
+  assert(entries.includes('AKORT_alpha74Gate3NewPeriodPlan'));
+  assert(entries.includes('AKORT_alpha74Gate3RevisionPlan'));
+  assert(entries.includes('AKORT_alpha74Gate3ReversalPlan'));
+  assert(entries.includes('AKORT_alpha74Gate3Acceptance'));
   assert(gate1Cleanup.includes("var EXPECTED_PROFILE = {"));
   assert(gate1Cleanup.includes("total: 4"));
   assert(gate1Cleanup.includes("alpha3Test: 3"));
@@ -340,8 +346,16 @@ test('repository wiring removes deferred executor and hard-coded write probes', 
   assert(gate1Cleanup.includes("rawRowsChanged: 0"));
   assert(gate1Cleanup.includes("publishRowsChanged: 0"));
   assert(gate1Cleanup.includes("aggregateRowsChanged: 0"));
+  assert(gate3Acceptance.includes("mode: 'IN_MEMORY_ACCEPTANCE_ONLY'"));
+  assert(gate3Acceptance.includes("productionSettingsChanged: false"));
+  assert(gate3Acceptance.includes("dataPlaneWrites: 0"));
+  assert(gate3Acceptance.includes("evidenceFileWrites: 1"));
+  assert(!gate3Acceptance.includes('PUBLISH_AGGREGATE_RUNTIME_CONTEXT_JSON'));
+  assert(!gate3Acceptance.includes('.setValue('));
+  assert(!gate3Acceptance.includes('.appendRow('));
   assert(release.includes("'AGGREGATE_STAGE'"));
   assert(release.includes("'FINALIZING'"));
+  assert(release.includes("'24_Alpha74Gate3Acceptance.js'"));
   const releaseContext = vm.createContext({ console, Object, JSON });
   releaseContext.AKORT = {};
   vm.runInContext(release, releaseContext, { filename: 'src/00_Release.js' });

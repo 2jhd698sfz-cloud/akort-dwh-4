@@ -9,6 +9,11 @@ function AKORT_alpha74ReadOnlyContractScan(){return AKORT_printResult_(AKORT.Agg
 function AKORT_alpha74ReadOnlyPlan(operationId,loadId,mode){return AKORT_printResult_(AKORT.AggregateIntegration.planReadOnly(operationId,loadId,{mode:mode||'REVISION'}));}
 function AKORT_alpha74Gate1LegacyStatus(){return AKORT_printResult_(AKORT.Alpha74Gate1Cleanup.status());}
 function AKORT_alpha74Gate1CloseLegacyOperations(){return AKORT_printResult_(AKORT.Alpha74Gate1Cleanup.closeLegacyOperations());}
+function AKORT_alpha74Gate3RuntimeContextStatus(){return AKORT_printResult_(AKORT.Alpha74Gate3Acceptance.runtimeContextStatus());}
+function AKORT_alpha74Gate3NewPeriodPlan(){return AKORT_printResult_(AKORT.Alpha74Gate3Acceptance.runNewPeriod());}
+function AKORT_alpha74Gate3RevisionPlan(){return AKORT_printResult_(AKORT.Alpha74Gate3Acceptance.runRevision());}
+function AKORT_alpha74Gate3ReversalPlan(){return AKORT_printResult_(AKORT.Alpha74Gate3Acceptance.runReversal());}
+function AKORT_alpha74Gate3Acceptance(){return AKORT_printResult_(AKORT.Alpha74Gate3Acceptance.runAndSaveEvidence());}
 
 function AKORT_alpha6Install(){return AKORT_printResult_(AKORT.IncrementalPublish.install());}
 function AKORT_alpha6SmokeTest(){return AKORT_printResult_(AKORT.Alpha6Tests.runSmokeTest());}

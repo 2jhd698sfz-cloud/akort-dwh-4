@@ -1849,6 +1849,41 @@ AKORT.AggregateIntegration = (function () {
     }, { lock: false, persistLogs: false });
   }
 
+  function planRequestReadOnly(request, mode) {
+    var normalizedMode = text_(mode || 'REVISION').toUpperCase();
+    return AKORT.Core.safeRun('ALPHA74_READ_ONLY_PLAN_REQUEST', function () {
+      AKORT.EnvironmentGuard.assertDev();
+      if (normalizedMode !== 'REVISION' && normalizedMode !== 'REVERSAL') {
+        throw error_('ALPHA74_READ_ONLY_PLAN_MODE_INVALID', 'Read-only plan mode must be REVISION or REVERSAL.', {
+          mode: normalizedMode,
+          retryable: false
+        });
+      }
+      var plan = normalizedMode === 'REVERSAL'
+        ? AKORT.AggregateRevisionPlanner.planReversal(clone_(request || {}))
+        : AKORT.AggregateRevisionPlanner.planRevision(clone_(request || {}));
+      if (!plan || plan.ok !== true) {
+        return AKORT.Result.failure(
+          'ALPHA74_READ_ONLY_PLAN_FAILED',
+          'Alpha.7.4 read-only acceptance request was rejected by the frozen Alpha.7.3 planner.',
+          {
+            mode: normalizedMode,
+            plan: clone_(plan || null),
+            physicalWrites: false
+          }
+        );
+      }
+      return AKORT.Result.success(
+        'Alpha.7.4 read-only acceptance request completed without staging or Publish mutation.',
+        {
+          mode: normalizedMode,
+          plan: clone_(plan),
+          physicalWrites: false
+        }
+      );
+    }, { lock: false, persistLogs: false });
+  }
+
   function statusSummary() {
     return {
       release: RELEASE,
@@ -1877,6 +1912,7 @@ AKORT.AggregateIntegration = (function () {
     execute: execute,
     readOnlyContractScan: readOnlyContractScan,
     planReadOnly: planReadOnly,
+    planRequestReadOnly: planRequestReadOnly,
     statusSummary: statusSummary,
     Test: Object.freeze({
       clone: clone_,

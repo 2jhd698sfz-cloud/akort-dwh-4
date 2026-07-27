@@ -38,11 +38,17 @@
 - [x] Contract scan 61 636 rows.
 - [x] Aggregate logical-key index.
 - [x] Snapshot/fingerprint checks.
+- [x] Parameterless DEV acceptance harness.
+- [x] Machine-readable evidence contract.
 - [ ] New period plan.
 - [ ] Revision plan.
 - [ ] Reversal plan.
 - [x] No future periods.
 - [x] No physical writes.
+
+Сценарные пункты закрываются только результатом
+`AKORT_alpha74Gate3Acceptance()` в DEV. Локальные pure/static tests не заменяют
+DEV evidence.
 
 ## Gate 4 — Isolated physical/fault
 

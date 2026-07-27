@@ -42,6 +42,7 @@
 - `FINAL_CONTRACT.md` — окончательный инженерный контракт реализации.
 - `IMPLEMENTATION_GATES.md` — обязательные gates до принятия Alpha.7.4.
 - `RUNTIME_CONTEXT_CONTRACT.md` — безопасный контракт authoritative definitions и snapshots без публичных resource IDs.
+- `GATE3_ACCEPTANCE_HARNESS.md` — read-only acceptance harness, DEV entrypoints и evidence contract.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -70,7 +71,12 @@
 
 Gate 1 завершён: точный подтверждённый профиль из четырёх legacy DEV-операций закрыт через fail-closed cleanup, а audit trail сохранён. Независимая проверка подтвердила четыре `CANCELLED` queue rows, четыре новых step rows и отсутствие изменений RAW, Publish и aggregate rows.
 
-В Gate 3 пройден authoritative read-only contract scan для 61 636 строк: logical-key duplicates, latest failures и future rows отсутствуют, fingerprint зафиксирован, physical writes не выполнялись. Следующий обязательный этап — read-only планы для new period, revision и reversal. Физические записи пока запрещены.
+В Gate 3 пройден authoritative read-only contract scan для 61 636 строк:
+logical-key duplicates, latest failures и future rows отсутствуют, fingerprint
+зафиксирован, physical writes не выполнялись. Acceptance harness для read-only
+планов `NEW_PERIOD`, `REVISION` и `REVERSAL` реализован и проходит локальную
+pure/static регрессию. До DEV acceptance-run пункты сценариев остаются
+незакрытыми. Физические записи по-прежнему запрещены.
 
 ## Gate 1 migration cleanup
 
