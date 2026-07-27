@@ -2,16 +2,16 @@
   "project": "AKORT DWH 4.0",
   "milestone": "Alpha.7.4",
   "architecture": "INTEGRATION_INTO_EXISTING_OPERATION_ENGINE",
-  "status": "GATE_4_HARNESS_READY_LIVE_ACCEPTANCE_PENDING",
+  "status": "GATE_4_ACCEPTED_REGULAR_PIPELINE_DISABLED",
   "physical_writes_allowed": false,
   "isolated_gate_4_physical_writes_allowed": true,
   "regular_pipeline_allowed": false,
   "operation_schema_version": "4.0-operation-2",
   "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
-  "implementation_release": "4.0.0-alpha.7.4",
-  "completed_gates": [0, 1, 2, 3],
+  "implementation_release": "4.0.0-alpha.7.4.1",
+  "completed_gates": [0, 1, 2, 3, 4],
   "partially_completed_gates": [7],
-  "next_gate": 4,
+  "next_gate": 5,
   "gate_1_cleanup_evidence": {
     "completed_at": "2026-07-27T07:11:22.541Z",
     "legacy_operations_closed": 4,
@@ -29,14 +29,14 @@
     "postcheck_blockers": 0
   },
   "gate_3_read_only_scan_evidence": {
-    "completed_at": "2026-07-27T06:34:27.140Z",
+    "completed_at": "2026-07-27T14:14:43.745Z",
     "rows": 61636,
     "columns": 29,
     "logical_rows": 61636,
     "duplicate_logical_rows": 0,
     "latest_failures": 0,
     "future_rows": 0,
-    "fingerprint": "6f2dc34330bf43f4ee36797bb1f0c391ac3b5545b3e9f0983c6150aa55aef957",
+    "fingerprint": "febfaf26d3b2e264dc0e4252e3aee51949864d5e8780af3fc2fb1a4493f611ae",
     "physical_writes": false
   },
   "gate_3_acceptance_harness": {
@@ -109,7 +109,24 @@
     ],
     "timeout_phases": 7,
     "local_regression_passed": true,
-    "dev_execution_passed": false
+    "dev_execution_passed": true
+  },
+  "gate_4_acceptance_evidence": {
+    "completed_at": "2026-07-27T14:17:38.610Z",
+    "status": "SUCCESS",
+    "release": "4.0.0-alpha.7.4.1",
+    "scenarios_passed": 5,
+    "third_state_fail_closed": true,
+    "timeout_phases_passed": 7,
+    "live_publish_unchanged": true,
+    "live_publish_physical_writes": 0,
+    "regular_pipeline_enabled": false,
+    "sandbox_spreadsheet_id": "196jM9e4epn4MRzYuUFXp0yOWVKDiqUGzTM0FOaCdQoQ",
+    "sandbox_name": "AKORT_ALPHA74_GATE4_SANDBOX_20260727_141605_EXE_20260727T141537466Z_51A241E0883A",
+    "evidence_file_id": "1Vv26Yrw0vbhPvYMgHlPP42-JdnW7EKP6",
+    "evidence_file_name": "ALPHA74_GATE4_ACCEPTANCE_20260727141737.json",
+    "evidence_hash": "94d109cffad762d4242f59acd4b6ae3186ad7fd4da08a43d1bee6c11cd208c64",
+    "evidence_bytes": 9255
   },
   "accepted_base_commit": "52590c8e036d49b9f76f87341b69881a916c851d",
   "accepted_base_tag": "v4.0.0-alpha.7.3-accepted",

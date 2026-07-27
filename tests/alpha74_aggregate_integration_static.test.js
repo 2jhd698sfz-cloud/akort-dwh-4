@@ -149,6 +149,14 @@ test('stage rows preserve logical identity and exact 29-column payload', () => {
   assert.equal(stage('2026-01-08', false).action, 'DELETE');
 });
 
+test('stage fingerprint survives Google Sheets date coercion', () => {
+  const row = stage('2026-01-08');
+  row.period_start = new Date(2026, 0, 8);
+  const validation = A.Test.validateStageRows([row], identity());
+  assert.equal(validation.rowCount, 1);
+  assert.equal(validation.seriesCount, 1);
+});
+
 test('full logical-series replacement retains unaffected periods and updates latest atomically', () => {
   const staged = [stage('2026-01-08')];
   const other = unrelated(4);

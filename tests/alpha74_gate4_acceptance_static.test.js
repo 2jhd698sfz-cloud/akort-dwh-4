@@ -165,19 +165,34 @@ test('date-valued Google Sheets read-back has the same affected fingerprint as I
   };
   const stage = [H.Test.stageRecord(identity, '2026-01-08', 2, true)];
   const target = [H.Test.publishRow('AKORT_GATE4_ISOLATED', 'GATE4_PRIMARY', '2026-01-01', 1)];
+  target[0].period_start = new Date(2026, 0, 1);
+  target[0].period_label = new Date(2026, 0, 1);
   const replacement = A.Test.buildSeriesReplacement(target, stage);
-  const readBack = replacement.replacementRows.map(row => ({
-    ...row,
-    period_start: new Date(
-      Number(String(row.period_start).slice(0, 4)),
-      Number(String(row.period_start).slice(5, 7)) - 1,
-      Number(String(row.period_start).slice(8, 10)),
-      12,
-      0,
-      0,
-      0
-    )
-  }));
+  const readBack = replacement.replacementRows.map(row => {
+    const period = row.period_start instanceof Date
+      ? [
+        row.period_start.getFullYear(),
+        String(row.period_start.getMonth() + 1).padStart(2, '0'),
+        String(row.period_start.getDate()).padStart(2, '0')
+      ].join('-')
+      : String(row.period_start).slice(0, 10);
+    const parts = period.split('-').map(Number);
+    return {
+      ...row,
+      period_start: new Date(
+        parts[0],
+        parts[1] - 1,
+        parts[2],
+        12,
+        0,
+        0,
+        0
+      ),
+      period_label: row.period_label instanceof Date
+        ? period
+        : row.period_label
+    };
+  });
   assert.equal(A.Test.currentAffectedFingerprint(readBack, stage), replacement.afterFingerprint);
   assert.equal(A.Test.reconcileTarget(readBack, stage, replacement).ok, true);
 });
@@ -236,6 +251,7 @@ test('repository wiring exposes Gate 4 entrypoints and preserves regular-pipelin
   assert(integration.includes('AGGREGATE_GATE4_LIVE_TARGET_FORBIDDEN'));
   assert(integration.includes('AGGREGATE_GATE4_TARGET_OUTSIDE_TEST_FOLDER'));
   assert(integration.includes('Both Alpha.7.4 feature flags must be true at the regular physical-write boundary.'));
+  assert(integration.includes("fields: 'userEnteredValue,userEnteredFormat.numberFormat'"));
   assert(harness.includes('livePublishPhysicalWrites: 0'));
   assert(harness.includes('dataLensConnectedTargetTouched: false'));
   assert(harness.includes('PASS_NO_AUTOMATIC_OVERWRITE'));

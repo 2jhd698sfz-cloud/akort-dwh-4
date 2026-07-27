@@ -9,7 +9,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  */
 AKORT.AggregateIntegration = (function () {
   var VERSION = '4.0-aggregate-integration-1';
-  var RELEASE = '4.0.0-alpha.7.4';
+  var RELEASE = '4.0.0-alpha.7.4.1';
   var OPERATION_SCHEMA_VERSION = '4.0-operation-2';
   var STAGE_SCHEMA_VERSION = '4.0-aggregate-stage-1';
   var TARGET_SHEET = 'PUBLISH_PRICE_AGGREGATES';
@@ -176,6 +176,10 @@ AKORT.AggregateIntegration = (function () {
       if (header === 'period_start') {
         var period = periodKey_(row && row.frequency, value);
         return String(row && row.frequency).toLowerCase() === 'monthly' && period ? period + '-01' : period;
+      }
+      if (header === 'period_label' &&
+          (value instanceof Date || (typeof value === 'number' && isFinite(value)))) {
+        return periodKey_(row && row.frequency, value);
       }
       return value === undefined || value === null ? '' : value;
     });
@@ -472,7 +476,7 @@ AKORT.AggregateIntegration = (function () {
       var actualFingerprint = hash_({
         seriesKey: seriesKey,
         rowKey: rowKey,
-        period: text_(record.period_start),
+        period: periodKey_(payload.frequency, record.period_start),
         action: text_(record.action),
         payload: payload
       });
@@ -1592,6 +1596,10 @@ AKORT.AggregateIntegration = (function () {
       var serial = Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) / 86400000 + 25569;
       return { numberValue: serial };
     }
+    if (header === 'period_label' &&
+        (value instanceof Date || (typeof value === 'number' && isFinite(value)))) {
+      return { stringValue: periodKey_(row && row.frequency, value) };
+    }
     if (typeof value === 'number' && isFinite(value)) return { numberValue: value };
     if (typeof value === 'boolean') return { boolValue: value };
     return { stringValue: String(value) };
@@ -1650,11 +1658,15 @@ AKORT.AggregateIntegration = (function () {
           rows: replacement.replacementRows.map(function (row) {
             return {
               values: AKORT.AggregateContract.Headers.map(function (header) {
-                return { userEnteredValue: userEnteredValue_(row[header], header, row) };
+                var cell = { userEnteredValue: userEnteredValue_(row[header], header, row) };
+                if (header === 'period_start' && Object.keys(cell.userEnteredValue).length) {
+                  cell.userEnteredFormat = { numberFormat: { type: 'DATE', pattern: 'yyyy-mm-dd' } };
+                }
+                return cell;
               })
             };
           }),
-          fields: 'userEnteredValue'
+          fields: 'userEnteredValue,userEnteredFormat.numberFormat'
         }
       });
     }
