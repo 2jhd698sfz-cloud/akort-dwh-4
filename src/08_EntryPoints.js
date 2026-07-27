@@ -14,6 +14,8 @@ function AKORT_alpha74Gate3NewPeriodPlan(){return AKORT_printResult_(AKORT.Alpha
 function AKORT_alpha74Gate3RevisionPlan(){return AKORT_printResult_(AKORT.Alpha74Gate3Acceptance.runRevision());}
 function AKORT_alpha74Gate3ReversalPlan(){return AKORT_printResult_(AKORT.Alpha74Gate3Acceptance.runReversal());}
 function AKORT_alpha74Gate3Acceptance(){return AKORT_printResult_(AKORT.Alpha74Gate3Acceptance.runAndSaveEvidence());}
+function AKORT_alpha74Gate4Status(){return AKORT_printResult_(AKORT.Alpha74Gate4Acceptance.status());}
+function AKORT_alpha74Gate4Acceptance(){return AKORT_printResult_(AKORT.Alpha74Gate4Acceptance.runAndSaveEvidence());}
 
 function AKORT_alpha6Install(){return AKORT_printResult_(AKORT.IncrementalPublish.install());}
 function AKORT_alpha6SmokeTest(){return AKORT_printResult_(AKORT.Alpha6Tests.runSmokeTest());}

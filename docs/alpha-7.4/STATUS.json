@@ -2,8 +2,9 @@
   "project": "AKORT DWH 4.0",
   "milestone": "Alpha.7.4",
   "architecture": "INTEGRATION_INTO_EXISTING_OPERATION_ENGINE",
-  "status": "GATE_3_ACCEPTED_GATE_4_PENDING",
+  "status": "GATE_4_HARNESS_READY_LIVE_ACCEPTANCE_PENDING",
   "physical_writes_allowed": false,
+  "isolated_gate_4_physical_writes_allowed": true,
   "regular_pipeline_allowed": false,
   "operation_schema_version": "4.0-operation-2",
   "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
@@ -89,6 +90,27 @@
     "evidence_hash": "325cf6b5cf33585f42e8ccd09b56ec3f37f657c2ecb0037d5350d4b00dbd5dcc",
     "evidence_bytes": 8561
   },
+  "gate_4_acceptance_harness": {
+    "version": "4.0-alpha74-gate4-acceptance-1",
+    "evidence_schema": "4.0-alpha74-gate4-evidence-1",
+    "target_mode": "ISOLATED_TEST_FILES_SANDBOX",
+    "live_publish_access": "READ_ONLY_BEFORE_AFTER",
+    "feature_flags_required": {
+      "PUBLISH_AGGREGATE_EXECUTION_ENABLED": true,
+      "PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED": false
+    },
+    "scenarios": [
+      "INSERT",
+      "UPDATE",
+      "NOOP",
+      "LOST_RESPONSE",
+      "REVERSAL_DELETE",
+      "THIRD_STATE_FAIL_CLOSED"
+    ],
+    "timeout_phases": 7,
+    "local_regression_passed": true,
+    "dev_execution_passed": false
+  },
   "accepted_base_commit": "52590c8e036d49b9f76f87341b69881a916c851d",
   "accepted_base_tag": "v4.0.0-alpha.7.3-accepted",
   "active_branch": "codex/alpha-7.4-integration-reset",
@@ -100,6 +122,7 @@
     "docs/alpha-7.4/FINAL_CONTRACT.md",
     "docs/alpha-7.4/IMPLEMENTATION_GATES.md",
     "docs/alpha-7.4/RUNTIME_CONTEXT_CONTRACT.md",
-    "docs/alpha-7.4/GATE3_ACCEPTANCE_HARNESS.md"
+    "docs/alpha-7.4/GATE3_ACCEPTANCE_HARNESS.md",
+    "docs/alpha-7.4/GATE4_ACCEPTANCE_HARNESS.md"
   ]
 }

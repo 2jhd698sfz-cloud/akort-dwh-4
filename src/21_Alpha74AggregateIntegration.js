@@ -128,6 +128,15 @@ AKORT.AggregateIntegration = (function () {
   function periodKey_(frequency, value) {
     var raw = text_(value);
     if (/^\d{4}-\d{2}/.test(raw)) return String(frequency).toLowerCase() === 'monthly' ? raw.slice(0, 7) : raw.slice(0, 10);
+    if (typeof value === 'number' && isFinite(value)) {
+      var serialDate = new Date(Math.round((value - 25569) * 86400000));
+      if (isNaN(serialDate.getTime())) return '';
+      var serialMonth = ('0' + (serialDate.getUTCMonth() + 1)).slice(-2);
+      var serialDay = ('0' + serialDate.getUTCDate()).slice(-2);
+      return String(frequency).toLowerCase() === 'monthly'
+        ? serialDate.getUTCFullYear() + '-' + serialMonth
+        : serialDate.getUTCFullYear() + '-' + serialMonth + '-' + serialDay;
+    }
     var date = value instanceof Date ? value : new Date(value);
     if (isNaN(date.getTime())) return '';
     var month = ('0' + (date.getMonth() + 1)).slice(-2);
@@ -161,9 +170,20 @@ AKORT.AggregateIntegration = (function () {
     });
   }
 
+  function fingerprintRowValues_(row, headers) {
+    return headers.map(function (header) {
+      var value = row && row[header];
+      if (header === 'period_start') {
+        var period = periodKey_(row && row.frequency, value);
+        return String(row && row.frequency).toLowerCase() === 'monthly' && period ? period + '-01' : period;
+      }
+      return value === undefined || value === null ? '' : value;
+    });
+  }
+
   function canonicalRows_(rows, headers, keyFunction) {
     return (rows || []).map(function (row) {
-      return { key: keyFunction(row), values: rowValues_(row, headers) };
+      return { key: keyFunction(row), values: fingerprintRowValues_(row, headers) };
     }).sort(function (a, b) {
       return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
     });
@@ -1563,10 +1583,12 @@ AKORT.AggregateIntegration = (function () {
     }
   }
 
-  function userEnteredValue_(value, header) {
+  function userEnteredValue_(value, header, row) {
     if (value === '' || value === null || value === undefined) return {};
     if (header === 'period_start') {
-      var key = text_(value).slice(0, 10), parts = key.split('-');
+      var period = periodKey_(row && row.frequency, value);
+      var key = String(row && row.frequency).toLowerCase() === 'monthly' ? period + '-01' : period;
+      var parts = key.split('-');
       var serial = Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) / 86400000 + 25569;
       return { numberValue: serial };
     }
@@ -1596,23 +1618,18 @@ AKORT.AggregateIntegration = (function () {
     return blocks.sort(function (a, b) { return b.start - a.start; });
   }
 
-  function atomicReplace_(replacement) {
-    var settings = systemSettings_();
-    if (!truthy_(settings.PUBLISH_AGGREGATE_EXECUTION_ENABLED) ||
-        !truthy_(settings.PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED)) {
-      throw error_('AGGREGATE_PHYSICAL_WRITE_DISABLED', 'Both Alpha.7.4 feature flags must be true at the physical-write boundary.', {
-        retryable: false
-      });
-    }
+  function batchUpdateReplacement_(spreadsheet, replacement) {
     if (!replacement.deletePhysicalRows.length && !replacement.replacementRows.length) {
-      return { requests: 0, deletedRows: 0, appendedRows: 0, noOp: true };
+      return { apiCalls: 0, requests: 0, deletedRows: 0, appendedRows: 0, noOp: true };
     }
     if (typeof Sheets === 'undefined' || !Sheets.Spreadsheets || typeof Sheets.Spreadsheets.batchUpdate !== 'function') {
       throw error_('AGGREGATE_SHEETS_API_UNAVAILABLE', 'Advanced Google Sheets service is required for atomic aggregate publication.', {
         retryable: false
       });
     }
-    var spreadsheet = publish_(), sheet = spreadsheet.getSheetByName(TARGET_SHEET), sheetId = sheet.getSheetId();
+    var sheet = spreadsheet.getSheetByName(TARGET_SHEET);
+    assertHeaders_(sheet, AKORT.AggregateContract.Headers.slice(), TARGET_SHEET);
+    var sheetId = sheet.getSheetId();
     var requests = [];
     deleteBlocks_(replacement.deletePhysicalRows).forEach(function (block) {
       requests.push({
@@ -1633,7 +1650,7 @@ AKORT.AggregateIntegration = (function () {
           rows: replacement.replacementRows.map(function (row) {
             return {
               values: AKORT.AggregateContract.Headers.map(function (header) {
-                return { userEnteredValue: userEnteredValue_(row[header], header) };
+                return { userEnteredValue: userEnteredValue_(row[header], header, row) };
               })
             };
           }),
@@ -1652,7 +1669,76 @@ AKORT.AggregateIntegration = (function () {
         expectedAfterFingerprint: replacement.afterFingerprint
       });
     }
-    return { requests: requests.length, deletedRows: replacement.deletePhysicalRows.length, appendedRows: replacement.replacementRows.length };
+    return {
+      apiCalls: 1,
+      requests: requests.length,
+      deletedRows: replacement.deletePhysicalRows.length,
+      appendedRows: replacement.replacementRows.length,
+      noOp: false
+    };
+  }
+
+  function atomicReplace_(replacement) {
+    var settings = systemSettings_();
+    if (!truthy_(settings.PUBLISH_AGGREGATE_EXECUTION_ENABLED) ||
+        !truthy_(settings.PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED)) {
+      throw error_('AGGREGATE_PHYSICAL_WRITE_DISABLED', 'Both Alpha.7.4 feature flags must be true at the regular physical-write boundary.', {
+        retryable: false
+      });
+    }
+    return batchUpdateReplacement_(publish_(), replacement);
+  }
+
+  function gate4AtomicReplaceIsolated_(spreadsheet, replacement) {
+    if (AKORT.EnvironmentGuard && typeof AKORT.EnvironmentGuard.assertDev === 'function') {
+      AKORT.EnvironmentGuard.assertDev();
+    }
+    var settings = systemSettings_();
+    if (!truthy_(settings.PUBLISH_AGGREGATE_EXECUTION_ENABLED) ||
+        truthy_(settings.PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED)) {
+      throw error_('AGGREGATE_GATE4_FLAGS_INVALID', 'Gate 4 requires execution enabled and the regular aggregate pipeline disabled.', {
+        retryable: false,
+        executionEnabled: truthy_(settings.PUBLISH_AGGREGATE_EXECUTION_ENABLED),
+        regularPipelineEnabled: truthy_(settings.PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED)
+      });
+    }
+    if (!spreadsheet || typeof spreadsheet.getId !== 'function') {
+      throw error_('AGGREGATE_GATE4_TARGET_INVALID', 'Gate 4 requires an isolated spreadsheet target.', {
+        retryable: false
+      });
+    }
+    var config = AKORT.Config.load({ includeSystemSettings: false });
+    if (text_(spreadsheet.getId()) === text_(config.resources.publishSpreadsheetId)) {
+      throw error_('AGGREGATE_GATE4_LIVE_TARGET_FORBIDDEN', 'Gate 4 cannot write to the DataLens-connected DEV Publish spreadsheet.', {
+        retryable: false
+      });
+    }
+    if (!text_(config.resources.testFilesFolderId)) {
+      throw error_('AGGREGATE_GATE4_TEST_FOLDER_MISSING', 'Gate 4 canonical test-files folder is not configured.', {
+        retryable: false
+      });
+    }
+    var inTestFolder = false;
+    try {
+      var parents = DriveApp.getFileById(spreadsheet.getId()).getParents();
+      while (parents.hasNext()) {
+        if (text_(parents.next().getId()) === text_(config.resources.testFilesFolderId)) {
+          inTestFolder = true;
+          break;
+        }
+      }
+    } catch (caughtParent) {
+      throw error_('AGGREGATE_GATE4_TARGET_PARENT_UNREADABLE', 'Gate 4 could not verify the isolated target parent folder.', {
+        retryable: false,
+        cause: String(caughtParent && caughtParent.message || caughtParent)
+      });
+    }
+    if (!inTestFolder) {
+      throw error_('AGGREGATE_GATE4_TARGET_OUTSIDE_TEST_FOLDER', 'Gate 4 writes are restricted to the canonical DEV test-files folder.', {
+        retryable: false
+      });
+    }
+    return batchUpdateReplacement_(spreadsheet, replacement);
   }
 
   function readImpactRecords_(operationId, loadId) {
@@ -1914,6 +2000,9 @@ AKORT.AggregateIntegration = (function () {
     planReadOnly: planReadOnly,
     planRequestReadOnly: planRequestReadOnly,
     statusSummary: statusSummary,
+    Gate4: Object.freeze({
+      atomicReplaceIsolated: gate4AtomicReplaceIsolated_
+    }),
     Test: Object.freeze({
       clone: clone_,
       stableStringify: stableStringify_,

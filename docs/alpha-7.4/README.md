@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 1 COMPLETE / GATE 3 READ-ONLY CONTRACT SCAN PASSED / READ-ONLY PLANS PENDING / PHYSICAL WRITES PROHIBITED`
+`GATE 3 ACCEPTED / GATE 4 HARNESS READY / ISOLATED PHYSICAL ACCEPTANCE PENDING / REGULAR PIPELINE PROHIBITED`
 
 Дата фиксации: 27 июля 2026 года.
 
@@ -43,6 +43,7 @@
 - `IMPLEMENTATION_GATES.md` — обязательные gates до принятия Alpha.7.4.
 - `RUNTIME_CONTEXT_CONTRACT.md` — безопасный контракт authoritative definitions и snapshots без публичных resource IDs.
 - `GATE3_ACCEPTANCE_HARNESS.md` — read-only acceptance harness, DEV entrypoints и evidence contract.
+- `GATE4_ACCEPTANCE_HARNESS.md` — isolated physical/fault harness, feature-flag order и evidence contract.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -69,6 +70,12 @@
 - два feature flags `FALSE` по умолчанию;
 - unit/static regression suite.
 
+Для Gate 4 реализована отдельная физическая граница, которая работает только
+при `execution=TRUE`, `regularPipeline=FALSE`, запрещает ID рабочей
+DataLens-подключённой Publish и пишет только в созданный harness sandbox.
+Добавлена единая канонизация `period_start` для ISO, Date и Google Sheets
+serial read-back.
+
 Gate 1 завершён: точный подтверждённый профиль из четырёх legacy DEV-операций закрыт через fail-closed cleanup, а audit trail сохранён. Независимая проверка подтвердила четыре `CANCELLED` queue rows, четыре новых step rows и отсутствие изменений RAW, Publish и aggregate rows.
 
 Gate 3 закрыт 27 июля 2026 года. Authoritative read-only contract scan
@@ -77,6 +84,11 @@ rows. DEV acceptance harness успешно выполнил `NEW_PERIOD`, `REVI
 `REVERSAL` для weekly и monthly contexts: шесть fixture runs, `0` data-plane
 writes, неизменный target fingerprint и один JSON evidence file. Физические
 записи по-прежнему запрещены; следующий этап — отдельный Gate 4.
+
+Gate 4 harness подготовлен локально. Его нормативный DEV-запуск остаётся
+pending: рабочая Publish будет прочитана до и после, а физические
+INSERT/UPDATE/DELETE/NOOP и fault scenarios будут выполнены только в отдельной
+таблице canonical Test Files folder. Regular pipeline останется выключенным.
 
 ## Gate 1 migration cleanup
 

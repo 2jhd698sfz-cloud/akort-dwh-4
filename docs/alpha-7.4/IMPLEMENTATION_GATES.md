@@ -61,6 +61,10 @@ Gate закрыт результатом `AKORT_alpha74Gate3Acceptance()` в DEV
 - [ ] Latest correctness.
 - [ ] Standard logical reversal.
 
+Локальный Gate 4 harness и regression suite подготовлены. Чек-лист остаётся
+открытым до `SUCCESS` нормативного DEV-запуска
+`AKORT_alpha74Gate4Acceptance()` и проверки сохранённого evidence.
+
 ## Gate 5 — Full reconciliation/performance
 
 - [ ] Full historical build.
