@@ -2,9 +2,9 @@
 
 ## Статус
 
-`PURE/STATIC IMPLEMENTATION COMPLETE / ISOLATED READ-ONLY GATES PENDING / PHYSICAL WRITES PROHIBITED`
+`GATE 1 COMPLETE / GATE 3 READ-ONLY CONTRACT SCAN PASSED / READ-ONLY PLANS PENDING / PHYSICAL WRITES PROHIBITED`
 
-Дата фиксации: 24 июля 2026 года.
+Дата фиксации: 27 июля 2026 года.
 
 Активная GitHub-ветка: `codex/alpha-7.4-integration-reset`.
 
@@ -68,7 +68,9 @@
 - два feature flags `FALSE` по умолчанию;
 - unit/static regression suite.
 
-Следующий обязательный этап — Gate 3: isolated read-only проверки на authoritative DEV данных. Развёртывание и физические записи пока запрещены.
+Gate 1 завершён: точный подтверждённый профиль из четырёх legacy DEV-операций закрыт через fail-closed cleanup, а audit trail сохранён. Независимая проверка подтвердила четыре `CANCELLED` queue rows, четыре новых step rows и отсутствие изменений RAW, Publish и aggregate rows.
+
+В Gate 3 пройден authoritative read-only contract scan для 61 636 строк: logical-key duplicates, latest failures и future rows отсутствуют, fingerprint зафиксирован, physical writes не выполнялись. Следующий обязательный этап — read-only планы для new period, revision и reversal. Физические записи пока запрещены.
 
 ## Gate 1 migration cleanup
 

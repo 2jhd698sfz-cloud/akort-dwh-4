@@ -14,8 +14,8 @@
 ## Gate 1 — Pre-code
 
 - [x] Проверено отсутствие runtime-кода withdrawn candidates.
-- [ ] Устранена или административно закрыта stale `RUNNING` операция.
-- [ ] Подтверждена canonical Config resource map.
+- [x] Устранена или административно закрыта stale `RUNNING` операция.
+- [x] Подтверждена canonical Config resource map.
 - [x] Зафиксирован operation schema migration `4.0-operation-2`.
 - [x] Утверждён `AGGREGATE_STAGE` schema.
 - [x] Определены atomic request limits и fail-closed behavior.
@@ -35,14 +35,14 @@
 
 ## Gate 3 — Isolated read-only
 
-- [ ] Contract scan 61 636 rows.
-- [ ] Aggregate logical-key index.
-- [ ] Snapshot/fingerprint checks.
+- [x] Contract scan 61 636 rows.
+- [x] Aggregate logical-key index.
+- [x] Snapshot/fingerprint checks.
 - [ ] New period plan.
 - [ ] Revision plan.
 - [ ] Reversal plan.
-- [ ] No future periods.
-- [ ] No physical writes.
+- [x] No future periods.
+- [x] No physical writes.
 
 ## Gate 4 — Isolated physical/fault
 
