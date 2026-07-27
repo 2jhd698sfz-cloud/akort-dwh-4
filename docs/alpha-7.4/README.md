@@ -70,6 +70,18 @@
 
 Следующий обязательный этап — Gate 3: isolated read-only проверки на authoritative DEV данных. Развёртывание и физические записи пока запрещены.
 
+## Gate 1 migration cleanup
+
+Перед установкой `4.0-operation-2` используется отдельный fail-closed административный контур:
+
+1. `AKORT_alpha74Gate1LegacyStatus()` выполняет read-only preflight.
+2. `AKORT_alpha74Gate1CloseLegacyOperations()` переводит в `CANCELLED` только точный подтверждённый профиль из трёх paused Alpha.3 test operations и одной stale Alpha.4 smoke reversal operation.
+3. При активном lease, другой схеме checkpoint, пятом кандидате, неизвестной operation или наличии связанной записи в RAW registry/reversal log операция полностью блокируется.
+4. История `OPERATION_QUEUE` сохраняется, в `OPERATION_STEPS` и `SYSTEM_LOG` добавляется audit trail.
+5. RAW, Publish и aggregate rows этим действием не изменяются и не удаляются.
+
+Идентификаторы DEV-ресурсов и конкретных операций в публичном репозитории не фиксируются.
+
 ## Coding gate
 
 Кодирование разрешается только от этой ветки после проверки:

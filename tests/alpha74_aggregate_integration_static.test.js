@@ -319,6 +319,7 @@ test('repository wiring removes deferred executor and hard-coded write probes', 
   const parser = fs.readFileSync(path.join(root, 'src/06_ExistingSourceParsers.js'), 'utf8');
   const entries = fs.readFileSync(path.join(root, 'src/08_EntryPoints.js'), 'utf8');
   const release = fs.readFileSync(path.join(root, 'src/00_Release.js'), 'utf8');
+  const gate1Cleanup = fs.readFileSync(path.join(root, 'src/23_Alpha74Gate1Cleanup.js'), 'utf8');
   assert(engine.includes("value: '4.0-operation-2'"));
   assert(engine.includes("FAILED_REQUIRES_REVIEW"));
   assert(!raw.includes('IncrementalPublish.applyAggregates'));
@@ -327,6 +328,18 @@ test('repository wiring removes deferred executor and hard-coded write probes', 
   assert(!entries.includes('AKORT_probeIncrementalRead'));
   assert(entries.includes('AKORT_alpha74ReadOnlyContractScan'));
   assert(entries.includes('AKORT_alpha74ReadOnlyPlan'));
+  assert(entries.includes('AKORT_alpha74Gate1LegacyStatus'));
+  assert(entries.includes('AKORT_alpha74Gate1CloseLegacyOperations'));
+  assert(gate1Cleanup.includes("var EXPECTED_PROFILE = {"));
+  assert(gate1Cleanup.includes("total: 4"));
+  assert(gate1Cleanup.includes("alpha3Test: 3"));
+  assert(gate1Cleanup.includes("alpha4SmokeReversal: 1"));
+  assert(gate1Cleanup.includes("REVERSAL_TARGET_LOAD_PRESENT"));
+  assert(gate1Cleanup.includes("REVERSAL_LOG_PRESENT"));
+  assert(gate1Cleanup.includes("ACTIVE_LEASE"));
+  assert(gate1Cleanup.includes("rawRowsChanged: 0"));
+  assert(gate1Cleanup.includes("publishRowsChanged: 0"));
+  assert(gate1Cleanup.includes("aggregateRowsChanged: 0"));
   assert(release.includes("'AGGREGATE_STAGE'"));
   assert(release.includes("'FINALIZING'"));
   const releaseContext = vm.createContext({ console, Object, JSON });
@@ -335,6 +348,70 @@ test('repository wiring removes deferred executor and hard-coded write probes', 
   for (const sourceFile of Array.from(releaseContext.AKORT.Release.sourceFiles)) {
     assert(fs.existsSync(path.join(root, 'src', sourceFile)), `release source file is missing: ${sourceFile}`);
   }
+});
+
+test('Gate 1 cleanup classifier is fail-closed for the approved four-operation profile', () => {
+  const source = fs.readFileSync(path.join(root, 'src/23_Alpha74Gate1Cleanup.js'), 'utf8');
+  const context = vm.createContext({
+    console,
+    JSON,
+    Date,
+    Object,
+    AKORT: {}
+  });
+  vm.runInContext(source, context, { filename: 'src/23_Alpha74Gate1Cleanup.js' });
+  const cleanup = context.AKORT.Alpha74Gate1Cleanup;
+  const classify = cleanup.Test.classifyLegacyOperation;
+  const now = Date.parse('2026-07-27T00:00:00.000Z');
+  const checkpoint = input => JSON.stringify({
+    schemaVersion: '4.0-operation-1',
+    nextPhase: 'VALIDATE',
+    completedPhases: ['DISCOVER'],
+    input: input || {},
+    control: { stopRequested: false },
+    meta: {},
+    lease: null
+  });
+  const alpha3 = {
+    operation_id: 'OP_ALPHA3_TEST_LEASE_EXAMPLE',
+    operation_type: 'ALPHA3_TEST_LEASE',
+    status: 'PAUSED',
+    current_phase: 'VALIDATE',
+    checkpoint_json: checkpoint({})
+  };
+  assert.equal(classify(alpha3, {}, now).classification, 'CANDIDATE');
+  assert.equal(classify(alpha3, {}, now).kind, 'ALPHA3_TEST');
+  assert.equal(classify(alpha3, {}, now).operationId, 'OP_ALPHA3_TEST_LEASE_EXAMPLE');
+
+  const activeLease = JSON.parse(alpha3.checkpoint_json);
+  activeLease.lease = { executionId: 'EXE_ACTIVE', expiresAt: '2026-07-27T00:05:00.000Z' };
+  assert.equal(classify({ ...alpha3, checkpoint_json: JSON.stringify(activeLease) }, {}, now).reason, 'ACTIVE_LEASE');
+
+  const reversal = {
+    operation_id: 'OP_RAW_REVERSAL_V4_EXAMPLE',
+    operation_type: 'RAW_REVERSAL_V4',
+    status: 'RUNNING',
+    current_phase: 'COMMIT_RAW',
+    checkpoint_json: checkpoint({
+      targetLoadId: 'LOAD_EXAMPLE',
+      reason: 'Alpha.4 smoke reversal'
+    })
+  };
+  assert.equal(classify(reversal, { targetLoadExists: false, reversalRecordExists: false }, now).kind, 'ALPHA4_SMOKE_REVERSAL');
+  assert.equal(classify(reversal, { targetLoadExists: true, reversalRecordExists: false }, now).reason, 'REVERSAL_TARGET_LOAD_PRESENT');
+  assert.equal(classify(reversal, { targetLoadExists: false, reversalRecordExists: true }, now).reason, 'REVERSAL_LOG_PRESENT');
+  assert.equal(classify({ ...alpha3, operation_id: 'OP_REAL', operation_type: 'REAL_PIPELINE' }, {}, now).reason, 'UNSAFE_LEGACY_OPERATION');
+
+  assert.equal(cleanup.Test.profileMatches({
+    total: 4,
+    alpha3Test: 3,
+    alpha4SmokeReversal: 1
+  }), true);
+  assert.equal(cleanup.Test.profileMatches({
+    total: 5,
+    alpha3Test: 4,
+    alpha4SmokeReversal: 1
+  }), false);
 });
 
 let failed = 0;
