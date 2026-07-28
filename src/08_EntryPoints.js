@@ -20,6 +20,11 @@ function AKORT_alpha74Gate5Status(){return AKORT_printResult_(AKORT.Alpha74Gate5
 function AKORT_alpha74Gate5Start(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.start());}
 function AKORT_alpha74Gate5Worker(){return AKORT.Alpha74Gate5Acceptance.worker();}
 function AKORT_alpha74Gate5Stop(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.stop());}
+function AKORT_alpha74IndustryInputInstall(){return AKORT_printResult_(AKORT.IndustryInput.install());}
+function AKORT_alpha74IndustryInputValidate(){return AKORT_printResult_(AKORT.IndustryInput.validate());}
+function AKORT_alpha74IndustryInputSubmit(){return AKORT_printResult_(AKORT.IndustryInput.submit());}
+function AKORT_alpha74IndustryInputContinue(){return AKORT_printResult_(AKORT.IndustryInput.continueLatest());}
+function AKORT_alpha74IndustryInputStatus(){return AKORT_printResult_(AKORT.IndustryInput.status());}
 
 function AKORT_alpha6Install(){return AKORT_printResult_(AKORT.IncrementalPublish.install());}
 function AKORT_alpha6SmokeTest(){return AKORT_printResult_(AKORT.Alpha6Tests.runSmokeTest());}

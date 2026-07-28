@@ -11,7 +11,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  */
 AKORT.Alpha74Gate5Acceptance = (function () {
   var VERSION = '4.0-alpha74-gate5-acceptance-3';
-  var RELEASE = '4.0.0-alpha.7.4.4';
+  var RELEASE = '4.0.0-alpha.7.4.5';
   var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-3';
   var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-3';
   var STATE_KEY = 'AKORT_ALPHA74_GATE5_STATE_V1';

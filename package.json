@@ -1,12 +1,12 @@
 {
   "name": "akort-dwh-4",
-  "version": "4.0.0-alpha.7.4.4",
+  "version": "4.0.0-alpha.7.4.5",
   "private": true,
   "description": "AKORT DWH 4.0 Apps Script development repository",
   "scripts": {
     "status:dev": "clasp status",
     "deploy:dev": "bash scripts/deploy-dev.sh",
-    "test": "npm run test:alpha71-contract && npm run test:alpha72-calculator && npm run test:alpha72-golden && npm run test:alpha73-special-revision && npm run test:alpha74-integration && npm run test:alpha74-gate3 && npm run test:alpha74-gate4 && npm run test:alpha74-gate5",
+    "test": "npm run test:alpha71-contract && npm run test:alpha72-calculator && npm run test:alpha72-golden && npm run test:alpha73-special-revision && npm run test:alpha74-integration && npm run test:alpha74-gate3 && npm run test:alpha74-gate4 && npm run test:alpha74-gate5 && npm run test:alpha74-industry-input",
     "test:alpha71-contract": "node tests/alpha71_contract_static.test.js",
     "test:alpha72-calculator": "node tests/alpha72_calculator_static.test.js",
     "test:alpha72-golden": "node tests/alpha72_golden_acceptance_static.test.js",
@@ -14,6 +14,7 @@
     "test:alpha74-integration": "node tests/alpha74_aggregate_integration_static.test.js",
     "test:alpha74-gate3": "node tests/alpha74_gate3_acceptance_static.test.js",
     "test:alpha74-gate4": "node tests/alpha74_gate4_acceptance_static.test.js",
-    "test:alpha74-gate5": "node tests/alpha74_gate5_acceptance_static.test.js"
+    "test:alpha74-gate5": "node tests/alpha74_gate5_acceptance_static.test.js",
+    "test:alpha74-industry-input": "node tests/alpha74_industry_input_static.test.js"
   }
 }

@@ -128,7 +128,7 @@ const identity = {
 
 test('Gate 5 metadata and stage inventories are exact', () => {
   assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-3');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.4');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.5');
   assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-3');
   assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-3');
   assert.deepEqual(Array.from(H.FullStages), [

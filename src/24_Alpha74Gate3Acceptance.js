@@ -11,7 +11,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  */
 AKORT.Alpha74Gate3Acceptance = (function () {
   var VERSION = '4.0-alpha74-gate3-acceptance-1';
-  var RELEASE = '4.0.0-alpha.7.4.4';
+  var RELEASE = '4.0.0-alpha.7.4.5';
   var BASELINE_SHEET = 'PUBLISH_PRICE_AGGREGATES';
   var WEIGHTS_SHEET = 'RAW_CATEGORY_WEIGHTS';
   var STAGE_SHEET = 'AGGREGATE_STAGE';

@@ -45,6 +45,8 @@
 - `GATE3_ACCEPTANCE_HARNESS.md` — read-only acceptance harness, DEV entrypoints и evidence contract.
 - `GATE4_ACCEPTANCE_HARNESS.md` — isolated physical/fault harness, feature-flag order и evidence contract.
 - `GATE5_ACCEPTANCE_HARNESS.md` — full build, sequential replay, exact reconciliation, quota и automatic continuation contract.
+- `INDUSTRY_INPUT_FORM.md` — операторская форма для раздельного ввода периода
+  и значения активных `RAW_INDUSTRY` серий через `RAW_LOAD_V4`.
 - `GATE5_FULL_BUILD_CHUNKING_HOTFIX.md` — разбор timeout-loop
   `FULL_BUILD / MONTHLY`, durable cursor, размеры chunks и нормативный
   перезапуск Gate 5.
@@ -108,6 +110,14 @@ timeout-loop на монолитной стадии `FULL_BUILD / MONTHLY`. DEV-
 стадию один раз в isolated materialization и выполняет bounded cursor-copy;
 `Start` и worker также fail-closed блокируют checkpoint другого релиза.
 Gate 5 принимается только по новому `state-3` execution.
+
+В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
+`INDUSTRY_INPUT`: по одной строке на каждую активную серию
+`DIM_INDUSTRY_SERIES`, два пользовательских поля (`Период`, `Значение`),
+fail-closed валидация, раздельные партии по мере публикации источников,
+`RAW_LOAD_V4`, incremental `PUBLISH_INDUSTRY` и append-only журнал. Код нельзя
+разворачивать во время текущего Gate 5; физический Submit дополнительно
+заблокирован до `SUCCESS` Gate 5 и завершения operational enablement Gate 6–7.
 
 ## Gate 1 migration cleanup
 
