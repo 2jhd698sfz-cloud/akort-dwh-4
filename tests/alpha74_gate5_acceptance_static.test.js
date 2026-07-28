@@ -66,6 +66,13 @@ context.AKORT = {
     Version: '4.0-aggregate-contract-1',
     Headers: headers,
     Test: { periodKey }
+  },
+  IncrementalPublish: {
+    Gate5: {
+      fullBuildChunk() {
+        throw new Error('fullBuildChunk test adapter was not configured');
+      }
+    }
   }
 };
 
@@ -120,14 +127,69 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-1');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.2');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-1');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-2');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.3');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-2');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-2');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
   ]);
   assert.deepEqual(Array.from(H.ReplayStages), ['WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES']);
+});
+
+test('full build advances only after durable bounded chunks complete', () => {
+  context.AKORT.IncrementalPublish.Gate5.fullBuildChunk = function (_spreadsheetId, stage, work) {
+    if (!work) {
+      return {
+        stage,
+        phase: 'PREPARE',
+        rowsProcessed: 0,
+        rowsScanned: 0,
+        complete: false,
+        work: {
+          workSchemaVersion: '4.0-alpha74-gate5-full-work-1',
+          stage,
+          phase: 'WRITE_ROWS',
+          cursor: 0,
+          total: 1200,
+          chunkRows: 500,
+          startRow: 2,
+          prepared: true
+        }
+      };
+    }
+    const next = Math.min(work.total, work.cursor + work.chunkRows);
+    return {
+      stage,
+      phase: 'WRITE_ROWS',
+      rowsProcessed: next - work.cursor,
+      rowsScanned: 0,
+      complete: next >= work.total,
+      work: next >= work.total ? null : Object.assign({}, work, { cursor: next })
+    };
+  };
+  const state = {
+    phase: 'FULL_BUILD',
+    fullStageIndex: 0,
+    fullBuildWork: null,
+    artifacts: { fullBuild: { id: 'FULL_BUILD_TEST' } },
+    metrics: null
+  };
+  H.Test.fullBuildStep(state);
+  assert.equal(state.fullStageIndex, 0);
+  assert.equal(state.fullBuildWork.cursor, 0);
+  H.Test.fullBuildStep(state);
+  assert.equal(state.fullStageIndex, 0);
+  assert.equal(state.fullBuildWork.cursor, 500);
+  H.Test.fullBuildStep(state);
+  assert.equal(state.fullBuildWork.cursor, 1000);
+  H.Test.fullBuildStep(state);
+  assert.equal(state.fullStageIndex, 1);
+  assert.equal(state.fullBuildWork, null);
+  assert.equal(state.metrics.fullBuildRowsProcessed, 1200);
+  assert.equal(state.metrics.fullBuildChunks, 3);
+  assert.equal(state.metrics.fullBuildStagesPrepared, 1);
 });
 
 test('publish rows become exact Alpha.7.4 stage records', () => {
@@ -216,8 +278,15 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(incremental.includes('ALPHA74_GATE5_LIVE_TARGET_FORBIDDEN'));
   assert(incremental.includes('ALPHA74_GATE5_TARGET_OUTSIDE_TEST_FILES'));
   assert(incremental.includes('settings.aggregateRegularPipelineEnabled'));
+  assert(incremental.includes('fullBuildChunk:gate5FullBuildChunk_'));
+  assert(incremental.includes("GATE5_FULL_WORK_SCHEMA='4.0-alpha74-gate5-full-work-1'"));
+  assert(incremental.includes('chunkRows:500'));
+  assert(incremental.includes("phase:spec.mode==='LATEST'?'INDEX_SCAN':'WRITE_ROWS'"));
+  assert(!incremental.includes('fullBuildStage:gate5FullBuildStage_'));
   assert(harness.includes("TRIGGER_HANDLER = 'AKORT_alpha74Gate5Worker'"));
   assert(harness.includes("triggerMode: 'PERSISTENT_EVERY_MINUTE'"));
+  assert(harness.includes('fullBuildWork'));
+  assert(harness.includes('fullBuildRowsScanned'));
   assert(!harness.includes('PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED ='));
   assert(entries.includes('AKORT_alpha74Gate5Status'));
   assert(entries.includes('AKORT_alpha74Gate5Start'));

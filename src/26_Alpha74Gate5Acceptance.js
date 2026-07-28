@@ -10,15 +10,15 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * - a persistent one-minute trigger continues from a compact checkpoint.
  */
 AKORT.Alpha74Gate5Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate5-acceptance-1';
-  var RELEASE = '4.0.0-alpha.7.4.2';
-  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-1';
-  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-1';
+  var VERSION = '4.0-alpha74-gate5-acceptance-2';
+  var RELEASE = '4.0.0-alpha.7.4.3';
+  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-2';
+  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-2';
   var STATE_KEY = 'AKORT_ALPHA74_GATE5_STATE_V1';
   var TRIGGER_HANDLER = 'AKORT_alpha74Gate5Worker';
   var TRIGGER_MINUTES = 1;
   var PROPERTY_MAX_BYTES = 8500;
-  var WORKER_BUDGET_MS = 150000;
+  var WORKER_BUDGET_MS = 120000;
   var WORKER_MAX_STEPS = 12;
   var DIGEST_CHUNK_ROWS = 1000;
   var PRICE_REPLAY_CHUNK_ITEMS = 2;
@@ -462,10 +462,13 @@ AKORT.Alpha74Gate5Acceptance = (function () {
   }
 
   function metrics_(state) {
-    state.metrics = state.metrics || {
+    var defaults = {
       workerExecutions: 0,
       steps: 0,
       fullBuildRowsProcessed: 0,
+      fullBuildRowsScanned: 0,
+      fullBuildChunks: 0,
+      fullBuildStagesPrepared: 0,
       replayPriceRowsWritten: 0,
       replayAggregateRowsCalculated: 0,
       replayAggregateSeriesPublished: 0,
@@ -481,6 +484,10 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       totalWorkerDurationMs: 0,
       maximumWorkerDurationMs: 0
     };
+    state.metrics = state.metrics || {};
+    Object.keys(defaults).forEach(function (key) {
+      if (state.metrics[key] === undefined || state.metrics[key] === null || state.metrics[key] === '') state.metrics[key] = defaults[key];
+    });
     return state.metrics;
   }
 
@@ -490,10 +497,22 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       state.phase = 'PREPARE_REPLAY';
       return { phase: 'FULL_BUILD', complete: true };
     }
-    var result = AKORT.IncrementalPublish.Gate5.fullBuildStage(state.artifacts.fullBuild.id, stage);
-    state.fullStageIndex = Number(state.fullStageIndex || 0) + 1;
-    metrics_(state).fullBuildRowsProcessed += Number(result.rowsProcessed || 0);
-    if (state.fullStageIndex >= FULL_STAGES.length) state.phase = 'PREPARE_REPLAY';
+    var result = AKORT.IncrementalPublish.Gate5.fullBuildChunk(
+      state.artifacts.fullBuild.id,
+      stage,
+      state.fullBuildWork || null
+    );
+    state.fullBuildWork = result.work || null;
+    var metrics = metrics_(state);
+    metrics.fullBuildRowsProcessed += Number(result.rowsProcessed || 0);
+    metrics.fullBuildRowsScanned += Number(result.rowsScanned || 0);
+    if (result.phase === 'PREPARE') metrics.fullBuildStagesPrepared += 1;
+    else metrics.fullBuildChunks += 1;
+    if (result.complete) {
+      state.fullStageIndex = Number(state.fullStageIndex || 0) + 1;
+      state.fullBuildWork = null;
+      if (state.fullStageIndex >= FULL_STAGES.length) state.phase = 'PREPARE_REPLAY';
+    }
     return result;
   }
 
@@ -926,6 +945,15 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       finishedAt: state.finishedAt || '',
       nextRetryAt: state.nextRetryAt || '',
       fullStage: FULL_STAGES[Number(state.fullStageIndex || 0)] || '',
+      fullBuild: state.fullBuildWork ? {
+        workSchemaVersion: state.fullBuildWork.workSchemaVersion || '',
+        stage: state.fullBuildWork.stage || '',
+        phase: state.fullBuildWork.phase || '',
+        cursor: Number(state.fullBuildWork.cursor || 0),
+        total: Number(state.fullBuildWork.total || 0),
+        chunkRows: Number(state.fullBuildWork.chunkRows || 0),
+        startRow: Number(state.fullBuildWork.startRow || 0)
+      } : null,
       replay: {
         groupCount: Number(state.replayGroupCount || 0),
         groupIndex: Number(state.replayGroupIndex || 0),
@@ -997,6 +1025,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         startedAt: now_(),
         updatedAt: now_(),
         fullStageIndex: 0,
+        fullBuildWork: null,
         replayGroupCount: 0,
         replayGroupIndex: 0,
         replayStage: REPLAY_STAGES[0],
@@ -1157,7 +1186,9 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       fitSeriesBatch: fitSeriesBatch_,
       replayContext: replayContext_,
       canonicalCell: canonicalCell_,
-      classifyError: classifyError_
+      classifyError: classifyError_,
+      fullBuildStep: fullBuildStep_,
+      metrics: metrics_
     })
   });
 })();

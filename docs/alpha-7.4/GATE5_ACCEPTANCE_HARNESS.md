@@ -123,7 +123,18 @@ Entry points:
 
 `Start` создаёт один persistent time-driven trigger с интервалом одна минута.
 Worker использует lock, execution budget, bounded step count и сохраняет
-checkpoint после каждого durable шага.
+checkpoint после каждого durable шага. Начиная с `4.0.0-alpha.7.4.3`,
+full build также cursor-checkpointed:
+
+- weekly/monthly и standard aggregate rows записываются блоками по 500 строк;
+- industry и special aggregate rows — блоками по 250 строк;
+- latest выполняется двумя проходами `INDEX_SCAN` и `APPLY_FLAGS` по
+  1 000 строк;
+- prepare, каждый chunk и переключение стадии фиксируются отдельно;
+- повтор после lost response перезаписывает тот же детерминированный диапазон.
+
+Подробный контракт hotfix зафиксирован в
+`GATE5_FULL_BUILD_CHUNKING_HOTFIX.md`.
 
 Ручные вызовы `Worker` или отдельной `Continue` функции не требуются и не входят
 в нормативный acceptance flow.
@@ -165,6 +176,7 @@ Evidence фиксирует:
 
 - количество worker executions и durable steps;
 - full-build rows processed;
+- full-build rows scanned, chunks и prepared stages;
 - replay price rows written;
 - aggregate rows calculated;
 - logical series published;
@@ -200,7 +212,7 @@ livePublishPhysicalWrites = 0
 
 - все RAW replay validation rows имеют `PASS`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-1`;
+  `4.0-alpha74-gate5-evidence-2`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
@@ -210,17 +222,20 @@ livePublishPhysicalWrites = 0
 
 После `clasp push`:
 
-1. запустить `AKORT_alpha74Install()`;
-2. повторно установить только
+1. убедиться, что предыдущий Gate 5 worker остановлен;
+2. запустить `AKORT_alpha74Install()`;
+3. повторно установить только
    `PUBLISH_AGGREGATE_EXECUTION_ENABLED=TRUE`;
-3. проверить, что
+4. проверить, что
    `PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED=FALSE`;
-4. запустить `AKORT_alpha74SmokeTest()`;
-5. запустить `AKORT_alpha74ReadOnlyContractScan()`;
-6. запустить `AKORT_alpha74Gate5Status()` и проверить `ready=true`;
-7. один раз запустить `AKORT_alpha74Gate5Start()`;
-8. не запускать `AKORT_alpha74Gate5Worker()` вручную;
-9. периодически запускать только `AKORT_alpha74Gate5Status()`;
-10. после `SUCCESS` сохранить полный результат status и ссылку на evidence.
+5. запустить `AKORT_alpha74SmokeTest()`;
+6. запустить `AKORT_alpha74ReadOnlyContractScan()`;
+7. запустить `AKORT_alpha74Gate5Status()` и проверить `ready=true`;
+8. один раз запустить `AKORT_alpha74Gate5Start()`; это создаёт новый
+   execution и новые isolated artifacts, а не продолжает остановленный
+   `4.0.0-alpha.7.4.2`;
+9. не запускать `AKORT_alpha74Gate5Worker()` вручную;
+10. периодически запускать только `AKORT_alpha74Gate5Status()`;
+11. после `SUCCESS` сохранить полный результат status и ссылку на evidence.
 
 Gate 6 начинается только после отдельного review Gate 5 evidence.

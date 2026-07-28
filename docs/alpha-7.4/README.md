@@ -2,9 +2,9 @@
 
 ## Статус
 
-`GATE 4 ACCEPTED / GATE 5 HARNESS READY / FULL RECONCILIATION PENDING / REGULAR PIPELINE PROHIBITED`
+`GATE 4 ACCEPTED / GATE 5 CHUNKING HOTFIX READY / FULL RECONCILIATION RERUN PENDING / REGULAR PIPELINE PROHIBITED`
 
-Дата фиксации: 27 июля 2026 года.
+Дата фиксации: 28 июля 2026 года.
 
 Активная GitHub-ветка: `codex/alpha-7.4-integration-reset`.
 
@@ -45,6 +45,9 @@
 - `GATE3_ACCEPTANCE_HARNESS.md` — read-only acceptance harness, DEV entrypoints и evidence contract.
 - `GATE4_ACCEPTANCE_HARNESS.md` — isolated physical/fault harness, feature-flag order и evidence contract.
 - `GATE5_ACCEPTANCE_HARNESS.md` — full build, sequential replay, exact reconciliation, quota и automatic continuation contract.
+- `GATE5_FULL_BUILD_CHUNKING_HOTFIX.md` — разбор timeout-loop
+  `FULL_BUILD / MONTHLY`, durable cursor, размеры chunks и нормативный
+  перезапуск Gate 5.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -97,6 +100,13 @@ baseline snapshot, live snapshot, full build и sequential replay workbooks,
 targets по exact canonical digest. Ручной `Continue` не используется; quota и
 transient retry выполняются автоматически. Gate 5 остаётся открытым до
 нормативного DEV `SUCCESS`.
+
+Первый DEV execution `4.0.0-alpha.7.4.2` был остановлен после подтверждённого
+timeout-loop на монолитной стадии `FULL_BUILD / MONTHLY`. В
+`4.0.0-alpha.7.4.3` weekly, monthly, industry, standard/special aggregates и
+latest переведены на bounded cursor-checkpointed chunks по шаблону проверенных
+Alpha.6 replay/recovery workers. Нормативная приёмка выполняется новым
+execution, чтобы все full-build stages прошли через hotfix.
 
 ## Gate 1 migration cleanup
 

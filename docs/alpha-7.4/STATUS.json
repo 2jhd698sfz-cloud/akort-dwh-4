@@ -2,14 +2,14 @@
   "project": "AKORT DWH 4.0",
   "milestone": "Alpha.7.4",
   "architecture": "INTEGRATION_INTO_EXISTING_OPERATION_ENGINE",
-  "status": "GATE_5_HARNESS_READY_DEV_ACCEPTANCE_PENDING",
+  "status": "GATE_5_FULL_BUILD_CHUNKING_HOTFIX_READY_DEV_RERUN_PENDING",
   "physical_writes_allowed": false,
   "isolated_gate_4_physical_writes_allowed": true,
   "isolated_gate_5_physical_writes_allowed": true,
   "regular_pipeline_allowed": false,
   "operation_schema_version": "4.0-operation-2",
   "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
-  "implementation_release": "4.0.0-alpha.7.4.2",
+  "implementation_release": "4.0.0-alpha.7.4.3",
   "completed_gates": [0, 1, 2, 3, 4],
   "partially_completed_gates": [7],
   "next_gate": 5,
@@ -130,9 +130,10 @@
     "evidence_bytes": 9255
   },
   "gate_5_acceptance_harness": {
-    "version": "4.0-alpha74-gate5-acceptance-1",
-    "evidence_schema": "4.0-alpha74-gate5-evidence-1",
-    "state_schema": "4.0-alpha74-gate5-state-1",
+    "version": "4.0-alpha74-gate5-acceptance-2",
+    "evidence_schema": "4.0-alpha74-gate5-evidence-2",
+    "state_schema": "4.0-alpha74-gate5-state-2",
+    "full_work_schema": "4.0-alpha74-gate5-full-work-1",
     "target_mode": "ISOLATED_FULL_BUILD_AND_SEQUENTIAL_REPLAY",
     "live_publish_access": "READ_ONLY_BEFORE_AFTER",
     "artifacts": [
@@ -150,6 +151,28 @@
     "exact_reconciliation_required": true,
     "quota_acceptance_required": true,
     "live_publish_physical_writes_allowed": 0,
+    "full_build_chunk_rows": {
+      "weekly": 500,
+      "monthly": 500,
+      "industry": 250,
+      "aggregates_weekly": 500,
+      "aggregates_monthly": 500,
+      "aggregates_special": 250,
+      "aggregates_latest": 1000
+    },
+    "latest_mode": "DURABLE_INDEX_SCAN_THEN_APPLY_FLAGS",
+    "previous_execution": {
+      "release": "4.0.0-alpha.7.4.2",
+      "terminal_status": "STOPPED",
+      "last_completed_stage": "WEEKLY",
+      "last_completed_rows": 20211,
+      "blocked_stage": "MONTHLY",
+      "worker_executions": 7,
+      "durable_steps": 1,
+      "skipped_overlaps": 25,
+      "maximum_completed_worker_duration_ms": 310412,
+      "reuse_for_acceptance": false
+    },
     "local_regression_passed": true,
     "dev_execution_passed": false
   },
@@ -166,6 +189,7 @@
     "docs/alpha-7.4/RUNTIME_CONTEXT_CONTRACT.md",
     "docs/alpha-7.4/GATE3_ACCEPTANCE_HARNESS.md",
     "docs/alpha-7.4/GATE4_ACCEPTANCE_HARNESS.md",
-    "docs/alpha-7.4/GATE5_ACCEPTANCE_HARNESS.md"
+    "docs/alpha-7.4/GATE5_ACCEPTANCE_HARNESS.md",
+    "docs/alpha-7.4/GATE5_FULL_BUILD_CHUNKING_HOTFIX.md"
   ]
 }

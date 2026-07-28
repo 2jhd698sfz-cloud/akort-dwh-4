@@ -6,7 +6,7 @@ Apps Script data pipeline for the AKORT analytical system.
 
 Active milestone: **Alpha.7.4 — Aggregate Integration into Existing Operation Engine**.
 
-Status: `GATE 3 ACCEPTED / GATE 4 HARNESS READY / ISOLATED PHYSICAL ACCEPTANCE PENDING / REGULAR PIPELINE PROHIBITED`.
+Status: `GATE 4 ACCEPTED / GATE 5 CHUNKING HOTFIX READY / FULL RECONCILIATION RERUN PENDING / REGULAR PIPELINE PROHIBITED`.
 
 Accepted base:
 
@@ -33,6 +33,6 @@ Yandex DataLens is an external consumer of the Publish spreadsheet and manages i
 
 See [`docs/alpha-7.4/README.md`](docs/alpha-7.4/README.md).
 
-The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 4 adds an isolated physical/fault harness that forbids the DataLens-connected DEV Publish target.
+The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 4 adds an isolated physical/fault harness that forbids the DataLens-connected DEV Publish target. Gate 5 full build uses durable bounded cursors for weekly, monthly, industry and aggregate stages.
 
 Gate 4 requires `PUBLISH_AGGREGATE_EXECUTION_ENABLED=TRUE` while `PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED` remains `FALSE`. Regular aggregate operations and trigger changes remain prohibited until the later authoritative DEV gate.
