@@ -102,11 +102,12 @@ transient retry выполняются автоматически. Gate 5 ост
 нормативного DEV `SUCCESS`.
 
 Первый DEV execution `4.0.0-alpha.7.4.2` был остановлен после подтверждённого
-timeout-loop на монолитной стадии `FULL_BUILD / MONTHLY`. В
-`4.0.0-alpha.7.4.3` weekly, monthly, industry, standard/special aggregates и
-latest переведены на bounded cursor-checkpointed chunks по шаблону проверенных
-Alpha.6 replay/recovery workers. Нормативная приёмка выполняется новым
-execution, чтобы все full-build stages прошли через hotfix.
+timeout-loop на монолитной стадии `FULL_BUILD / MONTHLY`. DEV-проверка
+`4.0.0-alpha.7.4.3` затем выявила повторный расчёт полного payload перед
+каждым write-chunk. Нормативный `4.0.0-alpha.7.4.4` рассчитывает каждую
+стадию один раз в isolated materialization и выполняет bounded cursor-copy;
+`Start` и worker также fail-closed блокируют checkpoint другого релиза.
+Gate 5 принимается только по новому `state-3` execution.
 
 ## Gate 1 migration cleanup
 

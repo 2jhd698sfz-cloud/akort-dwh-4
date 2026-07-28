@@ -123,10 +123,11 @@ Entry points:
 
 `Start` создаёт один persistent time-driven trigger с интервалом одна минута.
 Worker использует lock, execution budget, bounded step count и сохраняет
-checkpoint после каждого durable шага. Начиная с `4.0.0-alpha.7.4.3`,
-full build также cursor-checkpointed:
+checkpoint после каждого durable шага. В нормативном `4.0.0-alpha.7.4.4`
+full build использует single-pass durable materialization и cursor-copy:
 
-- weekly/monthly и standard aggregate rows записываются блоками по 500 строк;
+- payload каждой стадии рассчитывается один раз в isolated materialization;
+- weekly/monthly и standard aggregate rows копируются блоками по 500 строк;
 - industry и special aggregate rows — блоками по 250 строк;
 - latest выполняется двумя проходами `INDEX_SCAN` и `APPLY_FLAGS` по
   1 000 строк;
@@ -134,7 +135,7 @@ full build также cursor-checkpointed:
 - повтор после lost response перезаписывает тот же детерминированный диапазон.
 
 Подробный контракт hotfix зафиксирован в
-`GATE5_FULL_BUILD_CHUNKING_HOTFIX.md`.
+`GATE5_DURABLE_MATERIALIZATION_HOTFIX.md`.
 
 Ручные вызовы `Worker` или отдельной `Continue` функции не требуются и не входят
 в нормативный acceptance flow.
@@ -212,7 +213,7 @@ livePublishPhysicalWrites = 0
 
 - все RAW replay validation rows имеют `PASS`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-2`;
+  `4.0-alpha74-gate5-evidence-3`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
@@ -233,7 +234,7 @@ livePublishPhysicalWrites = 0
 7. запустить `AKORT_alpha74Gate5Status()` и проверить `ready=true`;
 8. один раз запустить `AKORT_alpha74Gate5Start()`; это создаёт новый
    execution и новые isolated artifacts, а не продолжает остановленный
-   `4.0.0-alpha.7.4.2`;
+   `4.0.0-alpha.7.4.2` или superseded `4.0.0-alpha.7.4.3`;
 9. не запускать `AKORT_alpha74Gate5Worker()` вручную;
 10. периодически запускать только `AKORT_alpha74Gate5Status()`;
 11. после `SUCCESS` сохранить полный результат status и ссылку на evidence.

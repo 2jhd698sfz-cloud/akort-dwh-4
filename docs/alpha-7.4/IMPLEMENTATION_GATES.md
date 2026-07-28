@@ -76,10 +76,11 @@ PASS; DataLens-connected Publish осталась неизменной.
 
 Локальный Gate 5 trigger-driven harness и regression suite подготовлены.
 После DEV timeout-loop `FULL_BUILD / MONTHLY` в `4.0.0-alpha.7.4.2`
-full build переведён в `4.0.0-alpha.7.4.3` на cursor-checkpointed chunks для
-weekly, monthly, industry, standard/special aggregates и latest. Остановленный
-первый execution сохраняется для диагностики; нормативная приёмка выполняется
-новым execution.
+релиз `7.4.3` добавил write cursor, но DEV code review обнаружил повторный
+полный расчёт payload перед каждым chunk. В `4.0.0-alpha.7.4.4` payload
+каждой стадии материализуется один раз в isolated sheet, а target заполняется
+bounded cursor-copy. Остановленные execution сохраняются для диагностики;
+нормативная приёмка выполняется новым `state-3` execution.
 Чек-лист остаётся открытым до terminal `SUCCESS` нормативного DEV-запуска
 `AKORT_alpha74Gate5Start()`, exact reconciliation и проверки JSON evidence.
 Regular pipeline остаётся выключенным.

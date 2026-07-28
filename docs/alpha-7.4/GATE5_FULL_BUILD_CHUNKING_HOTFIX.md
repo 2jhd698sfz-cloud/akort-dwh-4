@@ -1,5 +1,10 @@
 # Alpha.7.4.3 — Gate 5 Full-Build Chunking Hotfix
 
+> Исторический документ. DEV-проверка выявила, что `7.4.3` ограничивал
+> физическую запись, но повторно рассчитывал полный payload перед каждым
+> chunk. Нормативное исправление описано в
+> `GATE5_DURABLE_MATERIALIZATION_HOTFIX.md` и выпущено как `7.4.4`.
+
 ## 1. Причина hotfix
 
 Первый DEV-запуск Gate 5 на `4.0.0-alpha.7.4.2` успешно завершил
@@ -125,4 +130,3 @@ metrics.fullBuildStagesPrepared > 0
 metrics.fullBuildChunks > 0
 manualContinuationCalls = 0
 ```
-

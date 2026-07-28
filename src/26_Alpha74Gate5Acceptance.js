@@ -10,10 +10,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * - a persistent one-minute trigger continues from a compact checkpoint.
  */
 AKORT.Alpha74Gate5Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate5-acceptance-2';
-  var RELEASE = '4.0.0-alpha.7.4.3';
-  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-2';
-  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-2';
+  var VERSION = '4.0-alpha74-gate5-acceptance-3';
+  var RELEASE = '4.0.0-alpha.7.4.4';
+  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-3';
+  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-3';
   var STATE_KEY = 'AKORT_ALPHA74_GATE5_STATE_V1';
   var TRIGGER_HANDLER = 'AKORT_alpha74Gate5Worker';
   var TRIGGER_MINUTES = 1;
@@ -467,6 +467,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       steps: 0,
       fullBuildRowsProcessed: 0,
       fullBuildRowsScanned: 0,
+      fullBuildRowsMaterialized: 0,
       fullBuildChunks: 0,
       fullBuildStagesPrepared: 0,
       replayPriceRowsWritten: 0,
@@ -506,6 +507,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     var metrics = metrics_(state);
     metrics.fullBuildRowsProcessed += Number(result.rowsProcessed || 0);
     metrics.fullBuildRowsScanned += Number(result.rowsScanned || 0);
+    metrics.fullBuildRowsMaterialized += Number(result.rowsMaterialized || 0);
     if (result.phase === 'PREPARE') metrics.fullBuildStagesPrepared += 1;
     else metrics.fullBuildChunks += 1;
     if (result.complete) {
@@ -952,7 +954,9 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         cursor: Number(state.fullBuildWork.cursor || 0),
         total: Number(state.fullBuildWork.total || 0),
         chunkRows: Number(state.fullBuildWork.chunkRows || 0),
-        startRow: Number(state.fullBuildWork.startRow || 0)
+        startRow: Number(state.fullBuildWork.startRow || 0),
+        materializedSheetName: state.fullBuildWork.materializedSheetName || '',
+        materializedRows: Number(state.fullBuildWork.materializedRows || 0)
       } : null,
       replay: {
         groupCount: Number(state.replayGroupCount || 0),
@@ -1002,6 +1006,28 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       AKORT.EnvironmentGuard.assertDev();
       assertFlags_();
       var existing = loadState_();
+      if (existing && existing.status === 'RUNNING' &&
+          (existing.stateSchemaVersion !== STATE_SCHEMA_VERSION || existing.release !== RELEASE)) {
+        var removedLegacyTriggers = deleteTriggers_();
+        existing.status = 'STOPPED';
+        existing.phase = 'STOPPED';
+        existing.finishedAt = now_();
+        existing.failureCode = 'ALPHA74_GATE5_STATE_VERSION_MISMATCH';
+        existing.failureDetails = {
+          expectedStateSchemaVersion: STATE_SCHEMA_VERSION,
+          actualStateSchemaVersion: existing.stateSchemaVersion || '',
+          expectedRelease: RELEASE,
+          actualRelease: existing.release || '',
+          triggersRemoved: removedLegacyTriggers,
+          artifactsPreserved: true
+        };
+        saveState_(existing);
+        return AKORT.Result.failure(
+          'ALPHA74_GATE5_STATE_VERSION_MISMATCH',
+          'An incompatible Gate 5 checkpoint was stopped fail-closed. Run Gate 5 Start again to create a fresh execution.',
+          publicState_(existing)
+        );
+      }
       if (existing && existing.status === 'RUNNING') {
         ensureTrigger_();
         return AKORT.Result.success('Alpha.7.4 Gate 5 is already running; the persistent worker remains enabled.', publicState_(existing));
@@ -1063,14 +1089,10 @@ AKORT.Alpha74Gate5Acceptance = (function () {
   function worker() {
     var lock = LockService.getUserLock();
     if (!lock.tryLock(1000)) {
-      var overlap = loadState_();
-      if (overlap) {
-        metrics_(overlap).skippedOverlaps += 1;
-        saveState_(overlap);
-      }
       return AKORT.Result.success('Another Gate 5 worker is active; this trigger tick was skipped.', {
         skipped: true,
-        reason: 'WORKER_OVERLAP'
+        reason: 'WORKER_OVERLAP',
+        checkpointWrite: false
       });
     }
     var startedMs = Date.now(), state = null;
@@ -1079,6 +1101,26 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       if (!state || state.status !== 'RUNNING') {
         deleteTriggers_();
         return AKORT.Result.success('Gate 5 worker found no active run.', publicState_(state));
+      }
+      if (state.stateSchemaVersion !== STATE_SCHEMA_VERSION || state.release !== RELEASE) {
+        deleteTriggers_();
+        state.status = 'STOPPED';
+        state.phase = 'STOPPED';
+        state.finishedAt = now_();
+        state.failureCode = 'ALPHA74_GATE5_STATE_VERSION_MISMATCH';
+        state.failureDetails = {
+          expectedStateSchemaVersion: STATE_SCHEMA_VERSION,
+          actualStateSchemaVersion: state.stateSchemaVersion || '',
+          expectedRelease: RELEASE,
+          actualRelease: state.release || '',
+          artifactsPreserved: true
+        };
+        saveState_(state);
+        return AKORT.Result.failure(
+          'ALPHA74_GATE5_STATE_VERSION_MISMATCH',
+          'Gate 5 worker stopped an incompatible checkpoint fail-closed.',
+          publicState_(state)
+        );
       }
       if (state.nextRetryAt && Date.parse(state.nextRetryAt) > Date.now()) {
         return AKORT.Result.success('Gate 5 worker is waiting for the automatic retry window.', publicState_(state));

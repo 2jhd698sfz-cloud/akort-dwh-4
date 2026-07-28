@@ -127,10 +127,10 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-2');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.3');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-2');
-  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-2');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-3');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.4');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-3');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-3');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
@@ -148,15 +148,18 @@ test('full build advances only after durable bounded chunks complete', () => {
         rowsScanned: 0,
         complete: false,
         work: {
-          workSchemaVersion: '4.0-alpha74-gate5-full-work-1',
+          workSchemaVersion: '4.0-alpha74-gate5-full-work-2',
           stage,
-          phase: 'WRITE_ROWS',
+          phase: 'COPY_MATERIALIZED_ROWS',
           cursor: 0,
           total: 1200,
           chunkRows: 500,
           startRow: 2,
+          materializedSheetName: 'GATE5_MATERIALIZED_WEEKLY',
+          materializedRows: 1200,
           prepared: true
-        }
+        },
+        rowsMaterialized: 1200
       };
     }
     const next = Math.min(work.total, work.cursor + work.chunkRows);
@@ -188,6 +191,7 @@ test('full build advances only after durable bounded chunks complete', () => {
   assert.equal(state.fullStageIndex, 1);
   assert.equal(state.fullBuildWork, null);
   assert.equal(state.metrics.fullBuildRowsProcessed, 1200);
+  assert.equal(state.metrics.fullBuildRowsMaterialized, 1200);
   assert.equal(state.metrics.fullBuildChunks, 3);
   assert.equal(state.metrics.fullBuildStagesPrepared, 1);
 });
@@ -279,14 +283,30 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(incremental.includes('ALPHA74_GATE5_TARGET_OUTSIDE_TEST_FILES'));
   assert(incremental.includes('settings.aggregateRegularPipelineEnabled'));
   assert(incremental.includes('fullBuildChunk:gate5FullBuildChunk_'));
-  assert(incremental.includes("GATE5_FULL_WORK_SCHEMA='4.0-alpha74-gate5-full-work-1'"));
+  assert(incremental.includes("GATE5_FULL_WORK_SCHEMA='4.0-alpha74-gate5-full-work-2'"));
+  assert(incremental.includes("GATE5_FULL_CACHE_PREFIX='GATE5_MATERIALIZED_'"));
+  assert(incremental.includes('gate5MaterializeFullRows_'));
+  assert(incremental.includes('gate5ReadMaterializedChunk_'));
   assert(incremental.includes('chunkRows:500'));
-  assert(incremental.includes("phase:spec.mode==='LATEST'?'INDEX_SCAN':'WRITE_ROWS'"));
+  assert(incremental.includes("phase:spec.mode==='LATEST'?'INDEX_SCAN':'MATERIALIZE_ROWS'"));
+  const chunkBody = incremental.slice(
+    incremental.indexOf('function gate5FullBuildChunk_'),
+    incremental.indexOf('function gate5ReplayGroups_')
+  );
+  assert(!chunkBody.includes('gate5FullRows_('));
   assert(!incremental.includes('fullBuildStage:gate5FullBuildStage_'));
   assert(harness.includes("TRIGGER_HANDLER = 'AKORT_alpha74Gate5Worker'"));
   assert(harness.includes("triggerMode: 'PERSISTENT_EVERY_MINUTE'"));
   assert(harness.includes('fullBuildWork'));
   assert(harness.includes('fullBuildRowsScanned'));
+  assert(harness.includes('fullBuildRowsMaterialized'));
+  assert(harness.includes('ALPHA74_GATE5_STATE_VERSION_MISMATCH'));
+  const overlapBranch = harness.slice(
+    harness.indexOf('if (!lock.tryLock(1000))'),
+    harness.indexOf('var startedMs = Date.now()')
+  );
+  assert(overlapBranch.includes('checkpointWrite: false'));
+  assert(!overlapBranch.includes('saveState_('));
   assert(!harness.includes('PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED ='));
   assert(entries.includes('AKORT_alpha74Gate5Status'));
   assert(entries.includes('AKORT_alpha74Gate5Start'));

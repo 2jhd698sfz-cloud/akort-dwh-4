@@ -2,14 +2,14 @@
   "project": "AKORT DWH 4.0",
   "milestone": "Alpha.7.4",
   "architecture": "INTEGRATION_INTO_EXISTING_OPERATION_ENGINE",
-  "status": "GATE_5_FULL_BUILD_CHUNKING_HOTFIX_READY_DEV_RERUN_PENDING",
+  "status": "GATE_5_DURABLE_MATERIALIZATION_HOTFIX_READY_DEV_RERUN_PENDING",
   "physical_writes_allowed": false,
   "isolated_gate_4_physical_writes_allowed": true,
   "isolated_gate_5_physical_writes_allowed": true,
   "regular_pipeline_allowed": false,
   "operation_schema_version": "4.0-operation-2",
   "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
-  "implementation_release": "4.0.0-alpha.7.4.3",
+  "implementation_release": "4.0.0-alpha.7.4.4",
   "completed_gates": [0, 1, 2, 3, 4],
   "partially_completed_gates": [7],
   "next_gate": 5,
@@ -130,10 +130,10 @@
     "evidence_bytes": 9255
   },
   "gate_5_acceptance_harness": {
-    "version": "4.0-alpha74-gate5-acceptance-2",
-    "evidence_schema": "4.0-alpha74-gate5-evidence-2",
-    "state_schema": "4.0-alpha74-gate5-state-2",
-    "full_work_schema": "4.0-alpha74-gate5-full-work-1",
+    "version": "4.0-alpha74-gate5-acceptance-3",
+    "evidence_schema": "4.0-alpha74-gate5-evidence-3",
+    "state_schema": "4.0-alpha74-gate5-state-3",
+    "full_work_schema": "4.0-alpha74-gate5-full-work-2",
     "target_mode": "ISOLATED_FULL_BUILD_AND_SEQUENTIAL_REPLAY",
     "live_publish_access": "READ_ONLY_BEFORE_AFTER",
     "artifacts": [
@@ -161,6 +161,19 @@
       "aggregates_latest": 1000
     },
     "latest_mode": "DURABLE_INDEX_SCAN_THEN_APPLY_FLAGS",
+    "full_build_materialization": {
+      "mode": "SINGLE_PASS_ISOLATED_SHEET_THEN_CURSOR_COPY",
+      "phase": "COPY_MATERIALIZED_ROWS",
+      "recalculation_per_copy_chunk": false,
+      "state_version_guard": "FAIL_CLOSED"
+    },
+    "superseded_execution": {
+      "release": "4.0.0-alpha.7.4.3",
+      "execution_id": "A74_GATE5_0213A58DD20C81B46AAD",
+      "terminal_status": "STOP_REQUIRED",
+      "reason": "FULL_PAYLOAD_RECALCULATED_BEFORE_EACH_WRITE_CHUNK",
+      "reuse_for_acceptance": false
+    },
     "previous_execution": {
       "release": "4.0.0-alpha.7.4.2",
       "terminal_status": "STOPPED",

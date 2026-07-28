@@ -2997,9 +2997,10 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
     specs.forEach(function(spec){gate5EnsureSheet_(spreadsheet,spec[0],spec[1]);});
     return{spreadsheetId:spreadsheetId,sheets:specs.map(function(spec){return spec[0];})};
   }
-  var GATE5_FULL_WORK_SCHEMA='4.0-alpha74-gate5-full-work-1';
+  var GATE5_FULL_WORK_SCHEMA='4.0-alpha74-gate5-full-work-2';
   var GATE5_FULL_LATEST_INDEX='GATE5_FULL_LATEST_INDEX';
   var GATE5_FULL_LATEST_INDEX_HEADERS=['aggregate_series_key','max_period_key'];
+  var GATE5_FULL_CACHE_PREFIX='GATE5_MATERIALIZED_';
   function gate5FullStageSpec_(stage) {
     var specs={
       WEEKLY:{sheetName:AKORT_V300.SHEETS.PUBLISH_PRICES_WEEKLY,headers:AKORT_V300.HEADERS.PUBLISH_PRICES_WEEKLY,chunkRows:500,mode:'REPLACE'},
@@ -3035,6 +3036,35 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
     }finally{ALPHA6_PUBLISH_OVERRIDE_ID='';}
     return rows||[];
   }
+  function gate5FullCacheName_(stage){return GATE5_FULL_CACHE_PREFIX+String(stage||'').replace(/[^A-Z0-9_]/g,'_').slice(0,70);}
+  function gate5CleanupFullCaches_(spreadsheet,activeStage) {
+    var keep=activeStage?gate5FullCacheName_(activeStage):'';
+    spreadsheet.getSheets().forEach(function(sheet){
+      var name=sheet.getName();
+      if(name.indexOf(GATE5_FULL_CACHE_PREFIX)===0&&name!==keep)spreadsheet.deleteSheet(sheet);
+    });
+  }
+  function gate5MaterializeFullRows_(spreadsheet,stage,spec,rows) {
+    var cacheName=gate5FullCacheName_(stage),cache=gate5EnsureSheet_(spreadsheet,cacheName,spec.headers);
+    gate5ClearData_(cache,spec.headers);
+    if(rows.length){
+      v300EnsureGridCapacity_(spreadsheet,cache,rows.length+1,spec.headers.length);
+      for(var cursor=0;cursor<rows.length;cursor+=spec.chunkRows){
+        var part=rows.slice(cursor,cursor+spec.chunkRows);
+        cache.getRange(cursor+2,1,part.length,spec.headers.length).setValues(part);
+      }
+    }
+    SpreadsheetApp.flush();
+    return{sheetName:cacheName,rows:rows.length};
+  }
+  function gate5ReadMaterializedChunk_(spreadsheet,work,spec) {
+    var cacheName=String(work.materializedSheetName||''),cache=cacheName?spreadsheet.getSheetByName(cacheName):null;
+    if(!cache)throw AKORT.Core.error('ALPHA74_GATE5_MATERIALIZATION_MISSING','Gate 5 durable materialization sheet is missing.',{stage:work.stage,sheetName:cacheName});
+    var actual=Math.max(0,cache.getLastRow()-1),total=Number(work.total||0);
+    if(actual!==total)throw AKORT.Core.error('ALPHA74_GATE5_MATERIALIZATION_CHANGED','Gate 5 durable materialization row count changed after preparation.',{stage:work.stage,expectedRows:total,actualRows:actual,sheetName:cacheName});
+    var cursor=Number(work.cursor||0),count=Math.min(Number(work.chunkRows||spec.chunkRows),Math.max(0,total-cursor));
+    return{rows:count?cache.getRange(cursor+2,1,count,spec.headers.length).getValues():[],cursor:cursor,total:total};
+  }
   function gate5ClearData_(sheet,headers) {
     var rows=Math.max(0,sheet.getLastRow()-1);
     if(rows)sheet.getRange(2,1,rows,Math.max(headers.length,sheet.getLastColumn())).clearContent();
@@ -3048,20 +3078,24 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
       mode:spec.mode,
       sheetName:spec.sheetName,
       prepared:true,
-      phase:spec.mode==='LATEST'?'INDEX_SCAN':'WRITE_ROWS',
+      phase:spec.mode==='LATEST'?'INDEX_SCAN':'MATERIALIZE_ROWS',
       cursor:0,
       total:0,
       chunkRows:spec.chunkRows,
       startRow:2
     };
+    gate5CleanupFullCaches_(spreadsheet,spec.mode==='LATEST'?'':stage);
     if(spec.mode==='LATEST'){
       work.total=Math.max(0,sheet.getLastRow()-1);
       var indexSheet=gate5EnsureSheet_(spreadsheet,GATE5_FULL_LATEST_INDEX,GATE5_FULL_LATEST_INDEX_HEADERS);
       gate5ClearData_(indexSheet,GATE5_FULL_LATEST_INDEX_HEADERS);
       return work;
     }
-    var rows=gate5FullRows_(spreadsheetId,stage);
-    work.total=rows.length;
+    var rows=gate5FullRows_(spreadsheetId,stage),materialized=gate5MaterializeFullRows_(spreadsheet,stage,spec,rows);
+    work.total=materialized.rows;
+    work.materializedSheetName=materialized.sheetName;
+    work.materializedRows=materialized.rows;
+    work.phase='COPY_MATERIALIZED_ROWS';
     if(spec.mode==='REPLACE')gate5ClearData_(sheet,spec.headers);
     else work.startRow=Math.max(2,sheet.getLastRow()+1);
     v300EnsureGridCapacity_(spreadsheet,sheet,Math.max(2,work.startRow+Math.max(0,work.total)-1),spec.headers.length);
@@ -3070,6 +3104,7 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
   function gate5AssertFullWork_(work,stage,spec) {
     if(!work||work.workSchemaVersion!==GATE5_FULL_WORK_SCHEMA||String(work.stage)!==String(stage)||String(work.sheetName)!==String(spec.sheetName)||work.prepared!==true)throw AKORT.Core.error('ALPHA74_GATE5_FULL_WORK_INVALID','Gate 5 full-build cursor does not match the active stage.',{stage:stage,work:work||null});
     if(Number(work.cursor||0)<0||Number(work.total||0)<0||Number(work.cursor||0)>Number(work.total||0))throw AKORT.Core.error('ALPHA74_GATE5_FULL_CURSOR_INVALID','Gate 5 full-build cursor is outside the prepared range.',{stage:stage,cursor:work.cursor,total:work.total});
+    if(spec.mode!=='LATEST'&&(!work.materializedSheetName||Number(work.materializedRows||0)!==Number(work.total||0)||String(work.phase)!=='COPY_MATERIALIZED_ROWS'))throw AKORT.Core.error('ALPHA74_GATE5_MATERIALIZATION_INVALID','Gate 5 full-build work does not reference an exact durable materialization.',{stage:stage,work:work});
   }
   function gate5RowsToObjects_(values,headers) {
     return(values||[]).map(function(valuesRow){var row={};headers.forEach(function(header,index){row[header]=valuesRow[index]===undefined?'':valuesRow[index];});return row;});
@@ -3114,25 +3149,23 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
     var spreadsheet=gate5AssertIsolated_(spreadsheetId),spec=gate5FullStageSpec_(stage);
     if(!work||work.prepared!==true){
       var prepared=gate5PrepareFullWork_(spreadsheetId,stage);
-      return{stage:stage,phase:'PREPARE',prepared:true,rowsProcessed:0,chunkStart:0,chunkEnd:0,total:prepared.total,complete:false,work:prepared,aggregateRows:reconRowCount_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES)};
+      return{stage:stage,phase:'PREPARE',prepared:true,rowsProcessed:0,rowsMaterialized:Number(prepared.materializedRows||0),chunkStart:0,chunkEnd:0,total:prepared.total,complete:false,work:prepared,aggregateRows:reconRowCount_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES)};
     }
     gate5AssertFullWork_(work,stage,spec);
     work=clone_(work);
     if(spec.mode==='LATEST')return gate5LatestChunk_(spreadsheet,work,spec);
-    var rows=gate5FullRows_(spreadsheetId,stage);
-    if(rows.length!==Number(work.total||0))throw AKORT.Core.error('ALPHA74_GATE5_FULL_SOURCE_CHANGED','Gate 5 full-build source row count changed after the stage was prepared.',{stage:stage,preparedRows:work.total,currentRows:rows.length});
-    var cursor=Number(work.cursor||0),count=Math.min(Number(work.chunkRows||spec.chunkRows),Math.max(0,rows.length-cursor)),part=rows.slice(cursor,cursor+count),sheet=gate5EnsureSheet_(spreadsheet,spec.sheetName,spec.headers),targetRow=Number(work.startRow||2)+cursor;
+    var materialized=gate5ReadMaterializedChunk_(spreadsheet,work,spec),cursor=materialized.cursor,part=materialized.rows,sheet=gate5EnsureSheet_(spreadsheet,spec.sheetName,spec.headers),targetRow=Number(work.startRow||2)+cursor;
     if(part.length){
       v300EnsureGridCapacity_(spreadsheet,sheet,targetRow+part.length-1,spec.headers.length);
       sheet.getRange(targetRow,1,part.length,spec.headers.length).setValues(part);
       work.cursor=cursor+part.length;
     }
-    var complete=Number(work.cursor||0)>=rows.length,actualRows=Math.max(0,sheet.getLastRow()-1);
+    var complete=Number(work.cursor||0)>=materialized.total,actualRows=Math.max(0,sheet.getLastRow()-1);
     if(complete){
-      var expectedRows=spec.mode==='REPLACE'?rows.length:Number(work.startRow||2)-2+rows.length;
+      var expectedRows=spec.mode==='REPLACE'?materialized.total:Number(work.startRow||2)-2+materialized.total;
       if(actualRows!==expectedRows)throw AKORT.Core.error('ALPHA74_GATE5_FULL_STAGE_ROW_COUNT_MISMATCH','Gate 5 full-build stage finished with an unexpected target row count.',{stage:stage,expectedRows:expectedRows,actualRows:actualRows});
     }
-    return{stage:stage,phase:'WRITE_ROWS',prepared:true,rowsProcessed:part.length,chunkStart:cursor,chunkEnd:cursor+part.length,total:rows.length,complete:complete,work:complete?null:work,aggregateRows:reconRowCount_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES)};
+    return{stage:stage,phase:'COPY_MATERIALIZED_ROWS',prepared:true,rowsProcessed:part.length,rowsMaterialized:0,chunkStart:cursor,chunkEnd:cursor+part.length,total:materialized.total,complete:complete,work:complete?null:work,aggregateRows:reconRowCount_(spreadsheetId,AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES)};
   }
   function gate5ReplayGroups_(){return clone_(collectReplayGroups_());}
   function gate5ValidateReplayRaw_(groups){return clone_(validateFinalReplayRaw_(groups||[]));}

@@ -32,4 +32,4 @@ echo "Target verified: DEV Apps Script $CLASP_ID"
 clasp status
 clasp push
 
-echo "DEV deployment completed. Run AKORT_alpha1SmokeTest in Apps Script."
+echo "DEV deployment completed. Run AKORT_alpha74Install, AKORT_alpha74SmokeTest and AKORT_alpha74ReadOnlyContractScan in Apps Script."
