@@ -10,11 +10,13 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * - a persistent one-minute trigger continues from a compact checkpoint.
  */
 AKORT.Alpha74Gate5Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate5-acceptance-4';
-  var RELEASE = '4.0.0-alpha.7.4.6';
-  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-4';
-  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-4';
+  var VERSION = '4.0-alpha74-gate5-acceptance-5';
+  var RELEASE = '4.0.0-alpha.7.4.7';
+  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-5';
+  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-5';
   var STATE_KEY = 'AKORT_ALPHA74_GATE5_STATE_V1';
+  var STOP_REQUEST_KEY = 'AKORT_ALPHA74_GATE5_STOP_REQUEST_V1';
+  var AGGREGATE_WORK_SCHEMA_VERSION = '4.0-alpha74-gate5-aggregate-work-1';
   var TRIGGER_HANDLER = 'AKORT_alpha74Gate5Worker';
   var TRIGGER_MINUTES = 1;
   var PROPERTY_MAX_BYTES = 8500;
@@ -22,12 +24,13 @@ AKORT.Alpha74Gate5Acceptance = (function () {
   var WORKER_MAX_STEPS = 12;
   var DIGEST_CHUNK_ROWS = 1000;
   var PRICE_REPLAY_CHUNK_ITEMS = 2;
-  var AGGREGATE_COMBO_BATCH = 50;
-  var AGGREGATE_SERIES_BATCH = 64;
+  var AGGREGATE_COMBO_BATCH = 25;
+  var AGGREGATE_SERIES_BATCH = 32;
   var MAX_CONSECUTIVE_ERRORS = 6;
   var TARGET_SHEET = 'PUBLISH_PRICE_AGGREGATES';
   var GROUP_SHEET = 'GATE5_REPLAY_GROUPS';
   var FRONTIER_SHEET = 'GATE5_FRONTIER';
+  var AGGREGATE_CACHE_SHEET = 'GATE5_AGGREGATE_BATCH_STAGE';
   var DIGEST_SHEET = 'GATE5_DIGEST_PARTS';
   var EVIDENCE_INTENT_SHEET = 'GATE5_EVIDENCE_INTENT';
   var GROUP_HEADERS = Object.freeze([
@@ -172,6 +175,29 @@ AKORT.Alpha74Gate5Acceptance = (function () {
   function loadState_() {
     var raw = PropertiesService.getScriptProperties().getProperty(STATE_KEY);
     return raw ? JSON.parse(raw) : null;
+  }
+
+  function requestStop_() {
+    PropertiesService.getScriptProperties().setProperty(STOP_REQUEST_KEY, now_());
+  }
+
+  function clearStopRequest_() {
+    PropertiesService.getScriptProperties().deleteProperty(STOP_REQUEST_KEY);
+  }
+
+  function stopRequested_() {
+    return !!PropertiesService.getScriptProperties().getProperty(STOP_REQUEST_KEY);
+  }
+
+  function markStopped_(state) {
+    if (!state || state.status !== 'RUNNING') return state;
+    state.status = 'STOPPED';
+    state.phase = 'STOPPED';
+    state.finishedAt = now_();
+    state.nextRetryAt = '';
+    state.failureCode = 'STOPPED_MANUALLY';
+    state.failureDetails = { artifactsPreserved: true };
+    return state;
   }
 
   function triggers_() {
@@ -391,6 +417,76 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     });
   }
 
+  function aggregateStageHeaders_() {
+    return AKORT.AggregateIntegration.StageHeaders.slice();
+  }
+
+  function writeAggregateBatchCache_(state, records, identity) {
+    var spreadsheet = SpreadsheetApp.openById(state.artifacts.sequentialReplay.id);
+    var headers = aggregateStageHeaders_();
+    var sheet = ensureAuxiliarySheet_(spreadsheet, AGGREGATE_CACHE_SHEET, headers);
+    if (sheet.getLastRow() > 1) {
+      sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).clearContent();
+    }
+    var rows = (records || []).map(function (record) {
+      return headers.map(function (header) {
+        return record[header] === undefined || record[header] === null ? '' : record[header];
+      });
+    });
+    for (var cursor = 0; cursor < rows.length; cursor += 500) {
+      var chunk = rows.slice(cursor, cursor + 500);
+      sheet.getRange(cursor + 2, 1, chunk.length, headers.length).setValues(chunk);
+    }
+    SpreadsheetApp.flush();
+    var validation = AKORT.AggregateIntegration.Test.validateStageRows(records || [], identity);
+    return {
+      recordCount: validation.rowCount,
+      seriesCount: validation.seriesCount,
+      stageFingerprint: validation.stageFingerprint
+    };
+  }
+
+  function readAggregateBatchCache_(state, work) {
+    var spreadsheet = SpreadsheetApp.openById(state.artifacts.sequentialReplay.id);
+    var headers = aggregateStageHeaders_();
+    var sheet = spreadsheet.getSheetByName(AGGREGATE_CACHE_SHEET);
+    assert_(sheet, 'ALPHA74_GATE5_AGGREGATE_CACHE_MISSING', 'The durable aggregate replay batch cache is missing.', {
+      spreadsheetId: state.artifacts.sequentialReplay.id
+    });
+    var actual = sheet.getRange(1, 1, 1, headers.length).getValues()[0].map(String);
+    assert_(JSON.stringify(actual) === JSON.stringify(headers), 'ALPHA74_GATE5_AGGREGATE_CACHE_SCHEMA_MISMATCH', 'The durable aggregate replay batch cache schema changed.', {
+      expected: headers,
+      actual: actual
+    });
+    var count = Math.max(0, Number(work.recordCount || 0));
+    assert_(count > 0 && sheet.getLastRow() >= count + 1, 'ALPHA74_GATE5_AGGREGATE_CACHE_INCOMPLETE', 'The durable aggregate replay batch cache is incomplete.', {
+      expectedRows: count,
+      availableRows: Math.max(0, sheet.getLastRow() - 1)
+    });
+    var records = sheet.getRange(2, 1, count, headers.length).getValues().map(function (row) {
+      var record = {};
+      headers.forEach(function (header, column) { record[header] = row[column]; });
+      return record;
+    });
+    var validation = AKORT.AggregateIntegration.Test.validateStageRows(records, work.identity || {});
+    assert_(
+      validation.rowCount === count &&
+        validation.seriesCount === Number(work.seriesCount || 0) &&
+        validation.stageFingerprint === text_(work.stageFingerprint),
+      'ALPHA74_GATE5_AGGREGATE_CACHE_FINGERPRINT_MISMATCH',
+      'The durable aggregate replay batch cache no longer matches its checkpoint.',
+      {
+        expectedRows: count,
+        actualRows: validation.rowCount,
+        expectedSeries: Number(work.seriesCount || 0),
+        actualSeries: validation.seriesCount,
+        expectedFingerprint: text_(work.stageFingerprint),
+        actualFingerprint: validation.stageFingerprint
+      }
+    );
+    return records;
+  }
+
   function stageSeries_(records) {
     var bySeries = {};
     (records || []).forEach(function (record) {
@@ -473,7 +569,13 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       replayPriceRowsWritten: 0,
       replayAggregateCombosProcessed: 0,
       replayAggregateRowsCalculated: 0,
+      replayAggregateBatchesMaterialized: 0,
+      replayAggregateCacheRowsWritten: 0,
+      replayAggregatePublicationSteps: 0,
       replayAggregateSeriesPublished: 0,
+      replayLatestRowsScanned: 0,
+      replayLatestRowsUpdated: 0,
+      replayLatestChunks: 0,
       atomicApiCalls: 0,
       atomicRequests: 0,
       maximumReplacementRows: 0,
@@ -549,6 +651,8 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       replayStage: REPLAY_STAGES[0],
       replayItemCursor: 0,
       aggregateSeriesCursor: 0,
+      aggregateBatchWork: null,
+      replayLatestWork: null,
       normalizeIndex: 0,
       digestIndex: 0,
       digestWork: null,
@@ -624,13 +728,13 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       failureCode: state.failureCode || ''
     });
     assert_(
-      ['4.0-alpha74-gate5-state-3', STATE_SCHEMA_VERSION].indexOf(text_(state.stateSchemaVersion)) >= 0,
+      ['4.0-alpha74-gate5-state-3', '4.0-alpha74-gate5-state-4', STATE_SCHEMA_VERSION].indexOf(text_(state.stateSchemaVersion)) >= 0,
       'ALPHA74_GATE5_RECOVERY_STATE_SCHEMA_INVALID',
       'Gate 5 replay-only recovery cannot reuse this checkpoint schema.',
       { stateSchemaVersion: state.stateSchemaVersion || '' }
     );
     assert_(
-      ['4.0.0-alpha.7.4.4', '4.0.0-alpha.7.4.5', RELEASE].indexOf(text_(state.release)) >= 0,
+      ['4.0.0-alpha.7.4.4', '4.0.0-alpha.7.4.5', '4.0.0-alpha.7.4.6', RELEASE].indexOf(text_(state.release)) >= 0,
       'ALPHA74_GATE5_RECOVERY_RELEASE_INVALID',
       'Gate 5 replay-only recovery cannot reuse this release.',
       { release: state.release || '' }
@@ -681,6 +785,152 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     return inventories;
   }
 
+  function buildDurableResumeState_(sourceState, executionId) {
+    var state = clone_(sourceState || {});
+    var resumedAt = now_();
+    var sourceRecovery = clone_(state.recovery || {});
+    var priorCanonicalRecovery = {
+      mode: text_(sourceRecovery.mode),
+      recoveredFromExecutionId: text_(sourceRecovery.recoveredFromExecutionId),
+      recoveredFromRelease: text_(sourceRecovery.recoveredFromRelease),
+      recoveredAt: text_(sourceRecovery.recoveredAt),
+      supersededReplayId: text_(sourceRecovery.supersededReplay && sourceRecovery.supersededReplay.id)
+    };
+    var recovery = {
+      mode: 'DURABLE_AGGREGATE_BATCH_RESUME',
+      canonicalReplayRecovery: priorCanonicalRecovery,
+      durableAggregateBatchResume: {
+        resumedFromExecutionId: text_(sourceState && sourceState.executionId),
+        resumedFromRelease: text_(sourceState && sourceState.release),
+        resumedFromStateSchemaVersion: text_(sourceState && sourceState.stateSchemaVersion),
+        resumedAt: resumedAt,
+        preservedSequentialReplay: true,
+        preservedGroupIndex: Number(sourceState && sourceState.replayGroupIndex || 0),
+        preservedStage: text_(sourceState && sourceState.replayStage),
+        preservedItemCursor: Number(sourceState && sourceState.replayItemCursor || 0),
+        preservedAggregateSeriesCursor: Number(sourceState && sourceState.aggregateSeriesCursor || 0)
+      }
+    };
+    state.stateSchemaVersion = STATE_SCHEMA_VERSION;
+    state.release = RELEASE;
+    state.executionId = executionId;
+    state.status = 'RUNNING';
+    state.phase = 'SEQUENTIAL_REPLAY';
+    state.startedAt = resumedAt;
+    state.updatedAt = resumedAt;
+    state.finishedAt = '';
+    state.nextRetryAt = '';
+    state.consecutiveErrors = 0;
+    state.lastError = null;
+    state.lastStep = null;
+    state.failureCode = '';
+    state.failureDetails = null;
+    state.evidence = null;
+    state.aggregateBatchWork = null;
+    state.aggregateSeriesCursor = 0;
+    state.replayLatestWork = null;
+    state.recovery = recovery;
+    metrics_(state);
+    return state;
+  }
+
+  function assertDurableResumeSource_(state, resources) {
+    assert_(state, 'ALPHA74_GATE5_DURABLE_RESUME_STATE_MISSING', 'Gate 5 durable replay resume requires the preserved stopped checkpoint.');
+    assert_(state.status === 'STOPPED' && state.phase === 'STOPPED', 'ALPHA74_GATE5_DURABLE_RESUME_STATE_NOT_STOPPED', 'Gate 5 durable replay resume requires a manually stopped checkpoint.', {
+      status: state.status || '',
+      phase: state.phase || ''
+    });
+    assert_(state.failureCode === 'STOPPED_MANUALLY', 'ALPHA74_GATE5_DURABLE_RESUME_STOP_REASON_INVALID', 'Gate 5 durable replay resume is restricted to a manually stopped checkpoint.', {
+      failureCode: state.failureCode || ''
+    });
+    assert_(
+      ['4.0-alpha74-gate5-state-4', STATE_SCHEMA_VERSION].indexOf(text_(state.stateSchemaVersion)) >= 0,
+      'ALPHA74_GATE5_DURABLE_RESUME_STATE_SCHEMA_INVALID',
+      'Gate 5 durable replay resume cannot reuse this checkpoint schema.',
+      { stateSchemaVersion: state.stateSchemaVersion || '' }
+    );
+    assert_(
+      ['4.0.0-alpha.7.4.6', RELEASE].indexOf(text_(state.release)) >= 0,
+      'ALPHA74_GATE5_DURABLE_RESUME_RELEASE_INVALID',
+      'Gate 5 durable replay resume cannot reuse this release.',
+      { release: state.release || '' }
+    );
+    assert_(
+      state.replayStage === 'AGGREGATES' &&
+        Number(state.replayGroupCount || 0) > 0 &&
+        Number(state.replayGroupIndex || 0) < Number(state.replayGroupCount || 0) &&
+        Number(state.replayItemCursor || 0) >= 0 &&
+        Number(state.aggregateSeriesCursor || 0) === 0 &&
+        !state.aggregateBatchWork,
+      'ALPHA74_GATE5_DURABLE_RESUME_BOUNDARY_INVALID',
+      'Gate 5 durable replay resume requires a checkpoint between aggregate logical-series batches.',
+      {
+        groupCount: Number(state.replayGroupCount || 0),
+        groupIndex: Number(state.replayGroupIndex || 0),
+        replayStage: state.replayStage || '',
+        replayItemCursor: Number(state.replayItemCursor || 0),
+        aggregateSeriesCursor: Number(state.aggregateSeriesCursor || 0),
+        aggregateBatchWork: !!state.aggregateBatchWork
+      }
+    );
+    var sourceMetrics = metrics_(state);
+    assert_(
+      Number(state.fullStageIndex || 0) >= FULL_STAGES.length &&
+        !state.fullBuildWork &&
+        Number(sourceMetrics.fullBuildStagesPrepared || 0) >= FULL_STAGES.length &&
+        Number(sourceMetrics.fullBuildRowsMaterialized || 0) > 0,
+      'ALPHA74_GATE5_DURABLE_RESUME_FULL_BUILD_INCOMPLETE',
+      'Gate 5 durable replay resume requires the completed preserved full build.'
+    );
+    var inventories = {
+      baselineCanonical: assertArtifactInTestFiles_(state.artifacts && state.artifacts.baselineCanonical, resources.testFilesFolderId, 'baselineCanonical'),
+      liveSnapshot: assertArtifactInTestFiles_(state.artifacts && state.artifacts.liveSnapshot, resources.testFilesFolderId, 'liveSnapshot'),
+      fullBuild: assertArtifactInTestFiles_(state.artifacts && state.artifacts.fullBuild, resources.testFilesFolderId, 'fullBuild'),
+      sequentialReplay: assertArtifactInTestFiles_(state.artifacts && state.artifacts.sequentialReplay, resources.testFilesFolderId, 'sequentialReplay')
+    };
+    assert_(inventories.fullBuild.aggregateRows > 0, 'ALPHA74_GATE5_DURABLE_RESUME_FULL_BUILD_EMPTY', 'The preserved full build contains no aggregate rows.', inventories.fullBuild);
+    var live = AKORT.AggregateContract.inventory();
+    assert_(
+      Number(live.rows) === Number(state.liveBefore && state.liveBefore.rows || 0) &&
+        text_(live.data_hash) === text_(state.liveBefore && state.liveBefore.dataHash),
+      'ALPHA74_GATE5_DURABLE_RESUME_LIVE_CHANGED',
+      'DEV Publish changed after the preserved Gate 5 snapshot, so durable replay resume cannot reuse it.',
+      {
+        expectedRows: Number(state.liveBefore && state.liveBefore.rows || 0),
+        actualRows: Number(live.rows || 0),
+        expectedDataHash: text_(state.liveBefore && state.liveBefore.dataHash),
+        actualDataHash: text_(live.data_hash)
+      }
+    );
+    var groups = readGroupRows_(state);
+    assert_(groups.length === Number(state.replayGroupCount || 0), 'ALPHA74_GATE5_DURABLE_RESUME_GROUP_COUNT_MISMATCH', 'The preserved replay group inventory changed.', {
+      expected: Number(state.replayGroupCount || 0),
+      actual: groups.length
+    });
+    var group = groups[Number(state.replayGroupIndex || 0)];
+    assert_(group && text_(group.loadId), 'ALPHA74_GATE5_DURABLE_RESUME_GROUP_MISSING', 'The preserved replay group checkpoint is missing.');
+    var context = replayContext_(groups, Number(state.replayGroupIndex || 0));
+    var items = AKORT.IncrementalPublish.Gate5.replayItems(
+      state.artifacts.sequentialReplay.id,
+      context.allowedLoadIds,
+      context.reversedLoadIds,
+      group,
+      'AGGREGATES',
+      readFrontier_(state)
+    );
+    assert_(Number(state.replayItemCursor || 0) <= items.length, 'ALPHA74_GATE5_DURABLE_RESUME_CURSOR_INVALID', 'The preserved aggregate replay cursor exceeds the current deterministic item inventory.', {
+      cursor: Number(state.replayItemCursor || 0),
+      total: items.length
+    });
+    return {
+      groupIndex: Number(state.replayGroupIndex || 0),
+      loadId: group.loadId,
+      itemCursor: Number(state.replayItemCursor || 0),
+      itemTotal: items.length,
+      inventories: inventories
+    };
+  }
+
   function fullBuildStep_(state) {
     var stage = FULL_STAGES[Number(state.fullStageIndex || 0)];
     if (!stage) {
@@ -722,6 +972,8 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     state.replayStage = REPLAY_STAGES[0];
     state.replayItemCursor = 0;
     state.aggregateSeriesCursor = 0;
+    state.aggregateBatchWork = null;
+    state.replayLatestWork = null;
     state.phase = groups.length ? 'SEQUENTIAL_REPLAY' : 'FINALIZE_REPLAY';
     return {
       replayGroups: groups.length,
@@ -736,6 +988,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       state.replayStage = REPLAY_STAGES[index + 1];
       state.replayItemCursor = 0;
       state.aggregateSeriesCursor = 0;
+      state.aggregateBatchWork = null;
       return { groupComplete: false, nextStage: state.replayStage };
     }
     assertAggregateReplayProgress_(state);
@@ -744,6 +997,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     state.replayStage = REPLAY_STAGES[0];
     state.replayItemCursor = 0;
     state.aggregateSeriesCursor = 0;
+    state.aggregateBatchWork = null;
     if (state.replayGroupIndex >= Number(state.replayGroupCount || 0)) state.phase = 'FINALIZE_REPLAY';
     return { groupComplete: true, nextGroupIndex: state.replayGroupIndex, nextPhase: state.phase };
   }
@@ -795,34 +1049,86 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       };
     }
 
-    var combos = items.slice(cursor, cursor + AGGREGATE_COMBO_BATCH);
-    var rows = AKORT.IncrementalPublish.Gate5.buildAggregateRows(
-      state.artifacts.sequentialReplay.id,
-      context.allowedLoadIds,
-      context.reversedLoadIds,
-      combos
-    );
-    var identity = identityFor_(state, group, cursor);
-    var records = stageRecords_(rows, identity);
     var aggregateMetrics = metrics_(state);
-    if (Number(state.aggregateSeriesCursor || 0) === 0) {
+    var work = state.aggregateBatchWork || null;
+    if (!work) {
+      var combos = items.slice(cursor, cursor + AGGREGATE_COMBO_BATCH);
+      var rows = AKORT.IncrementalPublish.Gate5.buildAggregateRows(
+        state.artifacts.sequentialReplay.id,
+        context.allowedLoadIds,
+        context.reversedLoadIds,
+        combos
+      );
+      var identity = identityFor_(state, group, cursor);
+      var records = stageRecords_(rows, identity);
       aggregateMetrics.replayAggregateCombosProcessed += combos.length;
       aggregateMetrics.replayAggregateRowsCalculated += rows.length;
-    }
-    if (!records.length) {
-      state.replayItemCursor = cursor + combos.length;
+      aggregateMetrics.replayAggregateBatchesMaterialized += 1;
+      if (!records.length) {
+        state.replayItemCursor = cursor + combos.length;
+        state.aggregateSeriesCursor = 0;
+        return {
+          groupIndex: state.replayGroupIndex,
+          loadId: group.loadId,
+          stage: state.replayStage,
+          phase: 'MATERIALIZE_AGGREGATE_BATCH',
+          comboCursor: state.replayItemCursor,
+          comboTotal: items.length,
+          calculatedRows: 0,
+          complete: true
+        };
+      }
+      var cached = writeAggregateBatchCache_(state, records, identity);
+      aggregateMetrics.replayAggregateCacheRowsWritten += cached.recordCount;
+      work = {
+        workSchemaVersion: AGGREGATE_WORK_SCHEMA_VERSION,
+        groupIndex: Number(state.replayGroupIndex || 0),
+        loadId: group.loadId,
+        comboCursor: cursor,
+        comboCount: combos.length,
+        comboTotal: items.length,
+        recordCount: cached.recordCount,
+        seriesCount: cached.seriesCount,
+        stageFingerprint: cached.stageFingerprint,
+        seriesCursor: 0,
+        identity: identity
+      };
+      state.aggregateBatchWork = work;
       state.aggregateSeriesCursor = 0;
       return {
         groupIndex: state.replayGroupIndex,
         loadId: group.loadId,
         stage: state.replayStage,
-        cursor: state.replayItemCursor,
-        total: items.length,
-        calculatedRows: 0
+        phase: 'MATERIALIZE_AGGREGATE_BATCH',
+        comboCursor: cursor,
+        comboCount: combos.length,
+        comboTotal: items.length,
+        calculatedRows: rows.length,
+        cachedRows: cached.recordCount,
+        cachedSeries: cached.seriesCount,
+        complete: false
       };
     }
+
+    assert_(
+      work.workSchemaVersion === AGGREGATE_WORK_SCHEMA_VERSION &&
+        Number(work.groupIndex) === Number(state.replayGroupIndex || 0) &&
+        text_(work.loadId) === text_(group.loadId) &&
+        Number(work.comboCursor) === cursor &&
+        Number(work.comboTotal) === items.length,
+      'ALPHA74_GATE5_AGGREGATE_WORK_MISMATCH',
+      'The durable aggregate replay batch checkpoint does not match the current replay frontier.',
+      {
+        work: clone_(work),
+        groupIndex: Number(state.replayGroupIndex || 0),
+        loadId: group.loadId,
+        comboCursor: cursor,
+        comboTotal: items.length
+      }
+    );
+    var cachedRecords = readAggregateBatchCache_(state, work);
     var targetRows = readAggregateRows_(state.artifacts.sequentialReplay.id);
-    var batch = fitSeriesBatch_(targetRows, records, state.aggregateSeriesCursor, limits_());
+    var batch = fitSeriesBatch_(targetRows, cachedRecords, work.seriesCursor, limits_());
     var replacement = batch.replacement;
     var write = { apiCalls: 0, requests: 0, noOp: true };
     if (replacement.beforeFingerprint !== replacement.afterFingerprint) {
@@ -831,43 +1137,63 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         replacement
       );
     }
+    work.seriesCursor = batch.nextCursor;
+    state.aggregateBatchWork = work;
     state.aggregateSeriesCursor = batch.nextCursor;
     if (batch.nextCursor >= batch.totalSeries) {
-      state.replayItemCursor = cursor + combos.length;
+      state.replayItemCursor = Number(work.comboCursor || 0) + Number(work.comboCount || 0);
       state.aggregateSeriesCursor = 0;
+      state.aggregateBatchWork = null;
     }
-    var metrics = metrics_(state);
-    metrics.replayAggregateSeriesPublished += batch.seriesCount;
-    metrics.atomicApiCalls += Number(write.apiCalls || 0);
-    metrics.atomicRequests += Number(write.requests || 0);
-    metrics.maximumReplacementRows = Math.max(metrics.maximumReplacementRows, Number(replacement.replacementRowCount || 0));
-    metrics.maximumReplacementCells = Math.max(metrics.maximumReplacementCells, Number(replacement.cellCount || 0));
-    metrics.maximumReplacementRequests = Math.max(metrics.maximumReplacementRequests, Number(replacement.requestCount || 0));
+    aggregateMetrics.replayAggregatePublicationSteps += 1;
+    aggregateMetrics.replayAggregateSeriesPublished += batch.seriesCount;
+    aggregateMetrics.atomicApiCalls += Number(write.apiCalls || 0);
+    aggregateMetrics.atomicRequests += Number(write.requests || 0);
+    aggregateMetrics.maximumReplacementRows = Math.max(aggregateMetrics.maximumReplacementRows, Number(replacement.replacementRowCount || 0));
+    aggregateMetrics.maximumReplacementCells = Math.max(aggregateMetrics.maximumReplacementCells, Number(replacement.cellCount || 0));
+    aggregateMetrics.maximumReplacementRequests = Math.max(aggregateMetrics.maximumReplacementRequests, Number(replacement.requestCount || 0));
     return {
       groupIndex: state.replayGroupIndex,
       loadId: group.loadId,
       stage: state.replayStage,
+      phase: 'PUBLISH_AGGREGATE_BATCH',
       comboCursor: state.replayItemCursor,
       comboTotal: items.length,
       seriesCursor: state.aggregateSeriesCursor,
       seriesTotal: batch.totalSeries,
       seriesPublished: batch.seriesCount,
       replacementRows: replacement.replacementRowCount,
-      atomicApiCalls: Number(write.apiCalls || 0)
+      atomicApiCalls: Number(write.apiCalls || 0),
+      lostResponseNoOp: replacement.beforeFingerprint === replacement.afterFingerprint
     };
   }
 
   function finalizeReplayStep_(state) {
-    var groups = readGroupRows_(state);
-    var context = replayContext_(groups, Math.max(0, groups.length - 1));
-    var rows = AKORT.IncrementalPublish.Gate5.finalizeAggregateLatest(
+    var result = AKORT.IncrementalPublish.Gate5.fullBuildChunk(
       state.artifacts.sequentialReplay.id,
-      context.allowedLoadIds,
-      context.reversedLoadIds
+      'AGGREGATES_LATEST',
+      state.replayLatestWork || null
     );
-    state.phase = 'NORMALIZE';
-    state.normalizeIndex = 0;
-    return { aggregateRows: rows, nextPhase: state.phase };
+    state.replayLatestWork = result.work || null;
+    var metrics = metrics_(state);
+    metrics.replayLatestRowsScanned += Number(result.rowsScanned || 0);
+    metrics.replayLatestRowsUpdated += Number(result.rowsProcessed || 0);
+    metrics.replayLatestChunks += result.phase === 'PREPARE' ? 0 : 1;
+    if (result.complete) {
+      state.replayLatestWork = null;
+      state.phase = 'NORMALIZE';
+      state.normalizeIndex = 0;
+    }
+    return {
+      phase: 'FINALIZE_REPLAY_LATEST',
+      latestPhase: result.phase || '',
+      cursor: result.work ? Number(result.work.cursor || 0) : Number(result.total || 0),
+      total: Number(result.total || 0),
+      rowsScanned: Number(result.rowsScanned || 0),
+      rowsUpdated: Number(result.rowsProcessed || 0),
+      complete: result.complete === true,
+      nextPhase: state.phase
+    };
   }
 
   function normalizeStep_(state) {
@@ -1173,6 +1499,24 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         itemCursor: Number(state.replayItemCursor || 0),
         aggregateSeriesCursor: Number(state.aggregateSeriesCursor || 0)
       },
+      aggregateBatch: state.aggregateBatchWork ? {
+        workSchemaVersion: state.aggregateBatchWork.workSchemaVersion || '',
+        groupIndex: Number(state.aggregateBatchWork.groupIndex || 0),
+        loadId: state.aggregateBatchWork.loadId || '',
+        comboCursor: Number(state.aggregateBatchWork.comboCursor || 0),
+        comboCount: Number(state.aggregateBatchWork.comboCount || 0),
+        comboTotal: Number(state.aggregateBatchWork.comboTotal || 0),
+        recordCount: Number(state.aggregateBatchWork.recordCount || 0),
+        seriesCursor: Number(state.aggregateBatchWork.seriesCursor || 0),
+        seriesCount: Number(state.aggregateBatchWork.seriesCount || 0)
+      } : null,
+      replayLatest: state.replayLatestWork ? {
+        workSchemaVersion: state.replayLatestWork.workSchemaVersion || '',
+        phase: state.replayLatestWork.phase || '',
+        cursor: Number(state.replayLatestWork.cursor || 0),
+        total: Number(state.replayLatestWork.total || 0),
+        chunkRows: Number(state.replayLatestWork.chunkRows || 0)
+      } : null,
       metrics: clone_(metrics_(state)),
       artifacts: clone_(state.artifacts || {}),
       digests: clone_(state.digests || {}),
@@ -1182,6 +1526,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       failureDetails: clone_(state.failureDetails || null),
       lastError: clone_(state.lastError || null),
       lastStep: clone_(state.lastStep || null),
+      stopRequested: stopRequested_(),
       triggerCount: triggers_().length
     };
   }
@@ -1204,6 +1549,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         triggerHandler: TRIGGER_HANDLER,
         triggerMode: 'PERSISTENT_EVERY_MINUTE',
         noManualContinuation: true,
+        stopRequested: stopRequested_(),
         state: publicState_(state),
         physicalWrites: false
       });
@@ -1214,6 +1560,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     return AKORT.Core.safeRun('ALPHA74_GATE5_START', function () {
       AKORT.EnvironmentGuard.assertDev();
       assertFlags_();
+      clearStopRequest_();
       var existing = loadState_();
       if (existing && existing.status === 'RUNNING' &&
           (existing.stateSchemaVersion !== STATE_SCHEMA_VERSION || existing.release !== RELEASE)) {
@@ -1266,6 +1613,8 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         replayStage: REPLAY_STAGES[0],
         replayItemCursor: 0,
         aggregateSeriesCursor: 0,
+        aggregateBatchWork: null,
+        replayLatestWork: null,
         normalizeIndex: 0,
         digestIndex: 0,
         digestWork: null,
@@ -1303,6 +1652,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       var resources = resources_();
       assertReplayOnlyRecoverySource_(sourceState, resources);
       deleteTriggers_();
+      clearStopRequest_();
       var stamp = timestamp_();
       var executionId = 'A74_GATE5_' + hash_(['REPLAY_RECOVERY', stamp, Utilities.getUuid()]).slice(0, 20).toUpperCase();
       var replayArtifact = createBook_(
@@ -1320,6 +1670,31 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     }, { lock: true, persistLogs: true });
   }
 
+  function resumeReplay() {
+    return AKORT.Core.safeRun('ALPHA74_GATE5_RESUME_REPLAY', function () {
+      AKORT.EnvironmentGuard.assertDev();
+      assertFlags_();
+      var sourceState = loadState_();
+      var resources = resources_();
+      var resumeBoundary = assertDurableResumeSource_(sourceState, resources);
+      deleteTriggers_();
+      clearStopRequest_();
+      var stamp = timestamp_();
+      var executionId = 'A74_GATE5_' + hash_(['DURABLE_AGGREGATE_RESUME', stamp, Utilities.getUuid()]).slice(0, 20).toUpperCase();
+      var state = buildDurableResumeState_(sourceState, executionId);
+      saveState_(state);
+      state.triggerCount = ensureTrigger_();
+      saveState_(state);
+      return AKORT.Result.success(
+        'Alpha.7.4 Gate 5 durable aggregate replay resumed from the preserved logical-series boundary.',
+        {
+          resumeBoundary: resumeBoundary,
+          state: publicState_(state)
+        }
+      );
+    }, { lock: true, persistLogs: true });
+  }
+
   function worker() {
     var lock = LockService.getUserLock();
     if (!lock.tryLock(1000)) {
@@ -1332,6 +1707,15 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     var startedMs = Date.now(), state = null;
     try {
       state = loadState_();
+      if (stopRequested_()) {
+        var removedForStop = deleteTriggers_();
+        if (state && state.status === 'RUNNING') {
+          markStopped_(state);
+          state.failureDetails.triggersRemoved = removedForStop;
+          saveState_(state);
+        }
+        return AKORT.Result.success('Gate 5 worker acknowledged the durable manual stop request.', publicState_(state));
+      }
       if (!state || state.status !== 'RUNNING') {
         deleteTriggers_();
         return AKORT.Result.success('Gate 5 worker found no active run.', publicState_(state));
@@ -1376,6 +1760,10 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         steps += 1;
         state.consecutiveErrors = 0;
         state.lastError = null;
+        if (stopRequested_()) {
+          markStopped_(state);
+          deleteTriggers_();
+        }
         saveState_(state);
       }
       var duration = Date.now() - startedMs;
@@ -1390,10 +1778,23 @@ AKORT.Alpha74Gate5Acceptance = (function () {
           publicState_(state)
         );
       }
-      return AKORT.Result.success(state.status === 'SUCCESS' ? 'Alpha.7.4 Gate 5 acceptance passed.' : 'Alpha.7.4 Gate 5 worker committed bounded progress.', publicState_(state));
+      return AKORT.Result.success(
+        state.status === 'SUCCESS'
+          ? 'Alpha.7.4 Gate 5 acceptance passed.'
+          : state.status === 'STOPPED'
+            ? 'Alpha.7.4 Gate 5 worker stopped at a durable checkpoint.'
+            : 'Alpha.7.4 Gate 5 worker committed bounded progress.',
+        publicState_(state)
+      );
     } catch (caught) {
       if (!state) state = loadState_();
       if (!state) throw caught;
+      if (stopRequested_()) {
+        markStopped_(state);
+        deleteTriggers_();
+        saveState_(state);
+        return AKORT.Result.success('Gate 5 worker stopped after acknowledging the durable manual stop request.', publicState_(state));
+      }
       var info = classifyError_(caught);
       state.consecutiveErrors = Number(state.consecutiveErrors || 0) + 1;
       state.lastError = {
@@ -1424,19 +1825,14 @@ AKORT.Alpha74Gate5Acceptance = (function () {
   }
 
   function stop() {
+    requestStop_();
     return AKORT.Core.safeRun('ALPHA74_GATE5_STOP', function () {
       AKORT.EnvironmentGuard.assertDev();
       var state = loadState_(), removed = deleteTriggers_();
-      if (state && state.status === 'RUNNING') {
-        state.status = 'STOPPED';
-        state.phase = 'STOPPED';
-        state.finishedAt = now_();
-        state.failureCode = 'STOPPED_MANUALLY';
-        state.failureDetails = { artifactsPreserved: true };
-        saveState_(state);
-      }
+      if (state && state.status === 'RUNNING') saveState_(markStopped_(state));
       return AKORT.Result.success('Alpha.7.4 Gate 5 stopped. Isolated artifacts were preserved.', {
         triggersRemoved: removed,
+        stopRequested: true,
         state: publicState_(state)
       });
     }, { lock: true, persistLogs: true });
@@ -1452,6 +1848,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     status: status,
     start: start,
     restartReplay: restartReplay,
+    resumeReplay: resumeReplay,
     worker: worker,
     stop: stop,
     Test: Object.freeze({
@@ -1465,9 +1862,11 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       canonicalCell: canonicalCell_,
       classifyError: classifyError_,
       fullBuildStep: fullBuildStep_,
+      finalizeReplayStep: finalizeReplayStep_,
       metrics: metrics_,
       assertAggregateReplayProgress: assertAggregateReplayProgress_,
-      buildReplayOnlyState: buildReplayOnlyState_
+      buildReplayOnlyState: buildReplayOnlyState_,
+      buildDurableResumeState: buildDurableResumeState_
     })
   });
 })();

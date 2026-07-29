@@ -6,7 +6,7 @@ Apps Script data pipeline for the AKORT analytical system.
 
 Active milestone: **Alpha.7.4 — Aggregate Integration into Existing Operation Engine**.
 
-Status: `GATE 4 ACCEPTED / GATE 5 CANONICAL REPLAY RECOVERY HOTFIX READY / REPLAY-ONLY RERUN PENDING / REGULAR PIPELINE PROHIBITED`.
+Status: `GATE 4 ACCEPTED / GATE 5 DURABLE AGGREGATE BATCH HOTFIX READY / CURSOR-PRESERVING RESUME PENDING / REGULAR PIPELINE PROHIBITED`.
 
 Accepted base:
 
@@ -33,6 +33,6 @@ Yandex DataLens is an external consumer of the Publish spreadsheet and manages i
 
 See [`docs/alpha-7.4/README.md`](docs/alpha-7.4/README.md).
 
-The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 4 adds an isolated physical/fault harness that forbids the DataLens-connected DEV Publish target. Gate 5 reuses the production canonical index expansion during sequential replay and supports replay-only recovery that preserves the completed isolated full build.
+The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 4 adds an isolated physical/fault harness that forbids the DataLens-connected DEV Publish target. Gate 5 reuses the production canonical index expansion during sequential replay, materializes each aggregate calculation batch once, and can resume the preserved replay workbook from an exact logical-series boundary without repeating full build or earlier price replay.
 
 Gate 4 requires `PUBLISH_AGGREGATE_EXECUTION_ENABLED=TRUE` while `PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED` remains `FALSE`. Regular aggregate operations and trigger changes remain prohibited until the later authoritative DEV gate.

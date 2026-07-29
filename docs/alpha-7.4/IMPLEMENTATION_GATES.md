@@ -80,12 +80,15 @@ PASS; DataLens-connected Publish осталась неизменной.
 полный расчёт payload перед каждым chunk. В `4.0.0-alpha.7.4.4` payload
 каждой стадии материализуется один раз в isolated sheet, а target заполняется
 bounded cursor-copy. Остановленные execution сохраняются для диагностики;
-DEV execution `A74_GATE5_CDEFB6487105607FB35F` завершил full build, но выявил
-отсутствие canonical index expansion в aggregate replay. Release `7.4.6`
+следующий DEV execution завершил full build, но выявил отсутствие canonical
+index expansion в aggregate replay. Release `7.4.6`
 переиспользует production expansion и создаёт `state-4` replay-only recovery,
-сохраняя completed full build. Чек-лист остаётся открытым до terminal
-`SUCCESS` нормативного DEV-запуска `AKORT_alpha74Gate5RestartReplay()`, exact
-reconciliation и проверки JSON evidence.
+сохраняя completed full build. Этот recovery был остановлен на безопасной
+границе aggregate replay из-за повторного расчёта batch при каждом
+series-publication retry. Release `7.4.7` один раз материализует batch,
+публикует его отдельными durable logical-series steps и продолжает тот же
+replay workbook через `AKORT_alpha74Gate5ResumeReplay()`. Чек-лист остаётся
+открытым до terminal `SUCCESS`, exact reconciliation и проверки JSON evidence.
 Regular pipeline остаётся выключенным.
 
 ## Gate 6 — Authoritative DEV

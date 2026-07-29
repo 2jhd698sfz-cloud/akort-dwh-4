@@ -127,10 +127,10 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-4');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.6');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-4');
-  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-4');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-5');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.7');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-5');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-5');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
@@ -251,6 +251,70 @@ test('full build advances only after durable bounded chunks complete', () => {
   assert.equal(state.metrics.fullBuildRowsMaterialized, 1200);
   assert.equal(state.metrics.fullBuildChunks, 3);
   assert.equal(state.metrics.fullBuildStagesPrepared, 1);
+});
+
+test('sequential replay latest is finalized with a durable scan and apply cursor', () => {
+  context.AKORT.IncrementalPublish.Gate5.fullBuildChunk = function (_spreadsheetId, stage, work) {
+    assert.equal(stage, 'AGGREGATES_LATEST');
+    if (!work) {
+      return {
+        stage,
+        phase: 'PREPARE',
+        rowsProcessed: 0,
+        rowsScanned: 0,
+        total: 2500,
+        complete: false,
+        work: {
+          workSchemaVersion: '4.0-alpha74-gate5-full-work-2',
+          stage,
+          phase: 'INDEX_SCAN',
+          cursor: 0,
+          total: 2500,
+          chunkRows: 1000,
+          prepared: true
+        }
+      };
+    }
+    const cursor = work.cursor;
+    const count = Math.min(1000, work.total - cursor);
+    const next = cursor + count;
+    if (work.phase === 'INDEX_SCAN') {
+      const nextWork = Object.assign({}, work, {
+        phase: next >= work.total ? 'APPLY_FLAGS' : 'INDEX_SCAN',
+        cursor: next >= work.total ? 0 : next
+      });
+      return {
+        stage,
+        phase: 'INDEX_SCAN',
+        rowsProcessed: 0,
+        rowsScanned: count,
+        total: work.total,
+        complete: false,
+        work: nextWork
+      };
+    }
+    return {
+      stage,
+      phase: 'APPLY_FLAGS',
+      rowsProcessed: count,
+      rowsScanned: 0,
+      total: work.total,
+      complete: next >= work.total,
+      work: next >= work.total ? null : Object.assign({}, work, { cursor: next })
+    };
+  };
+  const state = {
+    phase: 'FINALIZE_REPLAY',
+    replayLatestWork: null,
+    artifacts: { sequentialReplay: { id: 'REPLAY_TEST' } },
+    metrics: null
+  };
+  for (let index = 0; index < 7; index += 1) H.Test.finalizeReplayStep(state);
+  assert.equal(state.phase, 'NORMALIZE');
+  assert.equal(state.replayLatestWork, null);
+  assert.equal(state.metrics.replayLatestRowsScanned, 2500);
+  assert.equal(state.metrics.replayLatestRowsUpdated, 2500);
+  assert.equal(state.metrics.replayLatestChunks, 6);
 });
 
 test('publish rows become exact Alpha.7.4 stage records', () => {
@@ -391,6 +455,63 @@ test('replay-only recovery preserves completed artifacts and resets replay state
   assert(Buffer.byteLength(JSON.stringify(recovered), 'utf8') < 8500);
 });
 
+test('durable aggregate resume preserves the exact replay frontier and artifact', () => {
+  const source = {
+    stateSchemaVersion: '4.0-alpha74-gate5-state-4',
+    release: '4.0.0-alpha.7.4.6',
+    executionId: 'A74_GATE5_DF285AC01AC327DD5F35',
+    status: 'STOPPED',
+    phase: 'STOPPED',
+    replayGroupCount: 12,
+    replayGroupIndex: 0,
+    replayStage: 'AGGREGATES',
+    replayItemCursor: 150,
+    aggregateSeriesCursor: 0,
+    aggregateBatchWork: null,
+    fullStageIndex: 7,
+    fullBuildWork: null,
+    artifacts: {
+      baselineCanonical: { id: 'BASELINE' },
+      liveSnapshot: { id: 'LIVE_SNAPSHOT' },
+      fullBuild: { id: 'FULL_BUILD' },
+      sequentialReplay: { id: 'PRESERVED_REPLAY' }
+    },
+    recovery: {
+      mode: 'REPLAY_ONLY_CANONICAL_INDEX_RECOVERY',
+      recoveredFromExecutionId: 'A74_GATE5_CDEFB6487105607FB35F'
+    },
+    metrics: {
+      workerExecutions: 20,
+      fullBuildRowsMaterialized: 97070,
+      fullBuildStagesPrepared: 7,
+      replayPriceRowsWritten: 3528,
+      replayAggregateCombosProcessed: 150,
+      replayAggregateRowsCalculated: 1750,
+      replayAggregateSeriesPublished: 140
+    }
+  };
+  const resumed = H.Test.buildDurableResumeState(source, 'A74_GATE5_DURABLE_RESUME');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-5');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.7');
+  assert.equal(resumed.executionId, 'A74_GATE5_DURABLE_RESUME');
+  assert.equal(resumed.status, 'RUNNING');
+  assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
+  assert.equal(resumed.replayGroupIndex, 0);
+  assert.equal(resumed.replayStage, 'AGGREGATES');
+  assert.equal(resumed.replayItemCursor, 150);
+  assert.equal(resumed.aggregateSeriesCursor, 0);
+  assert.equal(resumed.aggregateBatchWork, null);
+  assert.equal(resumed.artifacts.sequentialReplay.id, 'PRESERVED_REPLAY');
+  assert.equal(resumed.metrics.replayPriceRowsWritten, 3528);
+  assert.equal(resumed.metrics.replayAggregateCombosProcessed, 150);
+  assert.equal(resumed.metrics.replayAggregateSeriesPublished, 140);
+  assert.equal(resumed.recovery.mode, 'DURABLE_AGGREGATE_BATCH_RESUME');
+  assert.equal(resumed.recovery.canonicalReplayRecovery.mode, 'REPLAY_ONLY_CANONICAL_INDEX_RECOVERY');
+  assert.equal(resumed.recovery.durableAggregateBatchResume.preservedItemCursor, 150);
+  assert.equal(resumed.recovery.durableAggregateBatchResume.preservedSequentialReplay, true);
+  assert(Buffer.byteLength(JSON.stringify(resumed), 'utf8') < 8500);
+});
+
 test('repository wiring protects live Publish and exposes trigger-driven entrypoints', () => {
   const incremental = fs.readFileSync(path.join(root, 'src/07_IncrementalPublish.js'), 'utf8');
   const harness = fs.readFileSync(path.join(root, 'src/26_Alpha74Gate5Acceptance.js'), 'utf8');
@@ -428,6 +549,14 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(harness.includes('ALPHA74_GATE5_STATE_VERSION_MISMATCH'));
   assert(harness.includes('ALPHA74_GATE5_AGGREGATE_REPLAY_EMPTY'));
   assert(harness.includes("mode: 'REPLAY_ONLY_CANONICAL_INDEX_RECOVERY'"));
+  assert(harness.includes("AGGREGATE_WORK_SCHEMA_VERSION = '4.0-alpha74-gate5-aggregate-work-1'"));
+  assert(harness.includes("AGGREGATE_CACHE_SHEET = 'GATE5_AGGREGATE_BATCH_STAGE'"));
+  assert(harness.includes("phase: 'MATERIALIZE_AGGREGATE_BATCH'"));
+  assert(harness.includes("phase: 'PUBLISH_AGGREGATE_BATCH'"));
+  assert(harness.includes("phase: 'FINALIZE_REPLAY_LATEST'"));
+  assert(harness.includes("STOP_REQUEST_KEY = 'AKORT_ALPHA74_GATE5_STOP_REQUEST_V1'"));
+  assert(harness.includes('stopRequested_()'));
+  assert(harness.includes('buildDurableResumeState_'));
   const overlapBranch = harness.slice(
     harness.indexOf('if (!lock.tryLock(1000))'),
     harness.indexOf('var startedMs = Date.now()')
@@ -438,6 +567,7 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(entries.includes('AKORT_alpha74Gate5Status'));
   assert(entries.includes('AKORT_alpha74Gate5Start'));
   assert(entries.includes('AKORT_alpha74Gate5RestartReplay'));
+  assert(entries.includes('AKORT_alpha74Gate5ResumeReplay'));
   assert(entries.includes('AKORT_alpha74Gate5Worker'));
   assert(entries.includes('AKORT_alpha74Gate5Stop'));
   assert(release.includes("'26_Alpha74Gate5Acceptance.js'"));

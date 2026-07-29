@@ -53,6 +53,9 @@
 - `GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md` — root cause нулевых aggregate
   rows в sequential replay и восстановление с сохранением completed full
   build.
+- `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md` — одноразовая materialization
+  aggregate batch, bounded series publication и продолжение с сохранённого
+  replay cursor.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -119,8 +122,14 @@ Execution `A74_GATE5_CDEFB6487105607FB35F` успешно завершил full 
 `4.0.0-alpha.7.4.6` replay использует production expansion напрямую,
 нулевой cumulative aggregate result блокируется fail-closed, а
 `AKORT_alpha74Gate5RestartReplay()` сохраняет baseline, live snapshot и
-completed full build, создавая только новый replay workbook. Gate 5
-принимается только по `state-4` recovery execution.
+completed full build, создавая только новый replay workbook. Этот recovery
+был остановлен на безопасной границе `group 0 / AGGREGATES / cursor 150`,
+поскольку один и тот же aggregate payload повторно рассчитывался при каждом
+series-publication retry. В `4.0.0-alpha.7.4.7` calculation batch один раз
+материализуется в durable stage cache, publication продолжается отдельными
+logical-series checkpoints, а
+`AKORT_alpha74Gate5ResumeReplay()` сохраняет тот же replay workbook и cursor.
+Gate 5 принимается только по `state-5` resume execution.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

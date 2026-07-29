@@ -52,7 +52,9 @@ Replay workbook также содержит:
 
 - `GATE5_REPLAY_GROUPS` — durable accepted load/reversal order и статус каждой
   группы;
-- `GATE5_FRONTIER` — immutable existing-period frontier.
+- `GATE5_FRONTIER` — immutable existing-period frontier;
+- `GATE5_AGGREGATE_BATCH_STAGE` — durable immutable stage records текущего
+  aggregate replay batch.
 
 Итоговый JSON evidence сохраняется в canonical `Test Results` folder.
 
@@ -124,13 +126,14 @@ Entry points:
 | `AKORT_alpha74Gate5Status()` | Read-only preflight и текущий checkpoint |
 | `AKORT_alpha74Gate5Start()` | Создание артефактов, checkpoint и trigger |
 | `AKORT_alpha74Gate5RestartReplay()` | Recovery с сохранением completed full build и повтором только sequential replay |
+| `AKORT_alpha74Gate5ResumeReplay()` | Продолжить stopped aggregate replay с сохранённого logical-series boundary |
 | `AKORT_alpha74Gate5Worker()` | Trigger handler; вручную не запускать |
 | `AKORT_alpha74Gate5Stop()` | Остановить trigger, сохранив state и артефакты |
 
 `Start` создаёт один persistent time-driven trigger с интервалом одна минута.
 Worker использует lock, execution budget, bounded step count и сохраняет
-checkpoint после каждого durable шага. В нормативном `4.0.0-alpha.7.4.4`
-full build использует single-pass durable materialization и cursor-copy:
+checkpoint после каждого durable шага. Full build использует single-pass
+durable materialization и cursor-copy:
 
 - payload каждой стадии рассчитывается один раз в isolated materialization;
 - weekly/monthly и standard aggregate rows копируются блоками по 500 строк;
@@ -142,6 +145,22 @@ full build использует single-pass durable materialization и cursor-co
 
 Подробный контракт hotfix зафиксирован в
 `GATE5_DURABLE_MATERIALIZATION_HOTFIX.md`.
+
+Начиная с `4.0.0-alpha.7.4.7`, aggregate sequential replay также использует
+durable materialization:
+
+- calculation batch ограничен 25 combinations;
+- exact stage records один раз сохраняются в
+  `GATE5_AGGREGATE_BATCH_STAGE`;
+- publication batch ограничен 32 logical series;
+- materialization и каждый publication sub-batch имеют отдельные checkpoints;
+- lost response повторяет только публикацию сохранённого batch и распознаёт
+  достигнутый after-state как `NOOP`;
+- финальный replay latest выполняется durable проходами
+  `INDEX_SCAN → APPLY_FLAGS` по 1 000 строк.
+
+Контракт и runbook описаны в
+`GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md`.
 
 Ручные вызовы `Worker` или отдельной `Continue` функции не требуются и не входят
 в нормативный acceptance flow.
@@ -221,7 +240,7 @@ livePublishPhysicalWrites = 0
 - все RAW replay validation rows имеют `PASS`;
 - `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-4`;
+  `4.0-alpha74-gate5-evidence-5`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
@@ -233,23 +252,24 @@ livePublishPhysicalWrites = 0
 
 1. убедиться, что предыдущий Gate 5 worker остановлен;
 2. запустить `AKORT_alpha74Install()`;
-3. повторно установить только
+3. запустить `AKORT_alpha74SmokeTest()`;
+4. запустить `AKORT_alpha74ReadOnlyContractScan()`;
+5. повторно установить только
    `PUBLISH_AGGREGATE_EXECUTION_ENABLED=TRUE`;
-4. проверить, что
+6. проверить, что
    `PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED=FALSE`;
-5. запустить `AKORT_alpha74SmokeTest()`;
-6. запустить `AKORT_alpha74ReadOnlyContractScan()`;
 7. запустить `AKORT_alpha74Gate5Status()` и проверить `ready=true`;
 8. для нового запуска без reusable full build один раз запустить
-   `AKORT_alpha74Gate5Start()`;
+   `AKORT_alpha74Gate5Start()`; для сохранённой точки release
+   `4.0.0-alpha.7.4.6` использовать только
+   `AKORT_alpha74Gate5ResumeReplay()`;
 9. не запускать `AKORT_alpha74Gate5Worker()` вручную;
 10. периодически запускать только `AKORT_alpha74Gate5Status()`;
 11. после `SUCCESS` сохранить полный результат status и ссылку на evidence.
 
 Gate 6 начинается только после отдельного review Gate 5 evidence.
 
-Для остановленного canonical-index incident
-`A74_GATE5_CDEFB6487105607FB35F` действует отдельный recovery runbook
-`GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md`: используется
-`AKORT_alpha74Gate5RestartReplay()`, который сохраняет completed full build и
-создаёт только новый sequential replay workbook.
+Первичный canonical-index incident восстанавливался по
+`GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md`. Текущий stopped aggregate replay
+продолжается без нового replay workbook по
+`GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md`.

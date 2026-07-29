@@ -2,14 +2,14 @@
   "project": "AKORT DWH 4.0",
   "milestone": "Alpha.7.4",
   "architecture": "INTEGRATION_INTO_EXISTING_OPERATION_ENGINE",
-  "status": "GATE_5_CANONICAL_REPLAY_RECOVERY_HOTFIX_READY_REPLAY_ONLY_RERUN_PENDING",
+  "status": "GATE_5_DURABLE_AGGREGATE_BATCH_HOTFIX_READY_RESUME_PENDING",
   "physical_writes_allowed": false,
   "isolated_gate_4_physical_writes_allowed": true,
   "isolated_gate_5_physical_writes_allowed": true,
   "regular_pipeline_allowed": false,
   "operation_schema_version": "4.0-operation-2",
   "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
-  "implementation_release": "4.0.0-alpha.7.4.6",
+  "implementation_release": "4.0.0-alpha.7.4.7",
   "completed_gates": [0, 1, 2, 3, 4],
   "partially_completed_gates": [7],
   "next_gate": 5,
@@ -145,10 +145,11 @@
     "evidence_bytes": 9255
   },
   "gate_5_acceptance_harness": {
-    "version": "4.0-alpha74-gate5-acceptance-4",
-    "evidence_schema": "4.0-alpha74-gate5-evidence-4",
-    "state_schema": "4.0-alpha74-gate5-state-4",
+    "version": "4.0-alpha74-gate5-acceptance-5",
+    "evidence_schema": "4.0-alpha74-gate5-evidence-5",
+    "state_schema": "4.0-alpha74-gate5-state-5",
     "full_work_schema": "4.0-alpha74-gate5-full-work-2",
+    "aggregate_work_schema": "4.0-alpha74-gate5-aggregate-work-1",
     "target_mode": "ISOLATED_FULL_BUILD_AND_SEQUENTIAL_REPLAY",
     "live_publish_access": "READ_ONLY_BEFORE_AFTER",
     "artifacts": [
@@ -187,9 +188,47 @@
       "planner": "v310ExpandAffectedTargets_",
       "weekly_index_types": ["wow", "yoy", "december"],
       "monthly_index_types": ["mom", "yoy", "december"],
-      "combo_batch": 50,
-      "initial_series_batch": 64,
+      "combo_batch": 25,
+      "initial_series_batch": 32,
       "empty_result_guard": "FAIL_CLOSED_AFTER_THIRD_GROUP"
+    },
+    "aggregate_batch_materialization": {
+      "cache_sheet": "GATE5_AGGREGATE_BATCH_STAGE",
+      "calculation_phase": "MATERIALIZE_AGGREGATE_BATCH",
+      "publication_phase": "PUBLISH_AGGREGATE_BATCH",
+      "recalculation_per_series_batch": false,
+      "cache_identity_and_fingerprint_guard": "FAIL_CLOSED",
+      "lost_response_mode": "IDEMPOTENT_AFTER_STATE_NOOP",
+      "final_latest_mode": "DURABLE_INDEX_SCAN_THEN_APPLY_FLAGS",
+      "final_latest_chunk_rows": 1000
+    },
+    "durable_replay_resume": {
+      "entrypoint": "AKORT_alpha74Gate5ResumeReplay",
+      "source_release": "4.0.0-alpha.7.4.6",
+      "source_state_schema": "4.0-alpha74-gate5-state-4",
+      "preserve_baseline": true,
+      "preserve_live_snapshot": true,
+      "preserve_full_build": true,
+      "preserve_sequential_replay": true,
+      "preserve_group_index": 0,
+      "preserve_stage": "AGGREGATES",
+      "preserve_item_cursor": 150,
+      "new_full_build": false,
+      "new_sequential_replay": false
+    },
+    "aggregate_batch_timeout_incident": {
+      "release": "4.0.0-alpha.7.4.6",
+      "terminal_status": "STOPPED",
+      "replay_group_index": 0,
+      "replay_stage": "AGGREGATES",
+      "replay_item_cursor": 150,
+      "aggregate_series_cursor": 0,
+      "replay_price_rows_written": 3528,
+      "replay_aggregate_combos_processed": 150,
+      "replay_aggregate_rows_calculated": 1750,
+      "replay_aggregate_series_published": 140,
+      "reason": "AGGREGATE_BATCH_RECALCULATED_BEFORE_EACH_SERIES_PUBLICATION_RETRY",
+      "safe_resume_boundary": true
     },
     "replay_only_recovery": {
       "entrypoint": "AKORT_alpha74Gate5RestartReplay",
@@ -251,6 +290,7 @@
     "docs/alpha-7.4/GATE4_ACCEPTANCE_HARNESS.md",
     "docs/alpha-7.4/GATE5_ACCEPTANCE_HARNESS.md",
     "docs/alpha-7.4/GATE5_FULL_BUILD_CHUNKING_HOTFIX.md",
-    "docs/alpha-7.4/GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md"
+    "docs/alpha-7.4/GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md",
+    "docs/alpha-7.4/GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md"
   ]
 }
