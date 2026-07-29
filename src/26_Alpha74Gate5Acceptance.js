@@ -10,10 +10,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * - a persistent one-minute trigger continues from a compact checkpoint.
  */
 AKORT.Alpha74Gate5Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate5-acceptance-3';
-  var RELEASE = '4.0.0-alpha.7.4.5';
-  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-3';
-  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-3';
+  var VERSION = '4.0-alpha74-gate5-acceptance-4';
+  var RELEASE = '4.0.0-alpha.7.4.6';
+  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-4';
+  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-4';
   var STATE_KEY = 'AKORT_ALPHA74_GATE5_STATE_V1';
   var TRIGGER_HANDLER = 'AKORT_alpha74Gate5Worker';
   var TRIGGER_MINUTES = 1;
@@ -22,8 +22,8 @@ AKORT.Alpha74Gate5Acceptance = (function () {
   var WORKER_MAX_STEPS = 12;
   var DIGEST_CHUNK_ROWS = 1000;
   var PRICE_REPLAY_CHUNK_ITEMS = 2;
-  var AGGREGATE_COMBO_BATCH = 10;
-  var AGGREGATE_SERIES_BATCH = 8;
+  var AGGREGATE_COMBO_BATCH = 50;
+  var AGGREGATE_SERIES_BATCH = 64;
   var MAX_CONSECUTIVE_ERRORS = 6;
   var TARGET_SHEET = 'PUBLISH_PRICE_AGGREGATES';
   var GROUP_SHEET = 'GATE5_REPLAY_GROUPS';
@@ -471,6 +471,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       fullBuildChunks: 0,
       fullBuildStagesPrepared: 0,
       replayPriceRowsWritten: 0,
+      replayAggregateCombosProcessed: 0,
       replayAggregateRowsCalculated: 0,
       replayAggregateSeriesPublished: 0,
       atomicApiCalls: 0,
@@ -490,6 +491,194 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       if (state.metrics[key] === undefined || state.metrics[key] === null || state.metrics[key] === '') state.metrics[key] = defaults[key];
     });
     return state.metrics;
+  }
+
+  function assertAggregateReplayProgress_(state) {
+    var metrics = metrics_(state);
+    if (state.replayStage !== 'AGGREGATES' || Number(state.replayGroupIndex || 0) < 2) return true;
+    assert_(
+      Number(metrics.replayAggregateCombosProcessed || 0) === 0 ||
+        Number(metrics.replayAggregateRowsCalculated || 0) > 0,
+      'ALPHA74_GATE5_AGGREGATE_REPLAY_EMPTY',
+      'Gate 5 processed aggregate replay combinations through the third load group without calculating any aggregate rows.',
+      {
+        groupIndex: Number(state.replayGroupIndex || 0),
+        combosProcessed: Number(metrics.replayAggregateCombosProcessed || 0),
+        rowsCalculated: Number(metrics.replayAggregateRowsCalculated || 0),
+        canonicalIndexExpansionRequired: true
+      }
+    );
+    return true;
+  }
+
+  function replayOnlyMetrics_(sourceState) {
+    var source = metrics_(sourceState);
+    var holder = { metrics: null };
+    var recovered = metrics_(holder);
+    [
+      'fullBuildRowsProcessed',
+      'fullBuildRowsScanned',
+      'fullBuildRowsMaterialized',
+      'fullBuildChunks',
+      'fullBuildStagesPrepared'
+    ].forEach(function (key) {
+      recovered[key] = Number(source[key] || 0);
+    });
+    return recovered;
+  }
+
+  function buildReplayOnlyState_(sourceState, replayArtifact, executionId) {
+    var artifacts = clone_(sourceState.artifacts || {});
+    var supersededReplay = clone_(artifacts.sequentialReplay || null);
+    artifacts.sequentialReplay = clone_(replayArtifact);
+    var sourceMetrics = metrics_(sourceState);
+    var startedAt = now_();
+    return {
+      stateSchemaVersion: STATE_SCHEMA_VERSION,
+      release: RELEASE,
+      executionId: executionId,
+      status: 'RUNNING',
+      phase: 'PREPARE_REPLAY',
+      startedAt: startedAt,
+      updatedAt: startedAt,
+      finishedAt: '',
+      fullStageIndex: FULL_STAGES.length,
+      fullBuildWork: null,
+      replayGroupCount: 0,
+      replayGroupIndex: 0,
+      replayStage: REPLAY_STAGES[0],
+      replayItemCursor: 0,
+      aggregateSeriesCursor: 0,
+      normalizeIndex: 0,
+      digestIndex: 0,
+      digestWork: null,
+      digests: {},
+      artifacts: artifacts,
+      baselineExpected: clone_(sourceState.baselineExpected || {}),
+      liveBefore: clone_(sourceState.liveBefore || {}),
+      consecutiveErrors: 0,
+      nextRetryAt: '',
+      lastError: null,
+      lastStep: null,
+      evidence: null,
+      failureCode: '',
+      failureDetails: null,
+      metrics: replayOnlyMetrics_(sourceState),
+      recovery: {
+        mode: 'REPLAY_ONLY_CANONICAL_INDEX_RECOVERY',
+        recoveredFromExecutionId: text_(sourceState.executionId),
+        recoveredFromRelease: text_(sourceState.release),
+        recoveredFromStateSchemaVersion: text_(sourceState.stateSchemaVersion),
+        recoveredAt: startedAt,
+        preservedBaseline: true,
+        preservedLiveSnapshot: true,
+        preservedFullBuild: true,
+        supersededReplay: supersededReplay,
+        discardedReplayMetrics: {
+          workerExecutions: Number(sourceMetrics.workerExecutions || 0),
+          priceRowsWritten: Number(sourceMetrics.replayPriceRowsWritten || 0),
+          aggregateRowsCalculated: Number(sourceMetrics.replayAggregateRowsCalculated || 0),
+          aggregateSeriesPublished: Number(sourceMetrics.replayAggregateSeriesPublished || 0)
+        }
+      }
+    };
+  }
+
+  function assertArtifactInTestFiles_(artifact, folderId, label) {
+    assert_(artifact && text_(artifact.id), 'ALPHA74_GATE5_RECOVERY_ARTIFACT_MISSING', 'Gate 5 replay-only recovery is missing a preserved artifact.', {
+      artifact: label
+    });
+    var file = DriveApp.getFileById(text_(artifact.id));
+    var parents = file.getParents(), allowed = false;
+    while (parents.hasNext()) {
+      if (parents.next().getId() === folderId) allowed = true;
+    }
+    assert_(allowed, 'ALPHA74_GATE5_RECOVERY_ARTIFACT_OUTSIDE_TEST_FILES', 'A preserved Gate 5 artifact is outside the canonical Test Files folder.', {
+      artifact: label,
+      spreadsheetId: text_(artifact.id)
+    });
+    var spreadsheet = SpreadsheetApp.openById(text_(artifact.id));
+    var target = spreadsheet.getSheetByName(TARGET_SHEET);
+    assert_(target, 'ALPHA74_GATE5_RECOVERY_TARGET_MISSING', 'A preserved Gate 5 artifact does not contain the aggregate target.', {
+      artifact: label,
+      spreadsheetId: text_(artifact.id)
+    });
+    var headers = target.getRange(1, 1, 1, target.getLastColumn()).getValues()[0].map(String);
+    assert_(JSON.stringify(headers) === JSON.stringify(AKORT.AggregateContract.Headers.slice()), 'ALPHA74_GATE5_RECOVERY_SCHEMA_MISMATCH', 'A preserved Gate 5 artifact has an unexpected aggregate schema.', {
+      artifact: label,
+      spreadsheetId: text_(artifact.id)
+    });
+    return {
+      spreadsheetId: text_(artifact.id),
+      aggregateRows: Math.max(0, target.getLastRow() - 1)
+    };
+  }
+
+  function assertReplayOnlyRecoverySource_(state, resources) {
+    assert_(state, 'ALPHA74_GATE5_RECOVERY_STATE_MISSING', 'Gate 5 replay-only recovery requires the preserved stopped checkpoint.');
+    assert_(state.status === 'STOPPED' && state.phase === 'STOPPED', 'ALPHA74_GATE5_RECOVERY_STATE_NOT_STOPPED', 'Gate 5 replay-only recovery requires a manually stopped checkpoint.', {
+      status: state.status || '',
+      phase: state.phase || ''
+    });
+    assert_(state.failureCode === 'STOPPED_MANUALLY', 'ALPHA74_GATE5_RECOVERY_STOP_REASON_INVALID', 'Gate 5 replay-only recovery is restricted to the manually stopped canonical-index incident.', {
+      failureCode: state.failureCode || ''
+    });
+    assert_(
+      ['4.0-alpha74-gate5-state-3', STATE_SCHEMA_VERSION].indexOf(text_(state.stateSchemaVersion)) >= 0,
+      'ALPHA74_GATE5_RECOVERY_STATE_SCHEMA_INVALID',
+      'Gate 5 replay-only recovery cannot reuse this checkpoint schema.',
+      { stateSchemaVersion: state.stateSchemaVersion || '' }
+    );
+    assert_(
+      ['4.0.0-alpha.7.4.4', '4.0.0-alpha.7.4.5', RELEASE].indexOf(text_(state.release)) >= 0,
+      'ALPHA74_GATE5_RECOVERY_RELEASE_INVALID',
+      'Gate 5 replay-only recovery cannot reuse this release.',
+      { release: state.release || '' }
+    );
+    var sourceMetrics = metrics_(state);
+    assert_(
+      Number(state.fullStageIndex || 0) >= FULL_STAGES.length &&
+        !state.fullBuildWork &&
+        Number(sourceMetrics.fullBuildStagesPrepared || 0) >= FULL_STAGES.length &&
+        Number(sourceMetrics.fullBuildRowsMaterialized || 0) > 0,
+      'ALPHA74_GATE5_RECOVERY_FULL_BUILD_INCOMPLETE',
+      'Gate 5 replay-only recovery requires the completed preserved full build.',
+      {
+        fullStageIndex: Number(state.fullStageIndex || 0),
+        fullBuildStagesPrepared: Number(sourceMetrics.fullBuildStagesPrepared || 0),
+        fullBuildRowsMaterialized: Number(sourceMetrics.fullBuildRowsMaterialized || 0)
+      }
+    );
+    assert_(
+      Number(sourceMetrics.replayAggregateRowsCalculated || 0) === 0 &&
+        Number(sourceMetrics.replayAggregateSeriesPublished || 0) === 0,
+      'ALPHA74_GATE5_RECOVERY_INCIDENT_MISMATCH',
+      'Gate 5 replay-only recovery is restricted to the zero-aggregate canonical-index incident.',
+      {
+        aggregateRowsCalculated: Number(sourceMetrics.replayAggregateRowsCalculated || 0),
+        aggregateSeriesPublished: Number(sourceMetrics.replayAggregateSeriesPublished || 0)
+      }
+    );
+    var inventories = {
+      baselineCanonical: assertArtifactInTestFiles_(state.artifacts && state.artifacts.baselineCanonical, resources.testFilesFolderId, 'baselineCanonical'),
+      liveSnapshot: assertArtifactInTestFiles_(state.artifacts && state.artifacts.liveSnapshot, resources.testFilesFolderId, 'liveSnapshot'),
+      fullBuild: assertArtifactInTestFiles_(state.artifacts && state.artifacts.fullBuild, resources.testFilesFolderId, 'fullBuild')
+    };
+    assert_(inventories.fullBuild.aggregateRows > 0, 'ALPHA74_GATE5_RECOVERY_FULL_BUILD_EMPTY', 'The preserved full build contains no aggregate rows.', inventories.fullBuild);
+    var live = AKORT.AggregateContract.inventory();
+    assert_(
+      Number(live.rows) === Number(state.liveBefore && state.liveBefore.rows || 0) &&
+        text_(live.data_hash) === text_(state.liveBefore && state.liveBefore.dataHash),
+      'ALPHA74_GATE5_RECOVERY_LIVE_CHANGED',
+      'DEV Publish changed after the preserved Gate 5 snapshot, so replay-only recovery cannot reuse it.',
+      {
+        expectedRows: Number(state.liveBefore && state.liveBefore.rows || 0),
+        actualRows: Number(live.rows || 0),
+        expectedDataHash: text_(state.liveBefore && state.liveBefore.dataHash),
+        actualDataHash: text_(live.data_hash)
+      }
+    );
+    return inventories;
   }
 
   function fullBuildStep_(state) {
@@ -549,6 +738,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       state.aggregateSeriesCursor = 0;
       return { groupComplete: false, nextStage: state.replayStage };
     }
+    assertAggregateReplayProgress_(state);
     updateGroupStatus_(state, group, 'SUCCESS');
     state.replayGroupIndex = Number(state.replayGroupIndex || 0) + 1;
     state.replayStage = REPLAY_STAGES[0];
@@ -614,7 +804,11 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     );
     var identity = identityFor_(state, group, cursor);
     var records = stageRecords_(rows, identity);
-    metrics_(state).replayAggregateRowsCalculated += rows.length;
+    var aggregateMetrics = metrics_(state);
+    if (Number(state.aggregateSeriesCursor || 0) === 0) {
+      aggregateMetrics.replayAggregateCombosProcessed += combos.length;
+      aggregateMetrics.replayAggregateRowsCalculated += rows.length;
+    }
     if (!records.length) {
       state.replayItemCursor = cursor + combos.length;
       state.aggregateSeriesCursor = 0;
@@ -855,9 +1049,13 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       metrics.maximumReplacementRequests <= limits.maxRequests &&
       metrics.workerExecutions > 0 &&
       metrics.manualContinuationCalls === 0;
+    var aggregateAccepted = metrics.replayAggregateCombosProcessed > 0 &&
+      metrics.replayAggregateRowsCalculated > 0 &&
+      metrics.replayAggregateSeriesPublished > 0 &&
+      metrics.atomicApiCalls > 0;
     var rawAccepted = (state.rawReplayValidation || []).length > 0 &&
       (state.rawReplayValidation || []).every(function (result) { return result.status === 'PASS'; });
-    var success = exact && liveUnchanged && quotaAccepted && rawAccepted;
+    var success = exact && liveUnchanged && quotaAccepted && aggregateAccepted && rawAccepted;
     state.evidenceCompletedAt = state.evidenceCompletedAt || now_();
     var evidence = {
       evidenceSchemaVersion: EVIDENCE_SCHEMA_VERSION,
@@ -868,6 +1066,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       mode: 'ISOLATED_FULL_BUILD_AND_SEQUENTIAL_REPLAY',
       featureFlags: flagState_(),
       artifacts: clone_(state.artifacts),
+      recovery: clone_(state.recovery || null),
       replayGroups: Number(state.replayGroupCount || 0),
       rawReplayValidation: clone_(state.rawReplayValidation || []),
       frontier: { count: Number(state.frontierCount || 0), hash: text_(state.frontierHash) },
@@ -885,6 +1084,13 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         limits: limits,
         metrics: clone_(metrics)
       },
+      aggregateReplayAcceptance: {
+        accepted: aggregateAccepted,
+        combosProcessed: Number(metrics.replayAggregateCombosProcessed || 0),
+        rowsCalculated: Number(metrics.replayAggregateRowsCalculated || 0),
+        seriesPublished: Number(metrics.replayAggregateSeriesPublished || 0),
+        atomicApiCalls: Number(metrics.atomicApiCalls || 0)
+      },
       noManualContinuation: metrics.manualContinuationCalls === 0,
       regularPipelineEnabled: flagState_().regularPipelineEnabled,
       livePublishPhysicalWrites: 0
@@ -900,6 +1106,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       exact: exact,
       liveUnchanged: liveUnchanged,
       quotaAccepted: quotaAccepted,
+      aggregateAccepted: aggregateAccepted,
       rawAccepted: rawAccepted
     };
     state.triggerCountRemoved = deleteTriggers_();
@@ -908,6 +1115,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       exact: exact,
       livePublishUnchanged: liveUnchanged,
       quotaAccepted: quotaAccepted,
+      aggregateAccepted: aggregateAccepted,
       rawAccepted: rawAccepted,
       evidence: saved
     };
@@ -969,6 +1177,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       artifacts: clone_(state.artifacts || {}),
       digests: clone_(state.digests || {}),
       evidence: clone_(state.evidence || null),
+      recovery: clone_(state.recovery || null),
       failureCode: state.failureCode || '',
       failureDetails: clone_(state.failureDetails || null),
       lastError: clone_(state.lastError || null),
@@ -1083,6 +1292,31 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       state.triggerCount = ensureTrigger_();
       saveState_(state);
       return AKORT.Result.success('Alpha.7.4 Gate 5 started. Persistent worker will continue without manual continuation.', publicState_(state));
+    }, { lock: true, persistLogs: true });
+  }
+
+  function restartReplay() {
+    return AKORT.Core.safeRun('ALPHA74_GATE5_RESTART_REPLAY', function () {
+      AKORT.EnvironmentGuard.assertDev();
+      assertFlags_();
+      var sourceState = loadState_();
+      var resources = resources_();
+      assertReplayOnlyRecoverySource_(sourceState, resources);
+      deleteTriggers_();
+      var stamp = timestamp_();
+      var executionId = 'A74_GATE5_' + hash_(['REPLAY_RECOVERY', stamp, Utilities.getUuid()]).slice(0, 20).toUpperCase();
+      var replayArtifact = createBook_(
+        'AKORT_ALPHA74_GATE5_REPLAY_RECOVERY_' + stamp,
+        resources.testFilesFolderId
+      );
+      var state = buildReplayOnlyState_(sourceState, replayArtifact, executionId);
+      saveState_(state);
+      state.triggerCount = ensureTrigger_();
+      saveState_(state);
+      return AKORT.Result.success(
+        'Alpha.7.4 Gate 5 replay-only recovery started. Preserved baseline, live snapshot and full build were reused.',
+        publicState_(state)
+      );
     }, { lock: true, persistLogs: true });
   }
 
@@ -1217,6 +1451,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     ReplayStages: REPLAY_STAGES.slice(),
     status: status,
     start: start,
+    restartReplay: restartReplay,
     worker: worker,
     stop: stop,
     Test: Object.freeze({
@@ -1230,7 +1465,9 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       canonicalCell: canonicalCell_,
       classifyError: classifyError_,
       fullBuildStep: fullBuildStep_,
-      metrics: metrics_
+      metrics: metrics_,
+      assertAggregateReplayProgress: assertAggregateReplayProgress_,
+      buildReplayOnlyState: buildReplayOnlyState_
     })
   });
 })();

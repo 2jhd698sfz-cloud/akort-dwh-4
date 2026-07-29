@@ -2,9 +2,9 @@
 
 ## Статус
 
-`GATE 4 ACCEPTED / GATE 5 CHUNKING HOTFIX READY / FULL RECONCILIATION RERUN PENDING / REGULAR PIPELINE PROHIBITED`
+`GATE 4 ACCEPTED / GATE 5 CANONICAL REPLAY RECOVERY HOTFIX READY / REPLAY-ONLY RERUN PENDING / REGULAR PIPELINE PROHIBITED`
 
-Дата фиксации: 28 июля 2026 года.
+Дата фиксации: 29 июля 2026 года.
 
 Активная GitHub-ветка: `codex/alpha-7.4-integration-reset`.
 
@@ -50,6 +50,9 @@
 - `GATE5_FULL_BUILD_CHUNKING_HOTFIX.md` — разбор timeout-loop
   `FULL_BUILD / MONTHLY`, durable cursor, размеры chunks и нормативный
   перезапуск Gate 5.
+- `GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md` — root cause нулевых aggregate
+  rows в sequential replay и восстановление с сохранением completed full
+  build.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -109,7 +112,15 @@ timeout-loop на монолитной стадии `FULL_BUILD / MONTHLY`. DEV-
 каждым write-chunk. Нормативный `4.0.0-alpha.7.4.4` рассчитывает каждую
 стадию один раз в isolated materialization и выполняет bounded cursor-copy;
 `Start` и worker также fail-closed блокируют checkpoint другого релиза.
-Gate 5 принимается только по новому `state-3` execution.
+Execution `A74_GATE5_CDEFB6487105607FB35F` успешно завершил full build, но был
+остановлен на третьей replay group: отдельная replay-реализация не
+разворачивала пустой RAW `index_type` в canonical `wow/mom`, `yoy`,
+`december`, поэтому aggregate calculator возвращал ноль строк. В
+`4.0.0-alpha.7.4.6` replay использует production expansion напрямую,
+нулевой cumulative aggregate result блокируется fail-closed, а
+`AKORT_alpha74Gate5RestartReplay()` сохраняет baseline, live snapshot и
+completed full build, создавая только новый replay workbook. Gate 5
+принимается только по `state-4` recovery execution.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

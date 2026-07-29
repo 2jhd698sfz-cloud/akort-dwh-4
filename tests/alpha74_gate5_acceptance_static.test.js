@@ -127,15 +127,72 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-3');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.5');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-3');
-  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-3');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-4');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.6');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-4');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-4');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
   ]);
   assert.deepEqual(Array.from(H.ReplayStages), ['WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES']);
+});
+
+test('blank price-level RAW index expands to canonical aggregate index types', () => {
+  function formatDate(value, _timezone, pattern) {
+    const date = value instanceof Date ? value : new Date(value);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return pattern === 'yyyy-MM' ? `${year}-${month}` : `${year}-${month}-${day}`;
+  }
+  const incrementalContext = vm.createContext({
+    console,
+    JSON,
+    Date,
+    Math,
+    Object,
+    Array,
+    String,
+    Number,
+    Boolean,
+    RegExp,
+    Error,
+    isFinite,
+    parseInt,
+    Utilities: { formatDate },
+    AKORT: {}
+  });
+  vm.runInContext(
+    fs.readFileSync(path.join(root, 'src/07_IncrementalPublish.js'), 'utf8'),
+    incrementalContext,
+    { filename: 'src/07_IncrementalPublish.js' }
+  );
+  const T = incrementalContext.AKORT.IncrementalPublish.Test;
+  const weekly = T.expandAffected([{
+    frequency: 'weekly',
+    datasetCode: 'AKORT_WEEKLY',
+    categoryId: 'C',
+    valueType: 'розница',
+    indexType: '',
+    period: '2026-01-04'
+  }]).aggregates;
+  const monthly = T.expandAffected([{
+    frequency: 'monthly',
+    datasetCode: 'AKORT_MONTHLY',
+    categoryId: 'C',
+    valueType: 'розница',
+    indexType: '',
+    period: '2026-01-01'
+  }]).aggregates;
+  const weeklyTypes = Array.from(new Set(
+    weekly.filter(item => item.frequency === 'weekly' && item.valueType === 'розница').map(item => item.indexType)
+  )).sort();
+  const monthlyTypes = Array.from(new Set(
+    monthly.filter(item => item.frequency === 'monthly' && item.valueType === 'розница').map(item => item.indexType)
+  )).sort();
+  assert.deepEqual(weeklyTypes, ['december', 'wow', 'yoy']);
+  assert.deepEqual(monthlyTypes, ['december', 'mom', 'yoy']);
 });
 
 test('full build advances only after durable bounded chunks complete', () => {
@@ -273,6 +330,67 @@ test('quota and transient errors retain automatic retry semantics', () => {
   assert.equal(fatal.retryable, false);
 });
 
+test('third replay group fails closed when every aggregate batch is empty', () => {
+  const state = {
+    replayStage: 'AGGREGATES',
+    replayGroupIndex: 2,
+    metrics: {
+      replayAggregateCombosProcessed: 480,
+      replayAggregateRowsCalculated: 0
+    }
+  };
+  assert.throws(
+    () => H.Test.assertAggregateReplayProgress(state),
+    error => error && error.code === 'ALPHA74_GATE5_AGGREGATE_REPLAY_EMPTY'
+  );
+  state.metrics.replayAggregateRowsCalculated = 1;
+  assert.equal(H.Test.assertAggregateReplayProgress(state), true);
+});
+
+test('replay-only recovery preserves completed artifacts and resets replay state', () => {
+  const source = {
+    stateSchemaVersion: '4.0-alpha74-gate5-state-3',
+    release: '4.0.0-alpha.7.4.4',
+    executionId: 'A74_GATE5_SOURCE',
+    artifacts: {
+      baselineCanonical: { id: 'BASELINE' },
+      liveSnapshot: { id: 'LIVE_SNAPSHOT' },
+      fullBuild: { id: 'FULL_BUILD' },
+      sequentialReplay: { id: 'SUPERSEDED_REPLAY' }
+    },
+    baselineExpected: { rows: 61636, dataHash: 'BASELINE_HASH' },
+    liveBefore: { rows: 61636, dataHash: 'LIVE_HASH' },
+    metrics: {
+      workerExecutions: 248,
+      fullBuildRowsProcessed: 158706,
+      fullBuildRowsScanned: 61636,
+      fullBuildRowsMaterialized: 97070,
+      fullBuildChunks: 330,
+      fullBuildStagesPrepared: 7,
+      replayPriceRowsWritten: 18482,
+      replayAggregateRowsCalculated: 0,
+      replayAggregateSeriesPublished: 0
+    }
+  };
+  const recovered = H.Test.buildReplayOnlyState(
+    source,
+    { id: 'NEW_REPLAY', name: 'AKORT_ALPHA74_GATE5_REPLAY_RECOVERY' },
+    'A74_GATE5_RECOVERED'
+  );
+  assert.equal(recovered.phase, 'PREPARE_REPLAY');
+  assert.equal(recovered.status, 'RUNNING');
+  assert.equal(recovered.fullStageIndex, 7);
+  assert.equal(recovered.artifacts.baselineCanonical.id, 'BASELINE');
+  assert.equal(recovered.artifacts.fullBuild.id, 'FULL_BUILD');
+  assert.equal(recovered.artifacts.sequentialReplay.id, 'NEW_REPLAY');
+  assert.equal(recovered.metrics.fullBuildRowsMaterialized, 97070);
+  assert.equal(recovered.metrics.replayPriceRowsWritten, 0);
+  assert.equal(recovered.metrics.workerExecutions, 0);
+  assert.equal(recovered.recovery.supersededReplay.id, 'SUPERSEDED_REPLAY');
+  assert.equal(recovered.recovery.discardedReplayMetrics.priceRowsWritten, 18482);
+  assert(Buffer.byteLength(JSON.stringify(recovered), 'utf8') < 8500);
+});
+
 test('repository wiring protects live Publish and exposes trigger-driven entrypoints', () => {
   const incremental = fs.readFileSync(path.join(root, 'src/07_IncrementalPublish.js'), 'utf8');
   const harness = fs.readFileSync(path.join(root, 'src/26_Alpha74Gate5Acceptance.js'), 'utf8');
@@ -287,6 +405,13 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(incremental.includes("GATE5_FULL_CACHE_PREFIX='GATE5_MATERIALIZED_'"));
   assert(incremental.includes('gate5MaterializeFullRows_'));
   assert(incremental.includes('gate5ReadMaterializedChunk_'));
+  const replayItemsBody = incremental.slice(
+    incremental.indexOf('function replayStageItemsForGroup_'),
+    incremental.indexOf('function initializeReplayWork_')
+  );
+  assert(replayItemsBody.includes('v310ExpandAffectedTargets_(affected).aggregates'));
+  assert(!replayItemsBody.includes('function addSeed'));
+  assert(incremental.includes('const indexTypes = v310AggregateIndexTypes_'));
   assert(incremental.includes('chunkRows:500'));
   assert(incremental.includes("phase:spec.mode==='LATEST'?'INDEX_SCAN':'MATERIALIZE_ROWS'"));
   const chunkBody = incremental.slice(
@@ -301,6 +426,8 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(harness.includes('fullBuildRowsScanned'));
   assert(harness.includes('fullBuildRowsMaterialized'));
   assert(harness.includes('ALPHA74_GATE5_STATE_VERSION_MISMATCH'));
+  assert(harness.includes('ALPHA74_GATE5_AGGREGATE_REPLAY_EMPTY'));
+  assert(harness.includes("mode: 'REPLAY_ONLY_CANONICAL_INDEX_RECOVERY'"));
   const overlapBranch = harness.slice(
     harness.indexOf('if (!lock.tryLock(1000))'),
     harness.indexOf('var startedMs = Date.now()')
@@ -310,6 +437,7 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(!harness.includes('PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED ='));
   assert(entries.includes('AKORT_alpha74Gate5Status'));
   assert(entries.includes('AKORT_alpha74Gate5Start'));
+  assert(entries.includes('AKORT_alpha74Gate5RestartReplay'));
   assert(entries.includes('AKORT_alpha74Gate5Worker'));
   assert(entries.includes('AKORT_alpha74Gate5Stop'));
   assert(release.includes("'26_Alpha74Gate5Acceptance.js'"));

@@ -2,14 +2,14 @@
   "project": "AKORT DWH 4.0",
   "milestone": "Alpha.7.4",
   "architecture": "INTEGRATION_INTO_EXISTING_OPERATION_ENGINE",
-  "status": "GATE_5_RUNNING_IN_DEV_INDUSTRY_INPUT_FORM_READY_LOCAL_ONLY",
+  "status": "GATE_5_CANONICAL_REPLAY_RECOVERY_HOTFIX_READY_REPLAY_ONLY_RERUN_PENDING",
   "physical_writes_allowed": false,
   "isolated_gate_4_physical_writes_allowed": true,
   "isolated_gate_5_physical_writes_allowed": true,
   "regular_pipeline_allowed": false,
   "operation_schema_version": "4.0-operation-2",
   "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
-  "implementation_release": "4.0.0-alpha.7.4.5",
+  "implementation_release": "4.0.0-alpha.7.4.6",
   "completed_gates": [0, 1, 2, 3, 4],
   "partially_completed_gates": [7],
   "next_gate": 5,
@@ -145,9 +145,9 @@
     "evidence_bytes": 9255
   },
   "gate_5_acceptance_harness": {
-    "version": "4.0-alpha74-gate5-acceptance-3",
-    "evidence_schema": "4.0-alpha74-gate5-evidence-3",
-    "state_schema": "4.0-alpha74-gate5-state-3",
+    "version": "4.0-alpha74-gate5-acceptance-4",
+    "evidence_schema": "4.0-alpha74-gate5-evidence-4",
+    "state_schema": "4.0-alpha74-gate5-state-4",
     "full_work_schema": "4.0-alpha74-gate5-full-work-2",
     "target_mode": "ISOLATED_FULL_BUILD_AND_SEQUENTIAL_REPLAY",
     "live_publish_access": "READ_ONLY_BEFORE_AFTER",
@@ -165,6 +165,7 @@
     },
     "exact_reconciliation_required": true,
     "quota_acceptance_required": true,
+    "aggregate_replay_acceptance_required": true,
     "live_publish_physical_writes_allowed": 0,
     "full_build_chunk_rows": {
       "weekly": 500,
@@ -181,6 +182,37 @@
       "phase": "COPY_MATERIALIZED_ROWS",
       "recalculation_per_copy_chunk": false,
       "state_version_guard": "FAIL_CLOSED"
+    },
+    "canonical_index_replay": {
+      "planner": "v310ExpandAffectedTargets_",
+      "weekly_index_types": ["wow", "yoy", "december"],
+      "monthly_index_types": ["mom", "yoy", "december"],
+      "combo_batch": 50,
+      "initial_series_batch": 64,
+      "empty_result_guard": "FAIL_CLOSED_AFTER_THIRD_GROUP"
+    },
+    "replay_only_recovery": {
+      "entrypoint": "AKORT_alpha74Gate5RestartReplay",
+      "preserve_baseline": true,
+      "preserve_live_snapshot": true,
+      "preserve_full_build": true,
+      "new_sequential_replay": true,
+      "restart_group_index": 0
+    },
+    "canonical_index_incident": {
+      "release": "4.0.0-alpha.7.4.4",
+      "execution_id": "A74_GATE5_CDEFB6487105607FB35F",
+      "terminal_status": "STOPPED",
+      "stopped_at": "2026-07-29T04:36:11.441Z",
+      "completed_full_build": true,
+      "replay_group_index": 2,
+      "replay_stage": "AGGREGATES",
+      "replay_item_cursor": 470,
+      "replay_item_total": 480,
+      "replay_price_rows_written": 18482,
+      "replay_aggregate_rows_calculated": 0,
+      "reason": "REPLAY_BYPASSED_CANONICAL_INDEX_EXPANSION",
+      "reuse_full_build_for_recovery": true
     },
     "superseded_execution": {
       "release": "4.0.0-alpha.7.4.3",
@@ -218,6 +250,7 @@
     "docs/alpha-7.4/GATE3_ACCEPTANCE_HARNESS.md",
     "docs/alpha-7.4/GATE4_ACCEPTANCE_HARNESS.md",
     "docs/alpha-7.4/GATE5_ACCEPTANCE_HARNESS.md",
-    "docs/alpha-7.4/GATE5_FULL_BUILD_CHUNKING_HOTFIX.md"
+    "docs/alpha-7.4/GATE5_FULL_BUILD_CHUNKING_HOTFIX.md",
+    "docs/alpha-7.4/GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md"
   ]
 }

@@ -110,6 +110,11 @@ workbook только через:
 При превышении atomic limit даже для одной логической серии harness завершается
 fail-closed с `ALPHA74_GATE5_ATOMIC_LIMIT_EXCEEDED`.
 
+Replay использует production `v310ExpandAffectedTargets_()` и canonical
+`v310AggregateIndexTypes_()`. Отдельная реализация index expansion запрещена.
+После третьей load group нулевой cumulative aggregate result завершается
+fail-closed с `ALPHA74_GATE5_AGGREGATE_REPLAY_EMPTY`.
+
 ## 6. Автоматическое выполнение
 
 Entry points:
@@ -118,6 +123,7 @@ Entry points:
 |---|---|
 | `AKORT_alpha74Gate5Status()` | Read-only preflight и текущий checkpoint |
 | `AKORT_alpha74Gate5Start()` | Создание артефактов, checkpoint и trigger |
+| `AKORT_alpha74Gate5RestartReplay()` | Recovery с сохранением completed full build и повтором только sequential replay |
 | `AKORT_alpha74Gate5Worker()` | Trigger handler; вручную не запускать |
 | `AKORT_alpha74Gate5Stop()` | Остановить trigger, сохранив state и артефакты |
 
@@ -179,6 +185,7 @@ Evidence фиксирует:
 - full-build rows processed;
 - full-build rows scanned, chunks и prepared stages;
 - replay price rows written;
+- aggregate combinations processed;
 - aggregate rows calculated;
 - logical series published;
 - atomic API calls и subrequests;
@@ -212,8 +219,9 @@ livePublishPhysicalWrites = 0
 Дополнительно:
 
 - все RAW replay validation rows имеют `PASS`;
+- `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-3`;
+  `4.0-alpha74-gate5-evidence-4`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
@@ -232,11 +240,16 @@ livePublishPhysicalWrites = 0
 5. запустить `AKORT_alpha74SmokeTest()`;
 6. запустить `AKORT_alpha74ReadOnlyContractScan()`;
 7. запустить `AKORT_alpha74Gate5Status()` и проверить `ready=true`;
-8. один раз запустить `AKORT_alpha74Gate5Start()`; это создаёт новый
-   execution и новые isolated artifacts, а не продолжает остановленный
-   `4.0.0-alpha.7.4.2` или superseded `4.0.0-alpha.7.4.3`;
+8. для нового запуска без reusable full build один раз запустить
+   `AKORT_alpha74Gate5Start()`;
 9. не запускать `AKORT_alpha74Gate5Worker()` вручную;
 10. периодически запускать только `AKORT_alpha74Gate5Status()`;
 11. после `SUCCESS` сохранить полный результат status и ссылку на evidence.
 
 Gate 6 начинается только после отдельного review Gate 5 evidence.
+
+Для остановленного canonical-index incident
+`A74_GATE5_CDEFB6487105607FB35F` действует отдельный recovery runbook
+`GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md`: используется
+`AKORT_alpha74Gate5RestartReplay()`, который сохраняет completed full build и
+создаёт только новый sequential replay workbook.

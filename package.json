@@ -1,6 +1,6 @@
 {
   "name": "akort-dwh-4",
-  "version": "4.0.0-alpha.7.4.5",
+  "version": "4.0.0-alpha.7.4.6",
   "private": true,
   "description": "AKORT DWH 4.0 Apps Script development repository",
   "scripts": {
