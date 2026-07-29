@@ -126,7 +126,7 @@ Entry points:
 | `AKORT_alpha74Gate5Status()` | Read-only preflight и текущий checkpoint |
 | `AKORT_alpha74Gate5Start()` | Создание артефактов, checkpoint и trigger |
 | `AKORT_alpha74Gate5RestartReplay()` | Recovery с сохранением completed full build и повтором только sequential replay |
-| `AKORT_alpha74Gate5ResumeReplay()` | Продолжить stopped aggregate replay с сохранённого logical-series boundary |
+| `AKORT_alpha74Gate5ResumeReplay()` | Продолжить stopped boundary или точный triggerless legacy partial-batch incident |
 | `AKORT_alpha74Gate5Worker()` | Trigger handler; вручную не запускать |
 | `AKORT_alpha74Gate5Stop()` | Остановить trigger, сохранив state и артефакты |
 
@@ -146,7 +146,7 @@ durable materialization и cursor-copy:
 Подробный контракт hotfix зафиксирован в
 `GATE5_DURABLE_MATERIALIZATION_HOTFIX.md`.
 
-Начиная с `4.0.0-alpha.7.4.7`, aggregate sequential replay также использует
+Начиная с `4.0.0-alpha.7.4.8`, aggregate sequential replay также использует
 durable materialization:
 
 - calculation batch ограничен 25 combinations;
@@ -240,7 +240,7 @@ livePublishPhysicalWrites = 0
 - все RAW replay validation rows имеют `PASS`;
 - `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-5`;
+  `4.0-alpha74-gate5-evidence-6`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 

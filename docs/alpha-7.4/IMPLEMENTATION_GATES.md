@@ -85,10 +85,13 @@ index expansion в aggregate replay. Release `7.4.6`
 переиспользует production expansion и создаёт `state-4` replay-only recovery,
 сохраняя completed full build. Этот recovery был остановлен на безопасной
 границе aggregate replay из-за повторного расчёта batch при каждом
-series-publication retry. Release `7.4.7` один раз материализует batch,
-публикует его отдельными durable logical-series steps и продолжает тот же
-replay workbook через `AKORT_alpha74Gate5ResumeReplay()`. Чек-лист остаётся
-открытым до terminal `SUCCESS`, exact reconciliation и проверки JSON evidence.
+series-publication retry. Legacy worker затем перезаписал первоначальный
+`STOPPED` как triggerless `RUNNING` после частичной публикации 64 из 105
+серий. Release `7.4.8` fail-closed распознаёт только этот точный orphaned
+checkpoint, переигрывает незавершённый диапазон от combo cursor 150,
+материализует каждый новый batch один раз и продолжает тот же replay workbook
+через `AKORT_alpha74Gate5ResumeReplay()`. Чек-лист остаётся открытым до
+terminal `SUCCESS`, exact reconciliation и проверки JSON evidence.
 Regular pipeline остаётся выключенным.
 
 ## Gate 6 — Authoritative DEV

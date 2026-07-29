@@ -10,10 +10,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * - a persistent one-minute trigger continues from a compact checkpoint.
  */
 AKORT.Alpha74Gate5Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate5-acceptance-5';
-  var RELEASE = '4.0.0-alpha.7.4.7';
-  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-5';
-  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-5';
+  var VERSION = '4.0-alpha74-gate5-acceptance-6';
+  var RELEASE = '4.0.0-alpha.7.4.8';
+  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-6';
+  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-6';
   var STATE_KEY = 'AKORT_ALPHA74_GATE5_STATE_V1';
   var STOP_REQUEST_KEY = 'AKORT_ALPHA74_GATE5_STOP_REQUEST_V1';
   var AGGREGATE_WORK_SCHEMA_VERSION = '4.0-alpha74-gate5-aggregate-work-1';
@@ -576,6 +576,8 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       replayLatestRowsScanned: 0,
       replayLatestRowsUpdated: 0,
       replayLatestChunks: 0,
+      legacyPartialBatchAdoptions: 0,
+      legacyPartialSeriesCursorReplayed: 0,
       atomicApiCalls: 0,
       atomicRequests: 0,
       maximumReplacementRows: 0,
@@ -785,9 +787,46 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     return inventories;
   }
 
-  function buildDurableResumeState_(sourceState, executionId) {
+  function legacyPartialAdoption_(state, triggerCount) {
+    var metrics = state && state.metrics || {};
+    var lastStep = state && state.lastStep || {};
+    var orphanedRunning = state && state.status === 'RUNNING' && state.phase === 'SEQUENTIAL_REPLAY';
+    var manuallyStopped = state && state.status === 'STOPPED' && state.phase === 'STOPPED' &&
+      state.failureCode === 'STOPPED_MANUALLY';
+    var eligible = !!state &&
+      (orphanedRunning || manuallyStopped) &&
+      Number(triggerCount || 0) === 0 &&
+      text_(state.stateSchemaVersion) === '4.0-alpha74-gate5-state-4' &&
+      text_(state.release) === '4.0.0-alpha.7.4.6' &&
+      Number(state.replayGroupCount || 0) === 12 &&
+      Number(state.replayGroupIndex || 0) === 0 &&
+      text_(state.replayStage) === 'AGGREGATES' &&
+      Number(state.replayItemCursor || 0) === 150 &&
+      Number(state.aggregateSeriesCursor || 0) === 64 &&
+      !state.aggregateBatchWork &&
+      Number(lastStep.comboCursor || 0) === 150 &&
+      Number(lastStep.comboTotal || 0) === 381 &&
+      Number(lastStep.seriesCursor || 0) === 64 &&
+      Number(lastStep.seriesTotal || 0) === 105 &&
+      Number(metrics.replayAggregateCombosProcessed || 0) === 200 &&
+      Number(metrics.replayAggregateRowsCalculated || 0) === 3465 &&
+      Number(metrics.replayAggregateSeriesPublished || 0) === 204;
+    return {
+      eligible: eligible,
+      mode: orphanedRunning ? 'ORPHANED_RUNNING_PARTIAL_SERIES' : manuallyStopped ? 'STOPPED_PARTIAL_SERIES' : '',
+      triggerCount: Number(triggerCount || 0),
+      comboCursor: Number(state && state.replayItemCursor || 0),
+      sourceSeriesCursor: Number(state && state.aggregateSeriesCursor || 0),
+      sourceSeriesTotal: Number(lastStep.seriesTotal || 0),
+      replayPolicy: eligible ? 'REPLAY_PARTIAL_BATCH_FROM_COMBO_CURSOR' : ''
+    };
+  }
+
+  function buildDurableResumeState_(sourceState, executionId, resumeBoundary) {
     var state = clone_(sourceState || {});
     var resumedAt = now_();
+    var partialAdoption = resumeBoundary && resumeBoundary.legacyPartialAdoption ||
+      legacyPartialAdoption_(sourceState, 0);
     var sourceRecovery = clone_(state.recovery || {});
     var priorCanonicalRecovery = {
       mode: text_(sourceRecovery.mode),
@@ -808,7 +847,10 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         preservedGroupIndex: Number(sourceState && sourceState.replayGroupIndex || 0),
         preservedStage: text_(sourceState && sourceState.replayStage),
         preservedItemCursor: Number(sourceState && sourceState.replayItemCursor || 0),
-        preservedAggregateSeriesCursor: Number(sourceState && sourceState.aggregateSeriesCursor || 0)
+        preservedAggregateSeriesCursor: Number(sourceState && sourceState.aggregateSeriesCursor || 0),
+        replayPolicy: partialAdoption.eligible ? partialAdoption.replayPolicy : 'CONTINUE_FROM_DURABLE_BOUNDARY',
+        legacyPartialAdoptionMode: partialAdoption.eligible ? partialAdoption.mode : '',
+        legacyPartialSeriesCursorReplayed: partialAdoption.eligible ? partialAdoption.sourceSeriesCursor : 0
       }
     };
     state.stateSchemaVersion = STATE_SCHEMA_VERSION;
@@ -830,27 +872,43 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     state.aggregateSeriesCursor = 0;
     state.replayLatestWork = null;
     state.recovery = recovery;
-    metrics_(state);
+    var resumedMetrics = metrics_(state);
+    if (partialAdoption.eligible) {
+      resumedMetrics.legacyPartialBatchAdoptions += 1;
+      resumedMetrics.legacyPartialSeriesCursorReplayed += partialAdoption.sourceSeriesCursor;
+    }
     return state;
   }
 
   function assertDurableResumeSource_(state, resources) {
     assert_(state, 'ALPHA74_GATE5_DURABLE_RESUME_STATE_MISSING', 'Gate 5 durable replay resume requires the preserved stopped checkpoint.');
-    assert_(state.status === 'STOPPED' && state.phase === 'STOPPED', 'ALPHA74_GATE5_DURABLE_RESUME_STATE_NOT_STOPPED', 'Gate 5 durable replay resume requires a manually stopped checkpoint.', {
-      status: state.status || '',
-      phase: state.phase || ''
-    });
-    assert_(state.failureCode === 'STOPPED_MANUALLY', 'ALPHA74_GATE5_DURABLE_RESUME_STOP_REASON_INVALID', 'Gate 5 durable replay resume is restricted to a manually stopped checkpoint.', {
-      failureCode: state.failureCode || ''
-    });
+    var triggerCount = triggers_().length;
+    var legacyPartialAdoption = legacyPartialAdoption_(state, triggerCount);
+    var stoppedBoundary = state.status === 'STOPPED' && state.phase === 'STOPPED' &&
+      state.failureCode === 'STOPPED_MANUALLY' &&
+      Number(state.aggregateSeriesCursor || 0) === 0 &&
+      triggerCount === 0;
     assert_(
-      ['4.0-alpha74-gate5-state-4', STATE_SCHEMA_VERSION].indexOf(text_(state.stateSchemaVersion)) >= 0,
+      stoppedBoundary || legacyPartialAdoption.eligible,
+      'ALPHA74_GATE5_DURABLE_RESUME_SOURCE_NOT_ADOPTABLE',
+      'Gate 5 durable replay resume requires either a manually stopped logical-series boundary or the exact triggerless legacy partial-batch incident.',
+      {
+        status: state.status || '',
+        phase: state.phase || '',
+        failureCode: state.failureCode || '',
+        triggerCount: triggerCount,
+        aggregateSeriesCursor: Number(state.aggregateSeriesCursor || 0),
+        legacyPartialAdoption: legacyPartialAdoption
+      }
+    );
+    assert_(
+      ['4.0-alpha74-gate5-state-4', '4.0-alpha74-gate5-state-5', STATE_SCHEMA_VERSION].indexOf(text_(state.stateSchemaVersion)) >= 0,
       'ALPHA74_GATE5_DURABLE_RESUME_STATE_SCHEMA_INVALID',
       'Gate 5 durable replay resume cannot reuse this checkpoint schema.',
       { stateSchemaVersion: state.stateSchemaVersion || '' }
     );
     assert_(
-      ['4.0.0-alpha.7.4.6', RELEASE].indexOf(text_(state.release)) >= 0,
+      ['4.0.0-alpha.7.4.6', '4.0.0-alpha.7.4.7', RELEASE].indexOf(text_(state.release)) >= 0,
       'ALPHA74_GATE5_DURABLE_RESUME_RELEASE_INVALID',
       'Gate 5 durable replay resume cannot reuse this release.',
       { release: state.release || '' }
@@ -860,7 +918,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         Number(state.replayGroupCount || 0) > 0 &&
         Number(state.replayGroupIndex || 0) < Number(state.replayGroupCount || 0) &&
         Number(state.replayItemCursor || 0) >= 0 &&
-        Number(state.aggregateSeriesCursor || 0) === 0 &&
+        (Number(state.aggregateSeriesCursor || 0) === 0 || legacyPartialAdoption.eligible) &&
         !state.aggregateBatchWork,
       'ALPHA74_GATE5_DURABLE_RESUME_BOUNDARY_INVALID',
       'Gate 5 durable replay resume requires a checkpoint between aggregate logical-series batches.',
@@ -927,6 +985,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       loadId: group.loadId,
       itemCursor: Number(state.replayItemCursor || 0),
       itemTotal: items.length,
+      legacyPartialAdoption: legacyPartialAdoption,
       inventories: inventories
     };
   }
@@ -1681,7 +1740,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       clearStopRequest_();
       var stamp = timestamp_();
       var executionId = 'A74_GATE5_' + hash_(['DURABLE_AGGREGATE_RESUME', stamp, Utilities.getUuid()]).slice(0, 20).toUpperCase();
-      var state = buildDurableResumeState_(sourceState, executionId);
+      var state = buildDurableResumeState_(sourceState, executionId, resumeBoundary);
       saveState_(state);
       state.triggerCount = ensureTrigger_();
       saveState_(state);
@@ -1866,7 +1925,8 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       metrics: metrics_,
       assertAggregateReplayProgress: assertAggregateReplayProgress_,
       buildReplayOnlyState: buildReplayOnlyState_,
-      buildDurableResumeState: buildDurableResumeState_
+      buildDurableResumeState: buildDurableResumeState_,
+      legacyPartialAdoption: legacyPartialAdoption_
     })
   });
 })();

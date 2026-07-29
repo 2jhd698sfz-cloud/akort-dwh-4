@@ -2,7 +2,7 @@
 
 ## Назначение
 
-Release `4.0.0-alpha.7.4.7` устраняет повторный тяжёлый расчёт одного и того же
+Release `4.0.0-alpha.7.4.8` устраняет повторный тяжёлый расчёт одного и того же
 aggregate replay batch после Apps Script timeout или потерянного ответа Google
 Sheets API.
 
@@ -12,20 +12,28 @@ Gate 5 по-прежнему выполняются только в isolated seq
 
 ## Зафиксированная точка восстановления
 
-Остановленный release `4.0.0-alpha.7.4.6` находится на безопасной границе:
+После первоначального ответа `STOPPED` legacy worker release
+`4.0.0-alpha.7.4.6` завершил ещё один уже начатый шаг. Итоговый orphaned
+checkpoint:
 
 ```text
 groupIndex = 0
 replayStage = AGGREGATES
 replayItemCursor = 150
-aggregateSeriesCursor = 0
-status = STOPPED
-failureCode = STOPPED_MANUALLY
+aggregateSeriesCursor = 64
+lastStep.seriesTotal = 105
+status = RUNNING
+triggerCount = 0
 ```
 
 Completed full build, baseline, live snapshot и текущий sequential replay
-сохраняются. Уже выполненные price replay rows, 150 aggregate combinations и
-140 опубликованных logical series не повторяются.
+сохраняются. Предыдущие replay groups и price stages не повторяются.
+
+64 серии незавершённого legacy batch уже физически применены. Hotfix
+детерминированно переигрывает только комбинации начиная с cursor 150 новыми
+пакетами по 25. Logical-series replacement сохраняет незатронутые периоды и
+приводит уже записанные серии к тому же after-state, поэтому частичный legacy
+batch не нужно откатывать вручную.
 
 ## Причина
 
@@ -102,7 +110,10 @@ sequential replay повторно.
 AKORT_alpha74Gate5ResumeReplay()
 ```
 
-Он разрешён только для manually stopped checkpoint на границе logical series.
+Он разрешён для manually stopped checkpoint на границе logical series, а также
+для точного triggerless legacy incident `7.4.6` с cursor 150 и series cursor
+64. Любой другой `RUNNING`, partial-series или trigger-bearing state
+отклоняется fail-closed.
 Перед запуском функция проверяет:
 
 - release/state schema источника;
@@ -113,8 +124,10 @@ AKORT_alpha74Gate5ResumeReplay()
 - допустимость сохранённого aggregate item cursor.
 
 После проверки создаётся state schema
-`4.0-alpha74-gate5-state-5`, но используется тот же sequential replay workbook
-и тот же cursor 150. Новый full build, новый replay workbook и повтор групп
+`4.0-alpha74-gate5-state-6`, но используется тот же sequential replay workbook
+и тот же cursor 150. Внутренний legacy series cursor сбрасывается в 0 с
+явным recovery policy `REPLAY_PARTIAL_BATCH_FROM_COMBO_CURSOR`. Новый full
+build, новый replay workbook и повтор групп
 `WEEKLY → MONTHLY → INDUSTRY` не выполняются.
 
 `AKORT_alpha74Gate5Start()` и `AKORT_alpha74Gate5RestartReplay()` для этой точки
@@ -147,8 +160,8 @@ state в `RUNNING`.
    `PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED=FALSE`;
 6. запустить `AKORT_alpha74Gate5Status()` и проверить старый stopped cursor;
 7. один раз запустить `AKORT_alpha74Gate5ResumeReplay()`;
-8. проверить state schema `4.0-alpha74-gate5-state-5`, release
-   `4.0.0-alpha.7.4.7`, `status=RUNNING`, `phase=SEQUENTIAL_REPLAY`,
+8. проверить state schema `4.0-alpha74-gate5-state-6`, release
+   `4.0.0-alpha.7.4.8`, `status=RUNNING`, `phase=SEQUENTIAL_REPLAY`,
    `groupIndex=0`, `stage=AGGREGATES`, `itemCursor=150`, `triggerCount=1`;
 9. дальше запускать вручную только `AKORT_alpha74Gate5Status()`.
 

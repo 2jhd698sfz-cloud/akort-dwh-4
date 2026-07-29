@@ -123,13 +123,14 @@ Execution `A74_GATE5_CDEFB6487105607FB35F` успешно завершил full 
 нулевой cumulative aggregate result блокируется fail-closed, а
 `AKORT_alpha74Gate5RestartReplay()` сохраняет baseline, live snapshot и
 completed full build, создавая только новый replay workbook. Этот recovery
-был остановлен на безопасной границе `group 0 / AGGREGATES / cursor 150`,
-поскольку один и тот же aggregate payload повторно рассчитывался при каждом
-series-publication retry. В `4.0.0-alpha.7.4.7` calculation batch один раз
-материализуется в durable stage cache, publication продолжается отдельными
-logical-series checkpoints, а
-`AKORT_alpha74Gate5ResumeReplay()` сохраняет тот же replay workbook и cursor.
-Gate 5 принимается только по `state-5` resume execution.
+получил первоначальный ответ `STOPPED`, но уже начатый legacy worker затем
+сохранил triggerless `RUNNING` на `group 0 / AGGREGATES / cursor 150` после
+частичной публикации 64 из 105 серий. В `4.0.0-alpha.7.4.8` этот точный
+orphaned checkpoint принимается fail-closed, незавершённый диапазон
+детерминированно переигрывается от cursor 150, calculation batch один раз
+материализуется в durable stage cache, а
+`AKORT_alpha74Gate5ResumeReplay()` сохраняет тот же replay workbook. Gate 5
+принимается только по `state-6` resume execution.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию
