@@ -171,6 +171,17 @@ exact physical duplicates после uncertain atomic response:
 - source checkpoint `7.4.8 / state-6 / FAILED` продолжает cached batch через
   `AKORT_alpha74Gate5ResumeReplay()`.
 
+Начиная с `4.0.0-alpha.7.4.10`, durable stage и физическая публикация
+используют один period identity:
+
+- Date сначала сериализуется в durable payload;
+- row key выводится из сериализованного `period_start`;
+- legacy `.9` cached batch с Monday key и Sunday payload мигрируется при
+  replacement planning без перезаписи cache;
+- exact duplicates текущего affected batch удаляются до unique read-back;
+- terminal `.9 / state-7` checkpoint продолжается в режиме
+  `DURABLE_PERIOD_IDENTITY_REPAIR_RESUME`.
+
 Контракт и runbook описаны в
 `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md`.
 
@@ -252,7 +263,7 @@ livePublishPhysicalWrites = 0
 - все RAW replay validation rows имеют `PASS`;
 - `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-7`;
+  `4.0-alpha74-gate5-evidence-8`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 

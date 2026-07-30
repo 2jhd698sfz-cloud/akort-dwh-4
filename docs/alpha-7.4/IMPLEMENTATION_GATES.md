@@ -94,7 +94,12 @@ checkpoint, переигрывает незавершённый диапазон
 обнаружил 517 exact physical duplicates в 64 affected series после uncertain
 atomic response. Release `7.4.9` сохраняет cached batch 875 rows / 105 series,
 атомарно схлопывает только канонически идентичные дубли, проверяет unique
-read-back и fail-closed отклоняет conflicting duplicates. Чек-лист остаётся открытым до
+read-back и fail-closed отклоняет conflicting duplicates. Первый repair
+выявил расхождение durable Monday row key и фактически публикуемой Sunday
+date. Release `7.4.10` использует один publication-period identity,
+восстанавливает terminal `.9 / state-7` checkpoint из того же cached
+batch и повторно схлопывает exact duplicates без движения replay cursor.
+Чек-лист остаётся открытым до
 terminal `SUCCESS`, exact reconciliation и проверки JSON evidence.
 Regular pipeline остаётся выключенным.
 

@@ -9,7 +9,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  */
 AKORT.AggregateIntegration = (function () {
   var VERSION = '4.0-aggregate-integration-1';
-  var RELEASE = '4.0.0-alpha.7.4.9';
+  var RELEASE = '4.0.0-alpha.7.4.10';
   var OPERATION_SCHEMA_VERSION = '4.0-operation-2';
   var STAGE_SCHEMA_VERSION = '4.0-aggregate-stage-1';
   var TARGET_SHEET = 'PUBLISH_PRICE_AGGREGATES';
@@ -528,6 +528,20 @@ AKORT.AggregateIntegration = (function () {
     return signatures;
   }
 
+  function stagePublicationIdentity_(record) {
+    var payload = parseJson_(record && record.row_payload_json, {}, 'AGGREGATE_STAGE_PAYLOAD_INVALID');
+    var seriesKey = text_(record && record.aggregate_series_key);
+    var period = periodKey_(payload.frequency, payload.period_start || (record && record.period_start));
+    return {
+      payload: payload,
+      seriesKey: seriesKey,
+      period: period,
+      rowKey: seriesKey + '|' + period,
+      stagedRowKey: text_(record && record.aggregate_row_key),
+      mismatch: text_(record && record.aggregate_row_key) !== seriesKey + '|' + period
+    };
+  }
+
   function logicalIndex_(targetRows, stageRows) {
     var headers = AKORT.AggregateContract.Headers.slice();
     var signatures = stageSeriesMap_(stageRows), affected = {}, unrelated = [], physicalRows = [], byRowKey = {};
@@ -587,22 +601,32 @@ AKORT.AggregateIntegration = (function () {
   function buildSeriesReplacement(targetRows, stageRows) {
     var headers = AKORT.AggregateContract.Headers.slice();
     var index = logicalIndex_(targetRows, stageRows), signatures = stageSeriesMap_(stageRows), replacementMap = clone_(index.byRowKey);
-    var sampleBySeries = {};
+    var sampleBySeries = {}, stagePeriodIdentityMismatches = [];
     Object.keys(index.byRowKey).sort().forEach(function (key) {
       var existingRow = index.byRowKey[key], existingSeries = signatures[publicSignature_(existingRow)] || '';
       if (existingSeries && !sampleBySeries[existingSeries]) sampleBySeries[existingSeries] = existingRow;
     });
     (stageRows || []).forEach(function (record) {
-      delete replacementMap[text_(record.aggregate_row_key)];
+      var publicationIdentity = stagePublicationIdentity_(record);
+      if (publicationIdentity.mismatch) {
+        stagePeriodIdentityMismatches.push({
+          aggregateSeriesKey: publicationIdentity.seriesKey,
+          stagedRowKey: publicationIdentity.stagedRowKey,
+          publicationRowKey: publicationIdentity.rowKey,
+          stagedPeriod: periodKey_(publicationIdentity.payload.frequency, record.period_start),
+          publicationPeriod: publicationIdentity.period
+        });
+      }
+      delete replacementMap[publicationIdentity.rowKey];
       if (text_(record.action) === 'UPSERT') {
-        var payload = parseJson_(record.row_payload_json, {}, 'AGGREGATE_STAGE_PAYLOAD_INVALID');
+        var payload = publicationIdentity.payload;
         var sample = sampleBySeries[text_(record.aggregate_series_key)];
         if (sample) {
           ['source_name', 'aggregate_name', 'product_group', 'product_name'].forEach(function (field) {
             if (text_(sample[field])) payload[field] = sample[field];
           });
         }
-        replacementMap[text_(record.aggregate_row_key)] = payload;
+        replacementMap[publicationIdentity.rowKey] = payload;
       }
     });
     var replacement = Object.keys(replacementMap).sort().map(function (key) { return replacementMap[key]; });
@@ -627,6 +651,9 @@ AKORT.AggregateIntegration = (function () {
       cellCount: replacement.length * headers.length,
       requestCount: deleteBlocks_(deletePhysicalRows).length + (replacement.length ? 1 : 0),
       requiresPhysicalRepair: index.duplicateLogicalRows.length > 0,
+      requiresStagePeriodIdentityRepair: stagePeriodIdentityMismatches.length > 0,
+      stagePeriodIdentityMismatches: stagePeriodIdentityMismatches,
+      stagePeriodIdentityMismatchCount: stagePeriodIdentityMismatches.length,
       exactDuplicateLogicalRows: index.duplicateLogicalRows.slice(),
       exactDuplicatePhysicalRows: index.duplicatePhysicalRows.slice(),
       exactDuplicateRowCount: index.duplicatePhysicalRows.length

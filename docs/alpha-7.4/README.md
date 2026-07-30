@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 4 ACCEPTED / GATE 5 EXACT-DUPLICATE RECOVERY HOTFIX READY / DURABLE RESUME PENDING / REGULAR PIPELINE PROHIBITED`
+`GATE 4 ACCEPTED / GATE 5 PERIOD-IDENTITY RECOVERY HOTFIX READY / DURABLE RESUME PENDING / REGULAR PIPELINE PROHIBITED`
 
 Дата фиксации: 30 июля 2026 года.
 
@@ -59,6 +59,9 @@
 - `GATE5_EXACT_DUPLICATE_RECOVERY_HOTFIX.md` — repair идентичных физических
   дублей после uncertain Sheets response с сохранением durable batch и
   fail-closed защитой от конфликтующих строк.
+- `GATE5_PERIOD_IDENTITY_RECOVERY_HOTFIX.md` — единый period identity для
+  durable stage и физической публикации, а также продолжение terminal
+  `.9 / state-7` checkpoint без повторного расчёта.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -145,6 +148,19 @@ materialized batch из 875 rows / 105 series. Конфликтующие duplic
 по-прежнему требуют ручного review. Текущий checkpoint возобновляется через
 `AKORT_alpha74Gate5ResumeReplay()` без нового full build, price replay или
 aggregate calculation.
+
+Первый repair request в `4.0.0-alpha.7.4.9` физически выполнился, но
+read-back корректно не передвинул cursor: durable stage использовал Monday
+key (`2025-03-10`), тогда как сериализованный payload и фактическая запись
+использовали Sunday (`2025-03-09`). Physical rows выросли с 3 640 до 3 652,
+exact duplicates — с 517 до 529; conflicting duplicates по-прежнему равны
+нулю. После шести transient retries worker завершился fail-closed:
+`FAILED`, trigger удалён, cursor и cached batch сохранены. Release
+`4.0.0-alpha.7.4.10` выводит publication identity из
+сериализованного payload, нормализует новые stage records до одного period
+key и принимает terminal `.9 / state-7` checkpoint с теми же 875 cached
+rows. Recovery mode `DURABLE_PERIOD_IDENTITY_REPAIR_RESUME` продолжает
+cursor 175 без повторного full build, price replay или aggregate calculation.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

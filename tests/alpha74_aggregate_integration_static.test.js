@@ -202,6 +202,26 @@ test('exact physical duplicates are repaired while preserving one canonical logi
   assert.equal(reconciled.ok, true);
 });
 
+test('legacy staged Monday identity is replaced by the Sunday publication identity', () => {
+  const legacy = stage('2026-01-05');
+  const payload = JSON.parse(legacy.row_payload_json);
+  payload.period_start = '2026-01-04T21:00:00.000Z';
+  legacy.row_payload_json = JSON.stringify(payload);
+  const first = target('2026-01-04', 2, 0.5);
+  const duplicate = { ...first, __row: 3 };
+  const replacement = A.Test.buildSeriesReplacement([first, duplicate], [legacy]);
+  assert.equal(replacement.requiresStagePeriodIdentityRepair, true);
+  assert.equal(replacement.stagePeriodIdentityMismatchCount, 1);
+  assert.equal(
+    replacement.stagePeriodIdentityMismatches[0].publicationRowKey,
+    `${legacy.aggregate_series_key}|2026-01-04`
+  );
+  assert.equal(replacement.requiresPhysicalRepair, true);
+  assert.deepEqual(Array.from(replacement.deletePhysicalRows), [3, 2]);
+  assert.equal(replacement.replacementRows.length, 1);
+  assert.equal(replacement.replacementRows[0].period_start, '2026-01-04T21:00:00.000Z');
+});
+
 test('conflicting duplicate logical rows remain fail-closed', () => {
   const first = target('2026-01-01', 2, 0.5);
   const conflicting = { ...first, __row: 3, aggregate_change_pp: 0.6 };
