@@ -99,6 +99,12 @@ read-back и fail-closed отклоняет conflicting duplicates. Первый
 date. Release `7.4.10` использует один publication-period identity,
 восстанавливает terminal `.9 / state-7` checkpoint из того же cached
 batch и повторно схлопывает exact duplicates без движения replay cursor.
+DEV replay после восстановления подтвердил корректность, но два полных
+29-column target reads на каждый series sub-batch дали неприемлемую скорость.
+Release `7.4.11` переносит Alpha.6 bounded-scan pattern: читает только девять
+identity columns, затем только affected physical ranges и appended tail.
+Остановленный `.10 / state-8` checkpoint продолжается с точного durable
+group/combo/series cursor без нового full build или replay workbook.
 Чек-лист остаётся открытым до
 terminal `SUCCESS`, exact reconciliation и проверки JSON evidence.
 Regular pipeline остаётся выключенным.

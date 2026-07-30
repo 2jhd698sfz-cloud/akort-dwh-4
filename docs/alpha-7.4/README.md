@@ -2,9 +2,9 @@
 
 ## Статус
 
-`GATE 4 ACCEPTED / GATE 5 PERIOD-IDENTITY RECOVERY HOTFIX READY / DURABLE RESUME PENDING / REGULAR PIPELINE PROHIBITED`
+`GATE 4 ACCEPTED / GATE 5 FAST TARGET-SCAN HOTFIX READY / DURABLE RESUME PENDING / REGULAR PIPELINE PROHIBITED`
 
-Дата фиксации: 30 июля 2026 года.
+Дата фиксации: 31 июля 2026 года.
 
 Активная GitHub-ветка: `codex/alpha-7.4-integration-reset`.
 
@@ -62,6 +62,9 @@
 - `GATE5_PERIOD_IDENTITY_RECOVERY_HOTFIX.md` — единый period identity для
   durable stage и физической публикации, а также продолжение terminal
   `.9 / state-7` checkpoint без повторного расчёта.
+- `GATE5_FAST_TARGET_SCAN_HOTFIX.md` — Alpha.6-style identity scan,
+  affected-range read, appended-tail verification и продолжение
+  `.10 / state-8` checkpoint без потери group/combo/series cursor.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -161,6 +164,17 @@ exact duplicates — с 517 до 529; conflicting duplicates по-прежнем
 key и принимает terminal `.9 / state-7` checkpoint с теми же 875 cached
 rows. Recovery mode `DURABLE_PERIOD_IDENTITY_REPAIR_RESUME` продолжает
 cursor 175 без повторного full build, price replay или aggregate calculation.
+
+Release `4.0.0-alpha.7.4.11` устраняет следующий performance bottleneck:
+каждый aggregate publication sub-batch больше не читает всю
+`PUBLISH_PRICE_AGGREGATES` дважды по 29 колонок. По паттерну Alpha.6 сначала
+выполняется bounded scan девяти series-identity columns, затем читаются
+только affected physical ranges, а после atomic append — deterministic tail.
+Lost-response, exact-duplicate и third-state fail-closed гарантии сохранены.
+Вручную остановленный `.10 / state-8` replay продолжается через
+`AKORT_alpha74Gate5ResumeReplay()` с recovery mode
+`DURABLE_FAST_TARGET_SCAN_RESUME`, включая сохранение частичного series
+cursor текущего materialized batch.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

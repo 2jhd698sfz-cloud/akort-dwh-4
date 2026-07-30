@@ -2,14 +2,14 @@
   "project": "AKORT DWH 4.0",
   "milestone": "Alpha.7.4",
   "architecture": "INTEGRATION_INTO_EXISTING_OPERATION_ENGINE",
-  "status": "GATE_5_PERIOD_IDENTITY_RECOVERY_HOTFIX_READY_DURABLE_RESUME_PENDING",
+  "status": "GATE_5_FAST_TARGET_SCAN_HOTFIX_READY_DURABLE_RESUME_PENDING",
   "physical_writes_allowed": false,
   "isolated_gate_4_physical_writes_allowed": true,
   "isolated_gate_5_physical_writes_allowed": true,
   "regular_pipeline_allowed": false,
   "operation_schema_version": "4.0-operation-2",
   "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
-  "implementation_release": "4.0.0-alpha.7.4.10",
+  "implementation_release": "4.0.0-alpha.7.4.11",
   "completed_gates": [0, 1, 2, 3, 4],
   "partially_completed_gates": [7],
   "next_gate": 5,
@@ -145,9 +145,9 @@
     "evidence_bytes": 9255
   },
   "gate_5_acceptance_harness": {
-    "version": "4.0-alpha74-gate5-acceptance-8",
-    "evidence_schema": "4.0-alpha74-gate5-evidence-8",
-    "state_schema": "4.0-alpha74-gate5-state-8",
+    "version": "4.0-alpha74-gate5-acceptance-9",
+    "evidence_schema": "4.0-alpha74-gate5-evidence-9",
+    "state_schema": "4.0-alpha74-gate5-state-9",
     "full_work_schema": "4.0-alpha74-gate5-full-work-2",
     "aggregate_work_schema": "4.0-alpha74-gate5-aggregate-work-1",
     "target_mode": "ISOLATED_FULL_BUILD_AND_SEQUENTIAL_REPLAY",
@@ -202,6 +202,8 @@
       "period_identity_mode": "PUBLISHED_PERIOD_FROM_DURABLE_PAYLOAD",
       "conflicting_duplicate_mode": "FAIL_CLOSED_REQUIRES_REVIEW",
       "read_back_before_cursor_advance": true,
+      "target_read_mode": "NINE_COLUMN_IDENTITY_SCAN_THEN_AFFECTED_RANGES",
+      "read_back_mode": "DETERMINISTIC_APPENDED_TAIL",
       "final_latest_mode": "DURABLE_INDEX_SCAN_THEN_APPLY_FLAGS",
       "final_latest_chunk_rows": 1000
     },
@@ -293,6 +295,26 @@
       "new_full_build": false,
       "new_sequential_replay": false
     },
+    "fast_target_scan_hotfix": {
+      "release": "4.0.0-alpha.7.4.11",
+      "source_release": "4.0.0-alpha.7.4.10",
+      "source_state_schema": "4.0-alpha74-gate5-state-8",
+      "recovery_entrypoint": "AKORT_alpha74Gate5ResumeReplay",
+      "recovery_mode": "DURABLE_FAST_TARGET_SCAN_RESUME",
+      "identity_columns_read": 9,
+      "full_contract_columns": 29,
+      "prewrite_full_table_reads": 0,
+      "prewrite_mode": "IDENTITY_SCAN_THEN_AFFECTED_RANGES",
+      "postwrite_full_table_reads": 0,
+      "postwrite_mode": "DETERMINISTIC_APPENDED_TAIL",
+      "preserve_partial_materialized_batch": true,
+      "preserve_group_combo_series_cursor": true,
+      "preserve_lost_response_guards": true,
+      "preserve_exact_duplicate_repair": true,
+      "preserve_third_state_fail_closed": true,
+      "new_full_build": false,
+      "new_sequential_replay": false
+    },
     "replay_only_recovery": {
       "entrypoint": "AKORT_alpha74Gate5RestartReplay",
       "preserve_baseline": true,
@@ -356,6 +378,7 @@
     "docs/alpha-7.4/GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md",
     "docs/alpha-7.4/GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md",
     "docs/alpha-7.4/GATE5_EXACT_DUPLICATE_RECOVERY_HOTFIX.md",
-    "docs/alpha-7.4/GATE5_PERIOD_IDENTITY_RECOVERY_HOTFIX.md"
+    "docs/alpha-7.4/GATE5_PERIOD_IDENTITY_RECOVERY_HOTFIX.md",
+    "docs/alpha-7.4/GATE5_FAST_TARGET_SCAN_HOTFIX.md"
   ]
 }

@@ -127,10 +127,10 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-8');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.10');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-8');
-  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-8');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-9');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.11');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-9');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-9');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
@@ -359,6 +359,92 @@ test('bounded series batch respects atomic row, cell and request limits', () => 
   assert(batch.replacement.cellCount <= 100000);
 });
 
+test('fast replay coalesces physical rows and limits the candidate series window', () => {
+  assert.deepEqual(
+    Array.from(H.Test.rowBlocks([9, 3, 4, 4, 7, 8, 20])),
+    [
+      { start: 3, end: 4, count: 2 },
+      { start: 7, end: 9, count: 3 },
+      { start: 20, end: 20, count: 1 }
+    ]
+  );
+  const rows = [];
+  for (let index = 0; index < 40; index += 1) {
+    rows.push(publishRow(`SERIES_${String(index).padStart(2, '0')}`, '2026-01-04', index));
+  }
+  const records = H.Test.stageRecords(rows, identity);
+  const firstWindow = H.Test.candidateStageRecords(records, 0);
+  const secondWindow = H.Test.candidateStageRecords(records, 32);
+  assert.equal(A.Test.validateStageRows(firstWindow, identity).seriesCount, 32);
+  assert.equal(A.Test.validateStageRows(secondWindow, identity).seriesCount, 8);
+});
+
+test('fast replay scans only identity columns and fetches only affected physical rows', () => {
+  const target = [
+    publishRow('Овощи', '2026-01-04', 1),
+    publishRow('Молоко', '2026-01-04', 2),
+    publishRow('Овощи', '2026-01-11', 3)
+  ];
+  const matrix = target.map(row => headers.map(header => row[header]));
+  const sheet = {
+    getName: () => 'PUBLISH_PRICE_AGGREGATES',
+    getLastColumn: () => headers.length,
+    getLastRow: () => matrix.length + 1,
+    getRange(row, column, rowCount, columnCount) {
+      assert.equal(row, 1);
+      assert.equal(column, 1);
+      assert.equal(rowCount, 1);
+      assert.equal(columnCount, headers.length);
+      return { getValues: () => [headers.slice()] };
+    }
+  };
+  const spreadsheet = {
+    getId: () => 'FAST_REPLAY_TEST',
+    getSheetByName: name => name === 'PUBLISH_PRICE_AGGREGATES' ? sheet : null
+  };
+  const calls = [];
+  const identityIndexes = [0, 2, 3, 5, 6, 7, 9, 10, 23];
+  context.SpreadsheetApp = { openById: () => spreadsheet };
+  context.Sheets = {
+    Spreadsheets: {
+      Values: {
+        batchGet(_spreadsheetId, options) {
+          calls.push(Array.from(options.ranges));
+          if (options.ranges.length === identityIndexes.length) {
+            return {
+              valueRanges: identityIndexes.map(column => ({
+                values: matrix.map(row => [row[column]])
+              }))
+            };
+          }
+          return {
+            valueRanges: options.ranges.map(range => {
+              const match = String(range).match(/!A(\d+):AC(\d+)$/);
+              assert(match);
+              const start = Number(match[1]) - 2;
+              const end = Number(match[2]) - 1;
+              return { values: matrix.slice(start, end) };
+            })
+          };
+        }
+      }
+    }
+  };
+  const staged = H.Test.stageRecords(
+    [publishRow('Овощи', '2026-01-18', 4)],
+    identity
+  );
+  const result = H.Test.readAggregateRowsForStage('FAST_REPLAY_TEST', staged);
+  assert.equal(result.scanRows, 3);
+  assert.equal(result.scanCells, 27);
+  assert.equal(result.affectedRows, 2);
+  assert.equal(result.affectedRanges, 2);
+  assert.deepEqual(result.rows.map(row => row.__row), [2, 4]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].length, 9);
+  assert.equal(calls[1].length, 2);
+});
+
 test('one oversized logical series fails closed', () => {
   const records = H.Test.stageRecords([
     publishRow('Овощи', '2026-01-04', 1.25),
@@ -510,8 +596,8 @@ test('durable aggregate resume preserves the exact replay frontier and artifact'
     }
   };
   const resumed = H.Test.buildDurableResumeState(source, 'A74_GATE5_DURABLE_RESUME');
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-8');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.10');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-9');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.11');
   assert.equal(resumed.executionId, 'A74_GATE5_DURABLE_RESUME');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
@@ -580,8 +666,8 @@ test('exact triggerless legacy partial batch is adopted by replaying from combo 
     'A74_GATE5_PARTIAL_ADOPTED',
     { legacyPartialAdoption: adoption }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-8');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.10');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-9');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.11');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 150);
@@ -659,8 +745,8 @@ test('failed exact-duplicate incident preserves the durable cache for physical r
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-8');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.10');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-9');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.11');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 175);
@@ -743,8 +829,8 @@ test('terminal .9 atomic-uncertain checkpoint preserves its cached batch for per
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-8');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.10');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-9');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.11');
   assert.equal(resumed.replayItemCursor, 175);
   assert.equal(resumed.aggregateSeriesCursor, 0);
   assert.equal(resumed.aggregateBatchWork.recordCount, 875);
@@ -752,6 +838,78 @@ test('terminal .9 atomic-uncertain checkpoint preserves its cached batch for per
   assert.equal(resumed.recovery.durableAggregateBatchResume.preservedAggregateBatch, true);
   assert.equal(resumed.recovery.durableAggregateBatchResume.stagePeriodIdentityMismatches, 875);
   assert.equal(resumed.metrics.periodIdentityRecoveryAdoptions, 1);
+  assert(Buffer.byteLength(JSON.stringify(resumed), 'utf8') < 8500);
+});
+
+test('stopped .10 checkpoint adopts the fast target scan without losing a partial durable batch', () => {
+  const source = {
+    stateSchemaVersion: '4.0-alpha74-gate5-state-8',
+    release: '4.0.0-alpha.7.4.10',
+    executionId: 'A74_GATE5_ALPHA7410_SOURCE',
+    status: 'STOPPED',
+    phase: 'STOPPED',
+    failureCode: 'STOPPED_MANUALLY',
+    replayGroupCount: 12,
+    replayGroupIndex: 1,
+    replayStage: 'AGGREGATES',
+    replayItemCursor: 25,
+    aggregateSeriesCursor: 64,
+    aggregateBatchWork: {
+      workSchemaVersion: '4.0-alpha74-gate5-aggregate-work-1',
+      groupIndex: 1,
+      loadId: 'LOAD_SECOND',
+      comboCursor: 25,
+      comboCount: 25,
+      comboTotal: 369,
+      recordCount: 875,
+      seriesCount: 105,
+      seriesCursor: 64,
+      stageFingerprint: 'STAGE_FP',
+      identity
+    },
+    artifacts: {
+      baselineCanonical: { id: 'BASELINE' },
+      liveSnapshot: { id: 'LIVE_SNAPSHOT' },
+      fullBuild: { id: 'FULL_BUILD' },
+      sequentialReplay: { id: 'PRESERVED_REPLAY' }
+    },
+    metrics: {
+      fullBuildRowsMaterialized: 97070,
+      fullBuildStagesPrepared: 7,
+      replayAggregateSeriesPublished: 1318
+    }
+  };
+  const adoption = H.Test.performanceResume(source, 0);
+  assert.equal(adoption.eligible, true);
+  assert.equal(adoption.boundary, 'DURABLE_SERIES');
+  assert.equal(adoption.preserveAggregateBatch, true);
+  assert.equal(H.Test.performanceResume(source, 1).eligible, false);
+  const currentReleaseSource = JSON.parse(JSON.stringify(source));
+  currentReleaseSource.stateSchemaVersion = '4.0-alpha74-gate5-state-9';
+  currentReleaseSource.release = '4.0.0-alpha.7.4.11';
+  assert.equal(H.Test.performanceResume(currentReleaseSource, 0).eligible, true);
+  const resumed = H.Test.buildDurableResumeState(
+    source,
+    'A74_GATE5_FAST_TARGET_SCAN',
+    {
+      legacyPartialAdoption: { eligible: false },
+      exactDuplicateIncident: { eligible: false },
+      periodIdentityIncident: { eligible: false },
+      performanceResume: adoption
+    }
+  );
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-9');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.11');
+  assert.equal(resumed.replayGroupIndex, 1);
+  assert.equal(resumed.replayItemCursor, 25);
+  assert.equal(resumed.aggregateSeriesCursor, 64);
+  assert.equal(resumed.aggregateBatchWork.seriesCursor, 64);
+  assert.equal(resumed.recovery.mode, 'DURABLE_FAST_TARGET_SCAN_RESUME');
+  assert.equal(
+    resumed.recovery.durableAggregateBatchResume.performanceResumeBoundary,
+    'DURABLE_SERIES'
+  );
+  assert.equal(resumed.metrics.performanceRecoveryAdoptions, 1);
   assert(Buffer.byteLength(JSON.stringify(resumed), 'utf8') < 8500);
 });
 
@@ -803,8 +961,13 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(harness.includes('legacyPartialAdoption_'));
   assert(harness.includes('exactDuplicateIncident_'));
   assert(harness.includes('periodIdentityIncident_'));
+  assert(harness.includes('performanceResume_'));
+  assert(harness.includes('readAggregateRowsForStage_'));
+  assert(harness.includes('readAggregateTailRows_'));
+  assert(harness.includes('Sheets.Spreadsheets.Values.batchGet'));
   assert(harness.includes('DURABLE_EXACT_DUPLICATE_REPAIR_RESUME'));
   assert(harness.includes('DURABLE_PERIOD_IDENTITY_REPAIR_RESUME'));
+  assert(harness.includes('DURABLE_FAST_TARGET_SCAN_RESUME'));
   assert(harness.includes('REPLAY_PARTIAL_BATCH_FROM_COMBO_CURSOR'));
   const overlapBranch = harness.slice(
     harness.indexOf('if (!lock.tryLock(1000))'),

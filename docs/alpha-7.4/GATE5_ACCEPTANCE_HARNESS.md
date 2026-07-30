@@ -182,8 +182,21 @@ exact physical duplicates после uncertain atomic response:
 - terminal `.9 / state-7` checkpoint продолжается в режиме
   `DURABLE_PERIOD_IDENTITY_REPAIR_RESUME`.
 
+Начиная с `4.0.0-alpha.7.4.11`, aggregate replay использует bounded target
+scan по принятому в Alpha.6 принципу:
+
+- full-table identity scan читает только девять frozen identity columns;
+- полные 29-column rows читаются только для affected logical series;
+- после atomic append проверяется только deterministic appended tail;
+- lost-response classification, exact-duplicate repair, third-state
+  fail-closed и atomic limits не ослабляются;
+- stopped `.10 / state-8` checkpoint, включая частично опубликованный
+  durable batch, продолжается через `AKORT_alpha74Gate5ResumeReplay()` в
+  режиме `DURABLE_FAST_TARGET_SCAN_RESUME`.
+
 Контракт и runbook описаны в
-`GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md`.
+`GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md` и
+`GATE5_FAST_TARGET_SCAN_HOTFIX.md`.
 
 Ручные вызовы `Worker` или отдельной `Continue` функции не требуются и не входят
 в нормативный acceptance flow.
@@ -234,6 +247,7 @@ Evidence фиксирует:
 - maximum replacement rows/cells/requests;
 - quota backoffs и transient retries;
 - worker duration;
+- identity scan rows/cells, affected ranges/rows и tail read-back rows;
 - `manualContinuationCalls=0`;
 - `livePublishPhysicalWrites=0`.
 
@@ -263,7 +277,7 @@ livePublishPhysicalWrites = 0
 - все RAW replay validation rows имеют `PASS`;
 - `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-8`;
+  `4.0-alpha74-gate5-evidence-9`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
@@ -284,9 +298,9 @@ livePublishPhysicalWrites = 0
 7. запустить `AKORT_alpha74Gate5Status()` и проверить `ready=true`;
 8. для нового запуска без reusable full build один раз запустить
    `AKORT_alpha74Gate5Start()`; для сохранённой точки release
-   `4.0.0-alpha.7.4.6` или текущего exact-duplicate checkpoint
-   `4.0.0-alpha.7.4.8 / state-6 / FAILED` использовать только
-   `AKORT_alpha74Gate5ResumeReplay()`;
+   `4.0.0-alpha.7.4.6`, exact-duplicate checkpoint
+   `4.0.0-alpha.7.4.8 / state-6 / FAILED` или вручную остановленного
+   `.10 / state-8` использовать только `AKORT_alpha74Gate5ResumeReplay()`;
 9. не запускать `AKORT_alpha74Gate5Worker()` вручную;
 10. периодически запускать только `AKORT_alpha74Gate5Status()`;
 11. после `SUCCESS` сохранить полный результат status и ссылку на evidence.
@@ -299,3 +313,5 @@ Gate 6 начинается только после отдельного review 
 `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md`.
 Текущий exact-duplicate incident продолжается по
 `GATE5_EXACT_DUPLICATE_RECOVERY_HOTFIX.md`.
+Performance resume `.10 → .11` выполняется по
+`GATE5_FAST_TARGET_SCAN_HOTFIX.md`.

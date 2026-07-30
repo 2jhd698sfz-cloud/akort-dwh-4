@@ -11,7 +11,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 AKORT.Alpha74Gate4Acceptance = (function () {
   var VERSION = '4.0-alpha74-gate4-acceptance-1';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate4-evidence-1';
-  var RELEASE = '4.0.0-alpha.7.4.10';
+  var RELEASE = '4.0.0-alpha.7.4.11';
   var TARGET_SHEET = 'PUBLISH_PRICE_AGGREGATES';
   var STAGE_SHEET = 'AGGREGATE_STAGE';
   var PRIMARY_DATASET = 'AKORT_GATE4_ISOLATED';
