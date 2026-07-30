@@ -2,9 +2,9 @@
 
 ## Статус
 
-`GATE 4 ACCEPTED / GATE 5 CANONICAL REPLAY RECOVERY HOTFIX READY / REPLAY-ONLY RERUN PENDING / REGULAR PIPELINE PROHIBITED`
+`GATE 4 ACCEPTED / GATE 5 EXACT-DUPLICATE RECOVERY HOTFIX READY / DURABLE RESUME PENDING / REGULAR PIPELINE PROHIBITED`
 
-Дата фиксации: 29 июля 2026 года.
+Дата фиксации: 30 июля 2026 года.
 
 Активная GitHub-ветка: `codex/alpha-7.4-integration-reset`.
 
@@ -56,6 +56,9 @@
 - `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md` — одноразовая materialization
   aggregate batch, bounded series publication и продолжение с сохранённого
   replay cursor.
+- `GATE5_EXACT_DUPLICATE_RECOVERY_HOTFIX.md` — repair идентичных физических
+  дублей после uncertain Sheets response с сохранением durable batch и
+  fail-closed защитой от конфликтующих строк.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -130,7 +133,18 @@ orphaned checkpoint принимается fail-closed, незавершённы
 детерминированно переигрывается от cursor 150, calculation batch один раз
 материализуется в durable stage cache, а
 `AKORT_alpha74Gate5ResumeReplay()` сохраняет тот же replay workbook. Gate 5
-принимается только по `state-6` resume execution.
+принимается только после terminal `SUCCESS`.
+
+Resume execution `4.0.0-alpha.7.4.8` продолжил replay до cursor 175, но
+остановился fail-closed на duplicate logical key. Read-only диагностика
+isolated replay подтвердила 517 парных канонически идентичных дублей в 64
+сериях и отсутствие конфликтующих строк. Release `4.0.0-alpha.7.4.9`
+принудительно ремонтирует exact duplicates даже при совпадающем logical
+fingerprint, проверяет unique read-back до движения cursor и сохраняет
+materialized batch из 875 rows / 105 series. Конфликтующие duplicates
+по-прежнему требуют ручного review. Текущий checkpoint возобновляется через
+`AKORT_alpha74Gate5ResumeReplay()` без нового full build, price replay или
+aggregate calculation.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

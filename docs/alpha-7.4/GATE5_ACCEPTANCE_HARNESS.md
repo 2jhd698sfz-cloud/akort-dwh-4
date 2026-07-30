@@ -159,6 +159,18 @@ durable materialization:
 - финальный replay latest выполняется durable проходами
   `INDEX_SCAN → APPLY_FLAGS` по 1 000 строк.
 
+Начиная с `4.0.0-alpha.7.4.9`, isolated replay дополнительно восстанавливает
+exact physical duplicates после uncertain atomic response:
+
+- одинаковость проверяется по всем 29 canonical contract values;
+- все физические копии affected series удаляются одним atomic replacement;
+- совпадение logical before/after fingerprint не отменяет обязательный
+  physical repair;
+- cursor меняется только после unique read-back;
+- conflicting duplicate остаётся fail-closed;
+- source checkpoint `7.4.8 / state-6 / FAILED` продолжает cached batch через
+  `AKORT_alpha74Gate5ResumeReplay()`.
+
 Контракт и runbook описаны в
 `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md`.
 
@@ -240,7 +252,7 @@ livePublishPhysicalWrites = 0
 - все RAW replay validation rows имеют `PASS`;
 - `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-6`;
+  `4.0-alpha74-gate5-evidence-7`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
@@ -261,7 +273,8 @@ livePublishPhysicalWrites = 0
 7. запустить `AKORT_alpha74Gate5Status()` и проверить `ready=true`;
 8. для нового запуска без reusable full build один раз запустить
    `AKORT_alpha74Gate5Start()`; для сохранённой точки release
-   `4.0.0-alpha.7.4.6` использовать только
+   `4.0.0-alpha.7.4.6` или текущего exact-duplicate checkpoint
+   `4.0.0-alpha.7.4.8 / state-6 / FAILED` использовать только
    `AKORT_alpha74Gate5ResumeReplay()`;
 9. не запускать `AKORT_alpha74Gate5Worker()` вручную;
 10. периодически запускать только `AKORT_alpha74Gate5Status()`;
@@ -273,3 +286,5 @@ Gate 6 начинается только после отдельного review 
 `GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md`. Текущий stopped aggregate replay
 продолжается без нового replay workbook по
 `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md`.
+Текущий exact-duplicate incident продолжается по
+`GATE5_EXACT_DUPLICATE_RECOVERY_HOTFIX.md`.

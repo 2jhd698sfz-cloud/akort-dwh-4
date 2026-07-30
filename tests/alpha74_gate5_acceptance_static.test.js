@@ -127,10 +127,10 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-6');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.8');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-6');
-  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-6');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-7');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.9');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-7');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-7');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
@@ -385,11 +385,17 @@ test('canonical digest normalizes Google Sheets period types', () => {
 test('quota and transient errors retain automatic retry semantics', () => {
   const quota = H.Test.classifyError(new Error('Service invoked too many times for one day'));
   const transient = H.Test.classifyError(new Error('Service error: Spreadsheets'));
+  const explicitRetryable = Object.assign(new Error('Atomic read-back remains uncertain'), {
+    code: 'ALPHA74_GATE5_AGGREGATE_ATOMIC_WRITE_UNCERTAIN',
+    details: { retryable: true }
+  });
   const fatal = H.Test.classifyError(Object.assign(new Error('Schema mismatch'), { code: 'SCHEMA_MISMATCH' }));
   assert.equal(quota.kind, 'QUOTA');
   assert.equal(quota.retryable, true);
   assert.equal(transient.kind, 'TRANSIENT');
   assert.equal(transient.retryable, true);
+  assert.equal(H.Test.classifyError(explicitRetryable).kind, 'TRANSIENT');
+  assert.equal(H.Test.classifyError(explicitRetryable).retryable, true);
   assert.equal(fatal.kind, 'FATAL');
   assert.equal(fatal.retryable, false);
 });
@@ -491,8 +497,8 @@ test('durable aggregate resume preserves the exact replay frontier and artifact'
     }
   };
   const resumed = H.Test.buildDurableResumeState(source, 'A74_GATE5_DURABLE_RESUME');
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-6');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.8');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-7');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.9');
   assert.equal(resumed.executionId, 'A74_GATE5_DURABLE_RESUME');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
@@ -561,8 +567,8 @@ test('exact triggerless legacy partial batch is adopted by replaying from combo 
     'A74_GATE5_PARTIAL_ADOPTED',
     { legacyPartialAdoption: adoption }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-6');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.8');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-7');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.9');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 150);
@@ -579,6 +585,80 @@ test('exact triggerless legacy partial batch is adopted by replaying from combo 
   );
   assert.equal(resumed.metrics.legacyPartialBatchAdoptions, 1);
   assert.equal(resumed.metrics.legacyPartialSeriesCursorReplayed, 64);
+  assert(Buffer.byteLength(JSON.stringify(resumed), 'utf8') < 8500);
+});
+
+test('failed exact-duplicate incident preserves the durable cache for physical repair', () => {
+  const source = {
+    stateSchemaVersion: '4.0-alpha74-gate5-state-6',
+    release: '4.0.0-alpha.7.4.8',
+    executionId: 'A74_GATE5_DUPLICATE_SOURCE',
+    status: 'FAILED',
+    phase: 'FAILED',
+    failureCode: 'AGGREGATE_TARGET_DUPLICATE_ROW_KEY',
+    replayGroupCount: 12,
+    replayGroupIndex: 0,
+    replayStage: 'AGGREGATES',
+    replayItemCursor: 175,
+    aggregateSeriesCursor: 0,
+    aggregateBatchWork: {
+      workSchemaVersion: '4.0-alpha74-gate5-aggregate-work-1',
+      groupIndex: 0,
+      loadId: 'LOAD_GATE5',
+      comboCursor: 175,
+      comboCount: 25,
+      comboTotal: 381,
+      recordCount: 875,
+      seriesCount: 105,
+      seriesCursor: 0,
+      stageFingerprint: 'STAGE_FP',
+      identity: identity
+    },
+    fullStageIndex: 7,
+    fullBuildWork: null,
+    artifacts: {
+      baselineCanonical: { id: 'BASELINE' },
+      liveSnapshot: { id: 'LIVE_SNAPSHOT' },
+      fullBuild: { id: 'FULL_BUILD' },
+      sequentialReplay: { id: 'PRESERVED_REPLAY' }
+    },
+    metrics: {
+      fullBuildRowsMaterialized: 97070,
+      fullBuildStagesPrepared: 7,
+      replayAggregateCombosProcessed: 250,
+      replayAggregateRowsCalculated: 5180,
+      replayAggregateSeriesPublished: 309
+    }
+  };
+  const incident = H.Test.exactDuplicateIncident(source, 0);
+  assert.equal(incident.eligible, true);
+  assert.equal(incident.preserveAggregateBatch, true);
+  assert.equal(H.Test.exactDuplicateIncident(source, 1).eligible, false);
+  const resumed = H.Test.buildDurableResumeState(
+    source,
+    'A74_GATE5_DUPLICATE_RECOVERY',
+    {
+      legacyPartialAdoption: { eligible: false },
+      exactDuplicateIncident: {
+        ...incident,
+        exactDuplicateLogicalRows: 517,
+        exactDuplicateRows: 517
+      }
+    }
+  );
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-7');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.9');
+  assert.equal(resumed.status, 'RUNNING');
+  assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
+  assert.equal(resumed.replayItemCursor, 175);
+  assert.equal(resumed.aggregateSeriesCursor, 0);
+  assert.equal(resumed.aggregateBatchWork.recordCount, 875);
+  assert.equal(resumed.aggregateBatchWork.seriesCount, 105);
+  assert.equal(resumed.artifacts.sequentialReplay.id, 'PRESERVED_REPLAY');
+  assert.equal(resumed.recovery.mode, 'DURABLE_EXACT_DUPLICATE_REPAIR_RESUME');
+  assert.equal(resumed.recovery.durableAggregateBatchResume.preservedAggregateBatch, true);
+  assert.equal(resumed.recovery.durableAggregateBatchResume.exactDuplicateLogicalRows, 517);
+  assert.equal(resumed.metrics.exactDuplicateRecoveryAdoptions, 1);
   assert(Buffer.byteLength(JSON.stringify(resumed), 'utf8') < 8500);
 });
 
@@ -628,6 +708,8 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(harness.includes('stopRequested_()'));
   assert(harness.includes('buildDurableResumeState_'));
   assert(harness.includes('legacyPartialAdoption_'));
+  assert(harness.includes('exactDuplicateIncident_'));
+  assert(harness.includes('DURABLE_EXACT_DUPLICATE_REPAIR_RESUME'));
   assert(harness.includes('REPLAY_PARTIAL_BATCH_FROM_COMBO_CURSOR'));
   const overlapBranch = harness.slice(
     harness.indexOf('if (!lock.tryLock(1000))'),

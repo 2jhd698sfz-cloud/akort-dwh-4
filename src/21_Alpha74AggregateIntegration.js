@@ -9,7 +9,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  */
 AKORT.AggregateIntegration = (function () {
   var VERSION = '4.0-aggregate-integration-1';
-  var RELEASE = '4.0.0-alpha.7.4.8';
+  var RELEASE = '4.0.0-alpha.7.4.9';
   var OPERATION_SCHEMA_VERSION = '4.0-operation-2';
   var STAGE_SCHEMA_VERSION = '4.0-aggregate-stage-1';
   var TARGET_SHEET = 'PUBLISH_PRICE_AGGREGATES';
@@ -529,7 +529,9 @@ AKORT.AggregateIntegration = (function () {
   }
 
   function logicalIndex_(targetRows, stageRows) {
+    var headers = AKORT.AggregateContract.Headers.slice();
     var signatures = stageSeriesMap_(stageRows), affected = {}, unrelated = [], physicalRows = [], byRowKey = {};
+    var duplicateLogicalRows = [], duplicatePhysicalRows = [];
     (stageRows || []).forEach(function (record) { affected[text_(record.aggregate_series_key)] = true; });
     (targetRows || []).forEach(function (row) {
       var series = signatures[publicSignature_(row)] || '';
@@ -539,19 +541,33 @@ AKORT.AggregateIntegration = (function () {
       }
       var rowKey = series + '|' + periodKey_(row.frequency, row.period_start);
       if (byRowKey[rowKey]) {
-        throw error_('AGGREGATE_TARGET_DUPLICATE_ROW_KEY', 'Target contains duplicate aggregate logical rows.', {
-          retryable: false,
-          rowKey: rowKey
-        });
+        var existingCanonical = stableStringify_(fingerprintRowValues_(byRowKey[rowKey], headers));
+        var duplicateCanonical = stableStringify_(fingerprintRowValues_(row, headers));
+        if (existingCanonical !== duplicateCanonical) {
+          throw error_('AGGREGATE_TARGET_DUPLICATE_ROW_KEY_CONFLICT', 'Target contains conflicting rows for one aggregate logical key.', {
+            retryable: false,
+            requiresReview: true,
+            rowKey: rowKey,
+            existingRow: Number(byRowKey[rowKey].__row || byRowKey[rowKey]._rowNumber || 0),
+            duplicateRow: Number(row.__row || row._rowNumber || 0),
+            existingFingerprint: hash_(existingCanonical),
+            duplicateFingerprint: hash_(duplicateCanonical)
+          });
+        }
+        duplicateLogicalRows.push(rowKey);
+        duplicatePhysicalRows.push(Number(row.__row || row._rowNumber || 0));
+      } else {
+        byRowKey[rowKey] = clone_(row);
       }
-      byRowKey[rowKey] = clone_(row);
       physicalRows.push(Number(row.__row || row._rowNumber || 0));
     });
     return {
       affectedSeries: affected,
       byRowKey: byRowKey,
       unrelatedRows: unrelated,
-      physicalRows: physicalRows.filter(function (rowNumber) { return rowNumber > 1; })
+      physicalRows: physicalRows.filter(function (rowNumber) { return rowNumber > 1; }),
+      duplicateLogicalRows: duplicateLogicalRows.sort(),
+      duplicatePhysicalRows: duplicatePhysicalRows.filter(function (rowNumber) { return rowNumber > 1; }).sort(function (a, b) { return b - a; })
     };
   }
 
@@ -609,7 +625,11 @@ AKORT.AggregateIntegration = (function () {
       unrelatedFingerprint: rowsFingerprint_(index.unrelatedRows, headers, keyForUnrelated),
       replacementRowCount: replacement.length,
       cellCount: replacement.length * headers.length,
-      requestCount: deleteBlocks_(deletePhysicalRows).length + (replacement.length ? 1 : 0)
+      requestCount: deleteBlocks_(deletePhysicalRows).length + (replacement.length ? 1 : 0),
+      requiresPhysicalRepair: index.duplicateLogicalRows.length > 0,
+      exactDuplicateLogicalRows: index.duplicateLogicalRows.slice(),
+      exactDuplicatePhysicalRows: index.duplicatePhysicalRows.slice(),
+      exactDuplicateRowCount: index.duplicatePhysicalRows.length
     };
   }
 
@@ -652,6 +672,11 @@ AKORT.AggregateIntegration = (function () {
     var failures = [];
     if (current !== text_(intent.afterFingerprint)) failures.push({ code: 'AFFECTED_FINGERPRINT', expected: intent.afterFingerprint, actual: current });
     if (replacement.unrelatedFingerprint !== text_(intent.unrelatedFingerprint)) failures.push({ code: 'UNRELATED_FINGERPRINT', expected: intent.unrelatedFingerprint, actual: replacement.unrelatedFingerprint });
+    if (replacement.requiresPhysicalRepair) failures.push({
+      code: 'EXACT_DUPLICATE_ROWS',
+      logicalRows: replacement.exactDuplicateLogicalRows.length,
+      excessPhysicalRows: replacement.exactDuplicateRowCount
+    });
     if (!latest.ok) failures.push({ code: 'LATEST_INVALID', details: latest.failures });
     return {
       ok: failures.length === 0,
@@ -897,9 +922,8 @@ AKORT.AggregateIntegration = (function () {
       }
       var targetRows = adapter.readTargetRows();
       var intent = adapter.readPublishIntent(identity_(context, options, state));
-      var replacement;
+      var replacement = buildSeriesReplacement(targetRows, staged);
       if (!intent) {
-        replacement = buildSeriesReplacement(targetRows, staged);
         if (replacement.replacementRowCount > state.runtimeSettings.atomicMaxRows ||
             replacement.cellCount > state.runtimeSettings.atomicMaxCells ||
             replacement.requestCount > state.runtimeSettings.atomicMaxRequests) {
@@ -921,13 +945,16 @@ AKORT.AggregateIntegration = (function () {
           stageFingerprint: state.stageFingerprint,
           replacementRowCount: replacement.replacementRowCount,
           cellCount: replacement.cellCount,
-          requestCount: replacement.requestCount
+          requestCount: replacement.requestCount,
+          requiresPhysicalRepair: replacement.requiresPhysicalRepair,
+          exactDuplicateLogicalRows: replacement.exactDuplicateLogicalRows.length,
+          exactDuplicateRowCount: replacement.exactDuplicateRowCount
         };
         intent.fingerprint = hash_(intent);
         adapter.persistPublishIntent(identity_(context, options, state), intent);
       }
       adapter.updateStageExpectedFingerprint(identity_(context, options, state), intent.afterFingerprint);
-      var currentFingerprint = currentAffectedFingerprint(targetRows, staged);
+      var currentFingerprint = replacement.beforeFingerprint;
       var recoveryState = classifyRecovery(intent.beforeFingerprint, intent.afterFingerprint, currentFingerprint);
       if (recoveryState === 'THIRD_STATE') {
         throw error_('AGGREGATE_PUBLISH_THIRD_STATE', 'Aggregate target is neither the persisted before-state nor the expected after-state.', {
@@ -938,12 +965,21 @@ AKORT.AggregateIntegration = (function () {
           currentFingerprint: currentFingerprint
         });
       }
-      if (recoveryState === 'BEFORE') {
-        replacement = replacement || buildSeriesReplacement(targetRows, staged);
+      var repairedExactDuplicates = replacement.requiresPhysicalRepair === true;
+      if (recoveryState === 'BEFORE' || repairedExactDuplicates) {
         adapter.atomicReplace(replacement, identity_(context, options, state));
       }
       var afterRows = adapter.readTargetRows();
-      var afterFingerprint = currentAffectedFingerprint(afterRows, staged);
+      var afterReplacement = buildSeriesReplacement(afterRows, staged);
+      if (afterReplacement.requiresPhysicalRepair) {
+        throw error_('AGGREGATE_ATOMIC_WRITE_UNCERTAIN', 'Atomic aggregate read-back still contains exact duplicate rows; retry must repair the same affected set before advancing.', {
+          retryable: true,
+          exactDuplicateLogicalRows: afterReplacement.exactDuplicateLogicalRows.length,
+          exactDuplicateRowCount: afterReplacement.exactDuplicateRowCount,
+          expectedAfterFingerprint: intent.afterFingerprint
+        });
+      }
+      var afterFingerprint = afterReplacement.beforeFingerprint;
       if (afterFingerprint !== intent.afterFingerprint) {
         throw error_('AGGREGATE_PUBLISH_READBACK_MISMATCH', 'Atomic aggregate write did not produce the expected target fingerprint.', {
           retryable: false,
@@ -956,12 +992,16 @@ AKORT.AggregateIntegration = (function () {
       state.targetBeforeFingerprint = intent.beforeFingerprint;
       state.targetAfterFingerprint = intent.afterFingerprint;
       state.unrelatedFingerprint = intent.unrelatedFingerprint;
-      state.publishRecovery = recoveryState === 'AFTER' ? 'RECOVERED_WITHOUT_REWRITE' : 'WRITTEN_AND_VERIFIED';
+      state.publishRecovery = repairedExactDuplicates
+        ? 'EXACT_DUPLICATES_REPAIRED_AND_VERIFIED'
+        : recoveryState === 'AFTER' ? 'RECOVERED_WITHOUT_REWRITE' : 'WRITTEN_AND_VERIFIED';
       state.status = 'PUBLISHED';
       return {
         recoveryState: recoveryState,
         publishRecovery: state.publishRecovery,
         replacementRows: intent.replacementRowCount,
+        exactDuplicateLogicalRowsRepaired: repairedExactDuplicates ? replacement.exactDuplicateLogicalRows.length : 0,
+        exactDuplicateRowsRepaired: repairedExactDuplicates ? replacement.exactDuplicateRowCount : 0,
         targetAfterFingerprint: intent.afterFingerprint
       };
     }

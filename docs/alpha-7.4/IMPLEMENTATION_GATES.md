@@ -90,7 +90,11 @@ series-publication retry. Legacy worker затем перезаписал пер
 серий. Release `7.4.8` fail-closed распознаёт только этот точный orphaned
 checkpoint, переигрывает незавершённый диапазон от combo cursor 150,
 материализует каждый новый batch один раз и продолжает тот же replay workbook
-через `AKORT_alpha74Gate5ResumeReplay()`. Чек-лист остаётся открытым до
+через `AKORT_alpha74Gate5ResumeReplay()`. Resume дошёл до cursor 175 и
+обнаружил 517 exact physical duplicates в 64 affected series после uncertain
+atomic response. Release `7.4.9` сохраняет cached batch 875 rows / 105 series,
+атомарно схлопывает только канонически идентичные дубли, проверяет unique
+read-back и fail-closed отклоняет conflicting duplicates. Чек-лист остаётся открытым до
 terminal `SUCCESS`, exact reconciliation и проверки JSON evidence.
 Regular pipeline остаётся выключенным.
 

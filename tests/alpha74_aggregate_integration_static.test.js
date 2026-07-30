@@ -178,6 +178,40 @@ test('full logical-series replacement retains unaffected periods and updates lat
   assert.equal(reconciliation.ok, true);
 });
 
+test('exact physical duplicates are repaired while preserving one canonical logical row', () => {
+  const staged = [stage('2026-01-08')];
+  const first = target('2026-01-01', 2, 0.5);
+  const duplicate = { ...first, __row: 3 };
+  const replacement = A.Test.buildSeriesReplacement([
+    first,
+    duplicate,
+    target('2026-01-08', 4, 0.75)
+  ], staged);
+  assert.equal(replacement.requiresPhysicalRepair, true);
+  assert.equal(replacement.exactDuplicateLogicalRows.length, 1);
+  assert.equal(replacement.exactDuplicateRowCount, 1);
+  assert.deepEqual(Array.from(replacement.exactDuplicatePhysicalRows), [3]);
+  assert.deepEqual(Array.from(replacement.deletePhysicalRows), [4, 3, 2]);
+  assert.equal(replacement.beforeRows.length, 2);
+  assert.equal(replacement.replacementRows.length, 2);
+  const reconciled = A.Test.reconcileTarget(
+    replacement.replacementRows,
+    staged,
+    replacement
+  );
+  assert.equal(reconciled.ok, true);
+});
+
+test('conflicting duplicate logical rows remain fail-closed', () => {
+  const first = target('2026-01-01', 2, 0.5);
+  const conflicting = { ...first, __row: 3, aggregate_change_pp: 0.6 };
+  assert.throws(
+    () => A.Test.buildSeriesReplacement([first, conflicting], [stage('2026-01-08')]),
+    error => error.code === 'AGGREGATE_TARGET_DUPLICATE_ROW_KEY_CONFLICT' &&
+      error.details.requiresReview === true
+  );
+});
+
 test('non-publishable result deletes only its logical period and restores prior latest', () => {
   const staged = [stage('2026-01-08', false)];
   const replacement = A.Test.buildSeriesReplacement([

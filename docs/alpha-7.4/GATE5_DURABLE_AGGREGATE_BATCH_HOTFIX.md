@@ -6,6 +6,10 @@ Release `4.0.0-alpha.7.4.8` устраняет повторный тяжёлый
 aggregate replay batch после Apps Script timeout или потерянного ответа Google
 Sheets API.
 
+Последующий exact-duplicate incident после uncertain atomic response и его
+восстановление в `4.0.0-alpha.7.4.9` описаны отдельно в
+`GATE5_EXACT_DUPLICATE_RECOVERY_HOTFIX.md`.
+
 Hotfix не меняет frozen 29-column Publish contract, методологию расчёта,
 accepted load/reversal lineage или DataLens-connected DEV Publish. Все записи
 Gate 5 по-прежнему выполняются только в isolated sequential replay workbook.
