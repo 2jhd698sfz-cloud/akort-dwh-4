@@ -226,6 +226,15 @@ canonical order и SHA-256. Публикация читает только final
 `DURABLE_AGGREGATE_ITEM_PREPARATION_RESUME` без нового full build,
 replay workbook или повтора groups 0–1.
 
+Release `4.0.0-alpha.7.4.15` устраняет следующий content-dependent timeout
+на `.14 / state-12 / SCAN_WEEKLY / source cursor 4500`. До hotfix все
+category-level affected rows чанка проходили dependent-period expansion, и
+лишь затем одинаковые aggregate combinations схлопывались. `.15` сначала
+дедуплицирует aggregate descriptors по экономической идентичности, после чего
+вызывает тот же `v310ExpandAffectedTargets_()` с frozen frontier. Сохранённые
+960 inventory items и source cursor 4500 переиспользуются; результат expansion
+зафиксирован parity-тестом против недедуплицированного production planner.
+
 Контракт и runbook описаны в
 `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md` и
 `GATE5_FAST_TARGET_SCAN_HOTFIX.md`.
@@ -311,7 +320,7 @@ livePublishPhysicalWrites = 0
 - все RAW replay validation rows имеют `PASS`;
 - `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-12`;
+  `4.0-alpha74-gate5-evidence-13`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
@@ -335,7 +344,8 @@ livePublishPhysicalWrites = 0
    `4.0.0-alpha.7.4.6`, exact-duplicate checkpoint
    `4.0.0-alpha.7.4.8 / state-6 / FAILED` или вручную остановленного
    `.10 / state-8`, `.11 / state-9` или текущего
-   `.13 / state-11 / group 2 / AGGREGATES / cursor 0` использовать только
+   `.13 / state-11 / group 2 / AGGREGATES / cursor 0` либо частичного
+   `.14 / state-12 / SCAN_WEEKLY / source cursor 4500` использовать только
    `AKORT_alpha74Gate5ResumeReplay()`;
 9. не запускать `AKORT_alpha74Gate5Worker()` вручную;
 10. периодически запускать только `AKORT_alpha74Gate5Status()`;
@@ -357,3 +367,5 @@ Adaptive resume `.11 → .12` выполняется по
 по `GATE5_RESUME_ALLOWLIST_HOTFIX.md`.
 Таймаут подготовки item inventory устраняется release `.14` по
 `GATE5_DURABLE_AGGREGATE_ITEM_PREPARATION_HOTFIX.md`.
+Content-dependent timeout внутри отдельного RAW chunk устраняется release
+`.15` по `GATE5_PRE_EXPANSION_DESCRIPTOR_DEDUP_HOTFIX.md`.

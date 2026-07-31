@@ -127,10 +127,10 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-12');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.14');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-12');
-  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-12');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-13');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.15');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-13');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-13');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
@@ -236,6 +236,35 @@ test('durable aggregate item inventory uses the production expansion and frontie
   assert(filtered.every(item => (
     T.frontierKey(item.frequency, item.datasetCode, item.period) === allowedFrontier[0]
   )));
+
+  const heavyDecemberChunk = Array.from({ length: 500 }, (_, index) => ({
+    ...affected[0],
+    categoryId: `CATEGORY_${index}`,
+    period: '2025-12-28'
+  }));
+  const descriptors = T.gate5AggregateDescriptors(heavyDecemberChunk);
+  const deduplicatedItems = T.gate5AggregateItemsForAffected(heavyDecemberChunk, []);
+  const representativeItems = T.gate5AggregateItemsForAffected([heavyDecemberChunk[0]], []);
+  const productionKeys = Array.from(new Set(
+    T.expandAffected(heavyDecemberChunk).aggregates.map(item => [
+      item.frequency,
+      item.datasetCode,
+      item.frequency === 'monthly'
+        ? `${periodKey(item.frequency, item.period)}-01`
+        : periodKey(item.frequency, item.period),
+      item.valueType,
+      item.indexType || ''
+    ].join('|'))
+  )).sort();
+  assert.equal(descriptors.length, 1);
+  assert.deepEqual(
+    Array.from(deduplicatedItems.map(item => item.comboKey)),
+    Array.from(representativeItems.map(item => item.comboKey))
+  );
+  assert.deepEqual(
+    Array.from(deduplicatedItems.map(item => item.comboKey)),
+    productionKeys
+  );
 });
 
 test('aggregate item preparation checkpoints bounded scan progress and stable identity', () => {
@@ -249,6 +278,7 @@ test('aggregate item preparation checkpoints bounded scan progress and stable id
       phase: 'SCAN_WEEKLY',
       rowsScanned: 500,
       affectedRows: 12,
+      affectedDescriptors: 4,
       combosAdded: 45,
       totalItems: 45,
       work: {
@@ -294,6 +324,7 @@ test('aggregate item preparation checkpoints bounded scan progress and stable id
   assert.equal(state.metrics.replayAggregateItemPreparationSteps, 1);
   assert.equal(state.metrics.replayAggregateItemRowsScanned, 500);
   assert.equal(state.metrics.replayAggregateItemAffectedRows, 12);
+  assert.equal(state.metrics.replayAggregateDescriptorsExpanded, 4);
   assert.equal(state.metrics.replayAggregateItemsAdded, 45);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].inventoryIdentity.inventoryId, firstIdentity.inventoryId);
@@ -737,8 +768,8 @@ test('durable aggregate resume preserves the exact replay frontier and artifact'
     }
   };
   const resumed = H.Test.buildDurableResumeState(source, 'A74_GATE5_DURABLE_RESUME');
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
   assert.equal(resumed.executionId, 'A74_GATE5_DURABLE_RESUME');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
@@ -807,8 +838,8 @@ test('exact triggerless legacy partial batch is adopted by replaying from combo 
     'A74_GATE5_PARTIAL_ADOPTED',
     { legacyPartialAdoption: adoption }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 150);
@@ -886,8 +917,8 @@ test('failed exact-duplicate incident preserves the durable cache for physical r
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 175);
@@ -970,8 +1001,8 @@ test('terminal .9 atomic-uncertain checkpoint preserves its cached batch for per
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
   assert.equal(resumed.replayItemCursor, 175);
   assert.equal(resumed.aggregateSeriesCursor, 0);
   assert.equal(resumed.aggregateBatchWork.recordCount, 875);
@@ -1046,8 +1077,8 @@ test('stopped .11 checkpoint adopts adaptive publication without losing a partia
       performanceResume: alpha7411Adoption
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
   assert.equal(resumed.replayGroupIndex, 1);
   assert.equal(resumed.replayItemCursor, 25);
   assert.equal(resumed.aggregateSeriesCursor, 96);
@@ -1087,6 +1118,14 @@ test('durable resume schema and release allowlists include the deployed .11 chec
     H.Test.durableResumeReleaseCompatible('4.0.0-alpha.7.4.13'),
     true
   );
+  assert.equal(
+    H.Test.durableResumeStateSchemaCompatible('4.0-alpha74-gate5-state-12'),
+    true
+  );
+  assert.equal(
+    H.Test.durableResumeReleaseCompatible('4.0.0-alpha.7.4.14'),
+    true
+  );
   assert.equal(H.Test.durableResumeStateSchemaCompatible('UNKNOWN_STATE'), false);
   assert.equal(H.Test.durableResumeReleaseCompatible('UNKNOWN_RELEASE'), false);
 });
@@ -1124,8 +1163,8 @@ test('stopped .13 timeout boundary resumes through durable item preparation', ()
       performanceResume: adoption
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
   assert.equal(resumed.replayGroupIndex, 2);
   assert.equal(resumed.replayItemCursor, 0);
   assert.equal(resumed.aggregateItemsWork, null);
@@ -1167,6 +1206,7 @@ test('partial .14 aggregate item scan is preserved across durable resume', () =>
   };
   const adoption = H.Test.performanceResume(source, 0);
   assert.equal(adoption.eligible, true);
+  assert.equal(adoption.mode, 'STOPPED_ALPHA7414_AGGREGATE_DESCRIPTOR_DEDUP_ADOPTION');
   assert.equal(adoption.boundary, 'DURABLE_ITEM_PREPARATION');
   assert.equal(adoption.preserveAggregateItems, true);
   const resumed = H.Test.buildDurableResumeState(
@@ -1247,7 +1287,9 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(incremental.includes('prepareAggregateItemsChunk:gate5PrepareAggregateItemsChunk_'));
   assert(incremental.includes('inspectAggregateItems:gate5InspectAggregateItems_'));
   assert(incremental.includes('readAggregateItemsChunk:gate5ReadAggregateItemsChunk_'));
-  assert(incremental.includes('v310ExpandAffectedTargets_(affected||[]).aggregates'));
+  assert(incremental.includes('function gate5AggregateDescriptors_'));
+  assert(incremental.includes('gate5AggregateItemExpansion_(affected,frontierKeys)'));
+  assert(incremental.includes('filterByFrontier?{aggregateFrontier:frontier}:{}'));
   const replayItemsBody = incremental.slice(
     incremental.indexOf('function replayStageItemsForGroup_'),
     incremental.indexOf('function initializeReplayWork_')
@@ -1276,6 +1318,7 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(harness.includes("AGGREGATE_ITEM_CACHE_SHEET = 'GATE5_AGGREGATE_ITEMS'"));
   assert(harness.includes("phase: 'PREPARE_AGGREGATE_ITEMS'"));
   assert(harness.includes('replayAggregateItemRowsScanned'));
+  assert(harness.includes('replayAggregateDescriptorsExpanded'));
   assert(harness.includes('DURABLE_AGGREGATE_ITEM_PREPARATION_RESUME'));
   assert(harness.includes("phase: 'MATERIALIZE_AGGREGATE_BATCH'"));
   assert(harness.includes("phase: 'PUBLISH_AGGREGATE_BATCH'"));

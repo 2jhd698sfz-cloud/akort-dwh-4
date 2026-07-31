@@ -3203,13 +3203,41 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
     });
     return Object.keys(byKey).sort().map(function(key){return byKey[key];});
   }
-  function gate5AggregateItemsForAffected_(affected,frontierKeys) {
+  function gate5AggregateDescriptors_(affected) {
+    var byKey={};
+    (affected||[]).forEach(function(source){
+      if(!source)return;
+      var frequency=String(source.frequency||''),period=frequency==='weekly'
+        ?v300DateKey_(source.period)
+        :frequency==='monthly'
+          ?v300MonthKey_(source.period)
+          :'';
+      var descriptor={
+        frequency:frequency,
+        datasetCode:String(source.datasetCode||source.dataset_code||''),
+        categoryId:'',
+        valueType:v300ValueType_(source.valueType||source.value_type),
+        indexType:v300IndexType_(source.indexType||source.index_type||''),
+        period:period
+      };
+      var key=[descriptor.frequency,descriptor.datasetCode,descriptor.valueType,descriptor.indexType,descriptor.period].join('|');
+      if(descriptor.datasetCode&&descriptor.period&&!byKey[key])byKey[key]=descriptor;
+    });
+    return Object.keys(byKey).sort().map(function(key){return byKey[key];});
+  }
+  function gate5AggregateItemExpansion_(affected,frontierKeys) {
     var frontier=mapFromArray_(frontierKeys||[]),filterByFrontier=Object.keys(frontier).length>0;
-    var expanded=v310ExpandAffectedTargets_(affected||[]).aggregates;
+    var descriptors=gate5AggregateDescriptors_(affected),expanded=v310ExpandAffectedTargets_(
+      descriptors,
+      filterByFrontier?{aggregateFrontier:frontier}:{}
+    ).aggregates;
     if(filterByFrontier)expanded=expanded.filter(function(item){
       return frontier[v310AggregateFrontierKey_(item.frequency,item.datasetCode,item.period)]===true;
     });
-    return gate5CanonicalAggregateItems_(expanded);
+    return{items:gate5CanonicalAggregateItems_(expanded),descriptorCount:descriptors.length};
+  }
+  function gate5AggregateItemsForAffected_(affected,frontierKeys) {
+    return gate5AggregateItemExpansion_(affected,frontierKeys).items;
   }
   function gate5ReadAggregateItemRows_(spreadsheet,inventoryId) {
     var sheet=gate5AggregateItemSheet_(spreadsheet),count=Math.max(0,sheet.getLastRow()-1);
@@ -3308,11 +3336,11 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
       var cursor=Math.max(0,Number(work.sourceCursor||0)),chunk=gate5AggregateItemSourceChunk_(group,work.phase,cursor,Number(work.chunkRows||GATE5_AGGREGATE_ITEM_SCAN_CHUNK_ROWS)),total=Number(chunk.total||0);
       if(Number(work.sourceTotal)<0)work.sourceTotal=total;
       else if(Number(work.sourceTotal)!==total)throw AKORT.Core.error('ALPHA74_GATE5_AGGREGATE_ITEM_SOURCE_CHANGED','A RAW source changed while Gate 5 was preparing the aggregate item inventory.',{phase:work.phase,expectedRows:Number(work.sourceTotal),actualRows:total});
-      var combos=gate5AggregateItemsForAffected_(chunk.affected||[],frontierKeys||[]),appended=gate5AppendAggregateItems_(spreadsheet,inventoryId,combos);
+      var expansion=gate5AggregateItemExpansion_(chunk.affected||[],frontierKeys||[]),combos=expansion.items,appended=gate5AppendAggregateItems_(spreadsheet,inventoryId,combos);
       work.sourceCursor=cursor+Number(chunk.read||0);work.itemCount=appended.total;
       var completedSource=work.sourceCursor>=total||Number(chunk.read||0)===0;
       if(completedSource){work.phase=gate5NextAggregateItemPhase_(work.phase);work.sourceCursor=0;work.sourceTotal=-1;}
-      return{ready:false,phase:work.phase,rowsScanned:Number(chunk.read||0),affectedRows:(chunk.affected||[]).length,combosAdded:appended.added,totalItems:appended.total,sourceComplete:completedSource,work:work};
+      return{ready:false,phase:work.phase,rowsScanned:Number(chunk.read||0),affectedRows:(chunk.affected||[]).length,affectedDescriptors:Number(expansion.descriptorCount||0),combosAdded:appended.added,totalItems:appended.total,sourceComplete:completedSource,work:work};
     });
   }
   function gate5InspectAggregateItems_(spreadsheetId,work) {
@@ -3373,5 +3401,5 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
 
   function statusSummary(){var ss=getDwh_(),tables={};Object.keys(TABLES).forEach(function(n){var sh=ss.getSheetByName(n);tables[n]=sh?{rows:Math.max(0,sh.getLastRow()-1),columns:sh.getLastColumn()}:null;});return{release:AKORT.Release.manifest(),manifestHash:AKORT.Core.manifestHash(),publishSchemaVersion:AKORT.Release.publishSchemaVersion,dependencySchemaVersion:AKORT.Release.dependencySchemaVersion,dispatcherSchemaVersion:AKORT.Release.dispatcherSchemaVersion,scopeCorrection:clone_(ALPHA6_SCOPE),runtimeSettings:runtimeSettings_(),serviceTables:tables,reconciliation:publicRecon_(loadRecon_()),dispatcher:dispatcherPublic_(dispatcherLoad_())};}
 
-  return {Tables:clone_(TABLES),install:install,createPublishBackup:createPublishBackup,runtimeSettings:runtimeSettings_,planLoad:planLoad,planReversal:planReversal,planFromAffected:planFromAffected_,summarizePlan:summarizePlan_,appendImpact:appendImpact_,applyPublish:applyPublish,applyAggregates:applyAggregates,statusSummary:statusSummary,startReconciliation:startReconciliation,continueReconciliation:continueReconciliation,reconciliationStatus:reconciliationStatus,resetReconciliation:resetReconciliation,recoverFailedReconciliation:recoverFailedReconciliation,startReconciliationDispatcher:startReconciliationDispatcher,stopReconciliationDispatcher:stopReconciliationDispatcher,reconciliationDispatcherStatus:reconciliationDispatcherStatus,reconciliationDispatcherWorker:reconciliationDispatcherWorker,Gate5:Object.freeze({initializeBook:gate5InitializeBook_,fullBuildChunk:gate5FullBuildChunk_,replayGroups:gate5ReplayGroups_,validateReplayRaw:gate5ValidateReplayRaw_,replayItems:gate5ReplayItems_,prepareAggregateItemsChunk:gate5PrepareAggregateItemsChunk_,inspectAggregateItems:gate5InspectAggregateItems_,readAggregateItemsChunk:gate5ReadAggregateItemsChunk_,applyReplayChunk:gate5ApplyReplayChunk_,buildAggregateRows:gate5BuildAggregateRows_,finalizeAggregateLatest:gate5FinalizeLatest_,frontierKeys:gate5FrontierKeys_,canonicalSort:gate5CanonicalSort_}),Test:{storageMutationProbe:v300StorageMutationProbe_,seriesReplacementRollbackProbe:v300SeriesReplacementRollbackProbe_,weeklyDependentPeriods:v310WeeklyDependentPeriods_,monthlyDependentPeriods:v310MonthlyDependentPeriods_,weeklyDynamics:v310CalculateWeeklyDynamics_,monthlyDynamics:v310CalculateMonthlyDynamics_,industryDynamics:v300CalculateIndustryDynamics_,setLatestPrices:v317SetLatestBySeriesRows_,setLatestAggregates:v317SetLatestAggregateRows_,expandAffected:v310ExpandAffectedTargets_,aggregateIndexTypes:v310AggregateIndexTypes_,frontierKey:v310AggregateFrontierKey_,seriesId:v300SeriesId_,aggregateSeriesKey:v317AggregateSeriesKey_,selectReplayLatest:v300SelectReplayLatest_,buildWeeklyRows:v310BuildWeeklyRowsForTargets_,buildMonthlyRows:v310BuildMonthlyRowsForTargets_,monthlyDescriptors:v310MonthlyDescriptors_,seriesIdsForTargets:seriesIdsForTargets_,buildDerivedMonthlyMarkupSeries:v310BuildDerivedMonthlyMarkupSeries_,parityProbe:alpha624ParityProbe_,markupParityProbe:alpha624ParityProbe_,buildImpactRecords:buildImpactRecords_,jsonArrayChunks:jsonArrayChunks_,dispatcherControlMatches:dispatcherControlMatches_,dispatcherStateKey:dispatcherStateKey_,impactPreviewComboKey:impactPreviewComboKey_,impactPreviewHeaders:impactPreviewHeaders_,impactPreviewSheet:impactPreviewSheet_,impactPreviewAggregateCombos:impactPreviewAggregateCombos_,replayImpactPreviewStep:replayImpactPreviewStep_,setImpactTestAdapter:impactPreviewSetTestAdapter_,replayTarget:replayTarget_,nextReplayStage:nextReplayStage_,reconciliationFingerprint:reconciliationFingerprint_,dispatcherProgressDecision:dispatcherProgressDecision_,dispatcherClassifyError:dispatcherClassifyError_,dispatcherRetryDelayMs:dispatcherRetryDelayMs_,dispatcherResultSummary:dispatcherResultSummary_,utf8Bytes:utf8Bytes_,replayStageItemsForGroup:replayStageItemsForGroup_,gate5AggregateItemsForAffected:gate5AggregateItemsForAffected_}};
+  return {Tables:clone_(TABLES),install:install,createPublishBackup:createPublishBackup,runtimeSettings:runtimeSettings_,planLoad:planLoad,planReversal:planReversal,planFromAffected:planFromAffected_,summarizePlan:summarizePlan_,appendImpact:appendImpact_,applyPublish:applyPublish,applyAggregates:applyAggregates,statusSummary:statusSummary,startReconciliation:startReconciliation,continueReconciliation:continueReconciliation,reconciliationStatus:reconciliationStatus,resetReconciliation:resetReconciliation,recoverFailedReconciliation:recoverFailedReconciliation,startReconciliationDispatcher:startReconciliationDispatcher,stopReconciliationDispatcher:stopReconciliationDispatcher,reconciliationDispatcherStatus:reconciliationDispatcherStatus,reconciliationDispatcherWorker:reconciliationDispatcherWorker,Gate5:Object.freeze({initializeBook:gate5InitializeBook_,fullBuildChunk:gate5FullBuildChunk_,replayGroups:gate5ReplayGroups_,validateReplayRaw:gate5ValidateReplayRaw_,replayItems:gate5ReplayItems_,prepareAggregateItemsChunk:gate5PrepareAggregateItemsChunk_,inspectAggregateItems:gate5InspectAggregateItems_,readAggregateItemsChunk:gate5ReadAggregateItemsChunk_,applyReplayChunk:gate5ApplyReplayChunk_,buildAggregateRows:gate5BuildAggregateRows_,finalizeAggregateLatest:gate5FinalizeLatest_,frontierKeys:gate5FrontierKeys_,canonicalSort:gate5CanonicalSort_}),Test:{storageMutationProbe:v300StorageMutationProbe_,seriesReplacementRollbackProbe:v300SeriesReplacementRollbackProbe_,weeklyDependentPeriods:v310WeeklyDependentPeriods_,monthlyDependentPeriods:v310MonthlyDependentPeriods_,weeklyDynamics:v310CalculateWeeklyDynamics_,monthlyDynamics:v310CalculateMonthlyDynamics_,industryDynamics:v300CalculateIndustryDynamics_,setLatestPrices:v317SetLatestBySeriesRows_,setLatestAggregates:v317SetLatestAggregateRows_,expandAffected:v310ExpandAffectedTargets_,aggregateIndexTypes:v310AggregateIndexTypes_,frontierKey:v310AggregateFrontierKey_,seriesId:v300SeriesId_,aggregateSeriesKey:v317AggregateSeriesKey_,selectReplayLatest:v300SelectReplayLatest_,buildWeeklyRows:v310BuildWeeklyRowsForTargets_,buildMonthlyRows:v310BuildMonthlyRowsForTargets_,monthlyDescriptors:v310MonthlyDescriptors_,seriesIdsForTargets:seriesIdsForTargets_,buildDerivedMonthlyMarkupSeries:v310BuildDerivedMonthlyMarkupSeries_,parityProbe:alpha624ParityProbe_,markupParityProbe:alpha624ParityProbe_,buildImpactRecords:buildImpactRecords_,jsonArrayChunks:jsonArrayChunks_,dispatcherControlMatches:dispatcherControlMatches_,dispatcherStateKey:dispatcherStateKey_,impactPreviewComboKey:impactPreviewComboKey_,impactPreviewHeaders:impactPreviewHeaders_,impactPreviewSheet:impactPreviewSheet_,impactPreviewAggregateCombos:impactPreviewAggregateCombos_,replayImpactPreviewStep:replayImpactPreviewStep_,setImpactTestAdapter:impactPreviewSetTestAdapter_,replayTarget:replayTarget_,nextReplayStage:nextReplayStage_,reconciliationFingerprint:reconciliationFingerprint_,dispatcherProgressDecision:dispatcherProgressDecision_,dispatcherClassifyError:dispatcherClassifyError_,dispatcherRetryDelayMs:dispatcherRetryDelayMs_,dispatcherResultSummary:dispatcherResultSummary_,utf8Bytes:utf8Bytes_,replayStageItemsForGroup:replayStageItemsForGroup_,gate5AggregateDescriptors:gate5AggregateDescriptors_,gate5AggregateItemsForAffected:gate5AggregateItemsForAffected_}};
 })();

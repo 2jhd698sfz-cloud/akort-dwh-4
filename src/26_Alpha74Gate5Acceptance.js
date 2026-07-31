@@ -10,10 +10,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * - a persistent one-minute trigger continues from a compact checkpoint.
  */
 AKORT.Alpha74Gate5Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate5-acceptance-12';
-  var RELEASE = '4.0.0-alpha.7.4.14';
-  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-12';
-  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-12';
+  var VERSION = '4.0-alpha74-gate5-acceptance-13';
+  var RELEASE = '4.0.0-alpha.7.4.15';
+  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-13';
+  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-13';
   var STATE_KEY = 'AKORT_ALPHA74_GATE5_STATE_V1';
   var STOP_REQUEST_KEY = 'AKORT_ALPHA74_GATE5_STOP_REQUEST_V1';
   var AGGREGATE_WORK_SCHEMA_VERSION = '4.0-alpha74-gate5-aggregate-work-1';
@@ -82,6 +82,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     '4.0-alpha74-gate5-state-9',
     '4.0-alpha74-gate5-state-10',
     '4.0-alpha74-gate5-state-11',
+    '4.0-alpha74-gate5-state-12',
     STATE_SCHEMA_VERSION
   ]);
   var DURABLE_RESUME_RELEASES = Object.freeze([
@@ -93,6 +94,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     '4.0.0-alpha.7.4.11',
     '4.0.0-alpha.7.4.12',
     '4.0.0-alpha.7.4.13',
+    '4.0.0-alpha.7.4.14',
     RELEASE
   ]);
 
@@ -879,6 +881,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       replayAggregateItemPreparationSteps: 0,
       replayAggregateItemRowsScanned: 0,
       replayAggregateItemAffectedRows: 0,
+      replayAggregateDescriptorsExpanded: 0,
       replayAggregateItemsAdded: 0,
       replayAggregateItemInventoriesPrepared: 0,
       replayAggregateItemPreparationRecoveryAdoptions: 0,
@@ -1249,6 +1252,8 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         sourceRelease === '4.0.0-alpha.7.4.12') ||
       (sourceVersion === '4.0-alpha74-gate5-state-11' &&
         sourceRelease === '4.0.0-alpha.7.4.13') ||
+      (sourceVersion === '4.0-alpha74-gate5-state-12' &&
+        sourceRelease === '4.0.0-alpha.7.4.14') ||
       (sourceVersion === STATE_SCHEMA_VERSION && sourceRelease === RELEASE)
     );
     var validItemWork = !!itemWork &&
@@ -1289,7 +1294,9 @@ AKORT.Alpha74Gate5Acceptance = (function () {
               ? 'STOPPED_ALPHA7412_RESUME_ALLOWLIST_RECOVERY'
               : sourceRelease === '4.0.0-alpha.7.4.13'
                 ? 'STOPPED_ALPHA7413_DURABLE_ITEM_INVENTORY_ADOPTION'
-                : 'STOPPED_ALPHA7414_DURABLE_ITEM_INVENTORY_RESUME'
+                : sourceRelease === '4.0.0-alpha.7.4.14'
+                  ? 'STOPPED_ALPHA7414_AGGREGATE_DESCRIPTOR_DEDUP_ADOPTION'
+                  : 'STOPPED_ALPHA7415_DURABLE_ITEM_INVENTORY_RESUME'
         : '',
       triggerCount: Number(triggerCount || 0),
       groupIndex: Number(state && state.replayGroupIndex || 0),
@@ -1724,6 +1731,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     aggregateMetrics.replayAggregateItemPreparationSteps += 1;
     aggregateMetrics.replayAggregateItemRowsScanned += Number(result.rowsScanned || 0);
     aggregateMetrics.replayAggregateItemAffectedRows += Number(result.affectedRows || 0);
+    aggregateMetrics.replayAggregateDescriptorsExpanded += Number(result.affectedDescriptors || 0);
     aggregateMetrics.replayAggregateItemsAdded += Number(result.combosAdded || 0);
     if (!beforeReady && result.ready === true) aggregateMetrics.replayAggregateItemInventoriesPrepared += 1;
     return {
@@ -1736,6 +1744,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       sourceTotal: Number(result.work && result.work.sourceTotal || 0),
       rowsScanned: Number(result.rowsScanned || 0),
       affectedRows: Number(result.affectedRows || 0),
+      affectedDescriptors: Number(result.affectedDescriptors || 0),
       combosAdded: Number(result.combosAdded || 0),
       totalItems: Number(result.totalItems || 0),
       ready: result.ready === true

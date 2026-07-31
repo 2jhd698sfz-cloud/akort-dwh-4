@@ -113,6 +113,11 @@ aggregate-item plan третьей group: 29 worker executions не измени
 inventory durable-чанками по 500 RAW rows, сохраняя source cursor
 после каждого step. Текущий `.13 / state-11` checkpoint продолжает
 group 2 / `AGGREGATES` / cursor 0 без повтора full build и groups 0–1.
+В DEV `.14` дошёл до `SCAN_WEEKLY / source cursor 4500`, после чего три
+worker executions снова завершились hard-timeout без изменения `steps`:
+category-level rows декабрьского блока расширялись до canonical dedup.
+Release `7.4.15` дедуплицирует aggregate descriptors до production expansion
+и продолжает тот же `.14 / state-12` item inventory с cursor 4500.
 Чек-лист остаётся открытым до
 terminal `SUCCESS`, exact reconciliation и проверки JSON evidence.
 Regular pipeline остаётся выключенным.

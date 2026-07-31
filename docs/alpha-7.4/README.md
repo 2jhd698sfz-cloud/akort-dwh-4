@@ -74,6 +74,10 @@
 - `GATE5_DURABLE_AGGREGATE_ITEM_PREPARATION_HOTFIX.md` — durable scan
   weekly/monthly RAW и reversal log по 500 rows, fingerprinted combination
   inventory и продолжение `.13 / state-11 / group 2 / AGGREGATES / cursor 0`.
+- `GATE5_PRE_EXPANSION_DESCRIPTOR_DEDUP_HOTFIX.md` — дедупликация
+  category-level affected rows до production dependency expansion и
+  продолжение `.14 / state-12 / SCAN_WEEKLY / source cursor 4500` с тем же
+  частично подготовленным item inventory.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -208,6 +212,16 @@ Release `4.0.0-alpha.7.4.14` устраняет hard-timeout в монолитн
 продолжается на group 2 / `AGGREGATES` / cursor 0 в режиме
 `DURABLE_AGGREGATE_ITEM_PREPARATION_RESUME`, не повторяя full build и
 первые две replay groups.
+
+Release `4.0.0-alpha.7.4.15` устраняет второй hard-timeout на WEEKLY chunk
+`4500–5000`. В `.14` 500 category-level rows расширялись в зависимые периоды
+до дедупликации, поэтому декабрьский блок создавал десятки тысяч временных
+дубликатов. `.15` сначала сворачивает их по
+`frequency/dataset/value_type/index_type/period`, затем вызывает тот же
+production `v310ExpandAffectedTargets_()` и применяет тот же frozen frontier.
+Остановленный `.14 / state-12` checkpoint продолжает существующий inventory
+с `source cursor=4500`; full build, replay workbook и готовые группы не
+повторяются.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию
