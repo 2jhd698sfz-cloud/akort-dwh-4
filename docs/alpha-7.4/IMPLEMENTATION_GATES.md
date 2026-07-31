@@ -105,6 +105,14 @@ Release `7.4.11` переносит Alpha.6 bounded-scan pattern: читает �
 identity columns, затем только affected physical ranges и appended tail.
 Остановленный `.10 / state-8` checkpoint продолжается с точного durable
 group/combo/series cursor без нового full build или replay workbook.
+Release `7.4.12` добавляет adaptive publication windows до 128 series,
+а `7.4.13` исправляет final resume allowlist. После завершения
+второй group `.13` выявил hard-timeout до первого checkpoint
+aggregate-item plan третьей group: 29 worker executions не изменили
+`steps=312` и cursor 0. Release `7.4.14` материализует canonical item
+inventory durable-чанками по 500 RAW rows, сохраняя source cursor
+после каждого step. Текущий `.13 / state-11` checkpoint продолжает
+group 2 / `AGGREGATES` / cursor 0 без повтора full build и groups 0–1.
 Чек-лист остаётся открытым до
 terminal `SUCCESS`, exact reconciliation и проверки JSON evidence.
 Regular pipeline остаётся выключенным.

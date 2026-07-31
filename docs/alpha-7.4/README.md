@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 4 ACCEPTED / GATE 5 RESUME ALLOWLIST HOTFIX READY / DURABLE RESUME PENDING / REGULAR PIPELINE PROHIBITED`
+`GATE 4 ACCEPTED / GATE 5 DURABLE AGGREGATE-ITEM PREPARATION HOTFIX READY / GROUP 2 RESUME PENDING / REGULAR PIPELINE PROHIBITED`
 
 Дата фиксации: 31 июля 2026 года.
 
@@ -71,6 +71,9 @@
 - `GATE5_RESUME_ALLOWLIST_HOTFIX.md` — исправление финального schema/release
   allowlist после fail-closed `.12` resume и продолжение сохранённой точки
   `.11 / state-9 / group 1 / combo 300 / series 256`.
+- `GATE5_DURABLE_AGGREGATE_ITEM_PREPARATION_HOTFIX.md` — durable scan
+  weekly/monthly RAW и reversal log по 500 rows, fingerprinted combination
+  inventory и продолжение `.13 / state-11 / group 2 / AGGREGATES / cursor 0`.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -196,6 +199,15 @@ Release `4.0.0-alpha.7.4.13` исправляет отдельный финал�
 checkpoint. Ошибка произошла до mutation и trigger creation. `.13`
 продолжает тот же workbook с group 1, combo cursor 300 и series cursor 256;
 adaptive publication и atomic limits не изменяются.
+
+Release `4.0.0-alpha.7.4.14` устраняет hard-timeout в монолитной
+подготовке aggregate replay items для третьей group. Weekly/monthly RAW
+и reversal log сканируются по 500 rows с durable phase/cursor,
+а canonical combinations сохраняются в `GATE5_AGGREGATE_ITEMS` до
+расчёта и публикации. Остановленный `.13 / state-11` checkpoint
+продолжается на group 2 / `AGGREGATES` / cursor 0 в режиме
+`DURABLE_AGGREGATE_ITEM_PREPARATION_RESUME`, не повторяя full build и
+первые две replay groups.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

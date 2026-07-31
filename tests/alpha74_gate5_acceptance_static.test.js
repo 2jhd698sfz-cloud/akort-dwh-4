@@ -127,10 +127,10 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-11');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.13');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-11');
-  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-11');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-12');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.14');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-12');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-12');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
@@ -193,6 +193,110 @@ test('blank price-level RAW index expands to canonical aggregate index types', (
   )).sort();
   assert.deepEqual(weeklyTypes, ['december', 'wow', 'yoy']);
   assert.deepEqual(monthlyTypes, ['december', 'mom', 'yoy']);
+});
+
+test('durable aggregate item inventory uses the production expansion and frontier', () => {
+  function formatDate(value, _timezone, pattern) {
+    const date = value instanceof Date ? value : new Date(value);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return pattern === 'yyyy-MM' ? `${year}-${month}` : `${year}-${month}-${day}`;
+  }
+  const incrementalContext = vm.createContext({
+    console, JSON, Date, Math, Object, Array, String, Number, Boolean,
+    RegExp, Error, isFinite, parseInt, Utilities: { formatDate }, AKORT: {}
+  });
+  vm.runInContext(
+    fs.readFileSync(path.join(root, 'src/07_IncrementalPublish.js'), 'utf8'),
+    incrementalContext,
+    { filename: 'src/07_IncrementalPublish.js' }
+  );
+  const T = incrementalContext.AKORT.IncrementalPublish.Test;
+  const affected = [{
+    frequency: 'weekly',
+    datasetCode: 'AKORT_WEEKLY',
+    categoryId: 'C',
+    valueType: 'розница',
+    indexType: '',
+    period: '2026-01-04'
+  }];
+  const items = T.gate5AggregateItemsForAffected(affected.concat(affected), []);
+  const keys = Array.from(items.map(item => item.comboKey));
+  assert.equal(new Set(keys).size, keys.length);
+  assert.deepEqual(keys.slice().sort(), keys);
+  assert(items.some(item => item.valueType === 'наценка, %'));
+  assert(items.some(item => item.frequency === 'monthly'));
+  assert(items.every(item => item.indexType !== ''));
+  const allowedFrontier = [
+    T.frontierKey(items[0].frequency, items[0].datasetCode, items[0].period)
+  ];
+  const filtered = T.gate5AggregateItemsForAffected(affected, allowedFrontier);
+  assert(filtered.length > 0);
+  assert(filtered.every(item => (
+    T.frontierKey(item.frequency, item.datasetCode, item.period) === allowedFrontier[0]
+  )));
+});
+
+test('aggregate item preparation checkpoints bounded scan progress and stable identity', () => {
+  const calls = [];
+  context.AKORT.IncrementalPublish.Gate5.prepareAggregateItemsChunk = function (
+    spreadsheetId, allowed, reversed, group, frontier, work, inventoryIdentity
+  ) {
+    calls.push({ spreadsheetId, allowed, reversed, group, frontier, work, inventoryIdentity });
+    return {
+      ready: false,
+      phase: 'SCAN_WEEKLY',
+      rowsScanned: 500,
+      affectedRows: 12,
+      combosAdded: 45,
+      totalItems: 45,
+      work: {
+        workSchemaVersion: '4.0-alpha74-gate5-aggregate-items-work-1',
+        inventoryId: inventoryIdentity.inventoryId,
+        loadId: inventoryIdentity.loadId,
+        groupIndex: inventoryIdentity.groupIndex,
+        phase: 'SCAN_WEEKLY',
+        sourceCursor: 500,
+        sourceTotal: 20000,
+        chunkRows: 500,
+        itemCount: 45,
+        ready: false,
+        fingerprint: ''
+      }
+    };
+  };
+  const state = {
+    executionId: 'EXECUTION_A',
+    replayGroupIndex: 2,
+    frontierHash: 'FRONTIER_HASH',
+    artifacts: { sequentialReplay: { id: 'REPLAY_BOOK' } },
+    aggregateItemsWork: null,
+    metrics: null
+  };
+  const group = { loadId: 'LOAD_THIRD' };
+  const replayContext = { allowedLoadIds: ['LOAD_A', 'LOAD_THIRD'], reversedLoadIds: [] };
+  const firstIdentity = H.Test.aggregateItemInventoryIdentity(state, group, replayContext);
+  state.executionId = 'RECOVERED_EXECUTION_B';
+  assert.deepEqual(
+    H.Test.aggregateItemInventoryIdentity(state, group, replayContext),
+    firstIdentity
+  );
+  const result = H.Test.prepareAggregateItemInventoryStep(
+    state,
+    group,
+    replayContext,
+    ['weekly|AKORT_WEEKLY|2026-01-04']
+  );
+  assert.equal(result.phase, 'PREPARE_AGGREGATE_ITEMS');
+  assert.equal(result.sourceCursor, 500);
+  assert.equal(state.aggregateItemsWork.sourceCursor, 500);
+  assert.equal(state.metrics.replayAggregateItemPreparationSteps, 1);
+  assert.equal(state.metrics.replayAggregateItemRowsScanned, 500);
+  assert.equal(state.metrics.replayAggregateItemAffectedRows, 12);
+  assert.equal(state.metrics.replayAggregateItemsAdded, 45);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].inventoryIdentity.inventoryId, firstIdentity.inventoryId);
 });
 
 test('full build advances only after durable bounded chunks complete', () => {
@@ -633,8 +737,8 @@ test('durable aggregate resume preserves the exact replay frontier and artifact'
     }
   };
   const resumed = H.Test.buildDurableResumeState(source, 'A74_GATE5_DURABLE_RESUME');
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-11');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.13');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
   assert.equal(resumed.executionId, 'A74_GATE5_DURABLE_RESUME');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
@@ -703,8 +807,8 @@ test('exact triggerless legacy partial batch is adopted by replaying from combo 
     'A74_GATE5_PARTIAL_ADOPTED',
     { legacyPartialAdoption: adoption }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-11');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.13');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 150);
@@ -782,8 +886,8 @@ test('failed exact-duplicate incident preserves the durable cache for physical r
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-11');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.13');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 175);
@@ -866,8 +970,8 @@ test('terminal .9 atomic-uncertain checkpoint preserves its cached batch for per
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-11');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.13');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
   assert.equal(resumed.replayItemCursor, 175);
   assert.equal(resumed.aggregateSeriesCursor, 0);
   assert.equal(resumed.aggregateBatchWork.recordCount, 875);
@@ -942,8 +1046,8 @@ test('stopped .11 checkpoint adopts adaptive publication without losing a partia
       performanceResume: alpha7411Adoption
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-11');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.13');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
   assert.equal(resumed.replayGroupIndex, 1);
   assert.equal(resumed.replayItemCursor, 25);
   assert.equal(resumed.aggregateSeriesCursor, 96);
@@ -975,8 +1079,153 @@ test('durable resume schema and release allowlists include the deployed .11 chec
     H.Test.durableResumeReleaseCompatible('4.0.0-alpha.7.4.12'),
     true
   );
+  assert.equal(
+    H.Test.durableResumeStateSchemaCompatible('4.0-alpha74-gate5-state-11'),
+    true
+  );
+  assert.equal(
+    H.Test.durableResumeReleaseCompatible('4.0.0-alpha.7.4.13'),
+    true
+  );
   assert.equal(H.Test.durableResumeStateSchemaCompatible('UNKNOWN_STATE'), false);
   assert.equal(H.Test.durableResumeReleaseCompatible('UNKNOWN_RELEASE'), false);
+});
+
+test('stopped .13 timeout boundary resumes through durable item preparation', () => {
+  const source = {
+    stateSchemaVersion: '4.0-alpha74-gate5-state-11',
+    release: '4.0.0-alpha.7.4.13',
+    executionId: 'A74_GATE5_TIMEOUT_SOURCE',
+    status: 'STOPPED',
+    phase: 'STOPPED',
+    failureCode: 'STOPPED_MANUALLY',
+    replayGroupCount: 12,
+    replayGroupIndex: 2,
+    replayStage: 'AGGREGATES',
+    replayItemCursor: 0,
+    aggregateSeriesCursor: 0,
+    aggregateItemsWork: null,
+    aggregateBatchWork: null,
+    artifacts: { sequentialReplay: { id: 'PRESERVED_REPLAY' } },
+    metrics: { fullBuildRowsMaterialized: 97070, fullBuildStagesPrepared: 7 }
+  };
+  const adoption = H.Test.performanceResume(source, 0);
+  assert.equal(adoption.eligible, true);
+  assert.equal(adoption.mode, 'STOPPED_ALPHA7413_DURABLE_ITEM_INVENTORY_ADOPTION');
+  assert.equal(adoption.boundary, 'LOGICAL_BATCH');
+  assert.equal(adoption.preserveAggregateItems, false);
+  const resumed = H.Test.buildDurableResumeState(
+    source,
+    'A74_GATE5_ITEM_PREPARATION_RECOVERY',
+    {
+      legacyPartialAdoption: { eligible: false },
+      exactDuplicateIncident: { eligible: false },
+      periodIdentityIncident: { eligible: false },
+      performanceResume: adoption
+    }
+  );
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-12');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.14');
+  assert.equal(resumed.replayGroupIndex, 2);
+  assert.equal(resumed.replayItemCursor, 0);
+  assert.equal(resumed.aggregateItemsWork, null);
+  assert.equal(resumed.aggregateBatchWork, null);
+  assert.equal(resumed.recovery.mode, 'DURABLE_AGGREGATE_ITEM_PREPARATION_RESUME');
+  assert.equal(resumed.metrics.replayAggregateItemPreparationRecoveryAdoptions, 1);
+  assert(Buffer.byteLength(JSON.stringify(resumed), 'utf8') < 8500);
+});
+
+test('partial .14 aggregate item scan is preserved across durable resume', () => {
+  const source = {
+    stateSchemaVersion: '4.0-alpha74-gate5-state-12',
+    release: '4.0.0-alpha.7.4.14',
+    executionId: 'A74_GATE5_PARTIAL_ITEM_SOURCE',
+    status: 'STOPPED',
+    phase: 'STOPPED',
+    failureCode: 'STOPPED_MANUALLY',
+    replayGroupCount: 12,
+    replayGroupIndex: 2,
+    replayStage: 'AGGREGATES',
+    replayItemCursor: 0,
+    aggregateSeriesCursor: 0,
+    aggregateItemsWork: {
+      workSchemaVersion: '4.0-alpha74-gate5-aggregate-items-work-1',
+      inventoryId: 'A74_GATE5_ITEMS_DURABLE',
+      loadId: 'LOAD_THIRD',
+      groupIndex: 2,
+      phase: 'SCAN_MONTHLY',
+      sourceCursor: 1500,
+      sourceTotal: 20000,
+      chunkRows: 500,
+      itemCount: 120,
+      ready: false,
+      fingerprint: ''
+    },
+    aggregateBatchWork: null,
+    artifacts: { sequentialReplay: { id: 'PRESERVED_REPLAY' } },
+    metrics: { fullBuildRowsMaterialized: 97070, fullBuildStagesPrepared: 7 }
+  };
+  const adoption = H.Test.performanceResume(source, 0);
+  assert.equal(adoption.eligible, true);
+  assert.equal(adoption.boundary, 'DURABLE_ITEM_PREPARATION');
+  assert.equal(adoption.preserveAggregateItems, true);
+  const resumed = H.Test.buildDurableResumeState(
+    source,
+    'A74_GATE5_PARTIAL_ITEM_RESUME',
+    {
+      legacyPartialAdoption: { eligible: false },
+      exactDuplicateIncident: { eligible: false },
+      periodIdentityIncident: { eligible: false },
+      performanceResume: adoption
+    }
+  );
+  assert.equal(resumed.aggregateItemsWork.phase, 'SCAN_MONTHLY');
+  assert.equal(resumed.aggregateItemsWork.sourceCursor, 1500);
+  assert.equal(resumed.aggregateItemsWork.itemCount, 120);
+  assert.equal(resumed.recovery.mode, 'DURABLE_AGGREGATE_ITEM_PREPARATION_RESUME');
+  assert.equal(
+    resumed.recovery.durableAggregateBatchResume.preservedAggregateItems,
+    true
+  );
+
+  const publishingSource = JSON.parse(JSON.stringify(source));
+  publishingSource.aggregateItemsWork.phase = 'READY';
+  publishingSource.aggregateItemsWork.ready = true;
+  publishingSource.aggregateItemsWork.fingerprint = 'ITEMS_FP';
+  publishingSource.aggregateItemsWork.itemCount = 381;
+  publishingSource.replayItemCursor = 25;
+  publishingSource.aggregateSeriesCursor = 64;
+  publishingSource.aggregateBatchWork = {
+    workSchemaVersion: '4.0-alpha74-gate5-aggregate-work-1',
+    groupIndex: 2,
+    loadId: 'LOAD_THIRD',
+    comboCursor: 25,
+    comboCount: 25,
+    comboTotal: 381,
+    recordCount: 875,
+    seriesCount: 105,
+    seriesCursor: 64,
+    stageFingerprint: 'STAGE_FP',
+    identity
+  };
+  const publishingAdoption = H.Test.performanceResume(publishingSource, 0);
+  assert.equal(publishingAdoption.eligible, true);
+  assert.equal(publishingAdoption.boundary, 'DURABLE_SERIES');
+  assert.equal(publishingAdoption.preserveAggregateItems, true);
+  assert.equal(publishingAdoption.preserveAggregateBatch, true);
+  const publishingResume = H.Test.buildDurableResumeState(
+    publishingSource,
+    'A74_GATE5_ITEM_AND_BATCH_RESUME',
+    {
+      legacyPartialAdoption: { eligible: false },
+      exactDuplicateIncident: { eligible: false },
+      periodIdentityIncident: { eligible: false },
+      performanceResume: publishingAdoption
+    }
+  );
+  assert.equal(publishingResume.aggregateItemsWork.fingerprint, 'ITEMS_FP');
+  assert.equal(publishingResume.aggregateBatchWork.seriesCursor, 64);
+  assert.equal(publishingResume.aggregateSeriesCursor, 64);
 });
 
 test('repository wiring protects live Publish and exposes trigger-driven entrypoints', () => {
@@ -993,6 +1242,12 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(incremental.includes("GATE5_FULL_CACHE_PREFIX='GATE5_MATERIALIZED_'"));
   assert(incremental.includes('gate5MaterializeFullRows_'));
   assert(incremental.includes('gate5ReadMaterializedChunk_'));
+  assert(incremental.includes("GATE5_AGGREGATE_ITEM_SHEET='GATE5_AGGREGATE_ITEMS'"));
+  assert(incremental.includes('GATE5_AGGREGATE_ITEM_SCAN_CHUNK_ROWS=500'));
+  assert(incremental.includes('prepareAggregateItemsChunk:gate5PrepareAggregateItemsChunk_'));
+  assert(incremental.includes('inspectAggregateItems:gate5InspectAggregateItems_'));
+  assert(incremental.includes('readAggregateItemsChunk:gate5ReadAggregateItemsChunk_'));
+  assert(incremental.includes('v310ExpandAffectedTargets_(affected||[]).aggregates'));
   const replayItemsBody = incremental.slice(
     incremental.indexOf('function replayStageItemsForGroup_'),
     incremental.indexOf('function initializeReplayWork_')
@@ -1018,6 +1273,10 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(harness.includes("mode: 'REPLAY_ONLY_CANONICAL_INDEX_RECOVERY'"));
   assert(harness.includes("AGGREGATE_WORK_SCHEMA_VERSION = '4.0-alpha74-gate5-aggregate-work-1'"));
   assert(harness.includes("AGGREGATE_CACHE_SHEET = 'GATE5_AGGREGATE_BATCH_STAGE'"));
+  assert(harness.includes("AGGREGATE_ITEM_CACHE_SHEET = 'GATE5_AGGREGATE_ITEMS'"));
+  assert(harness.includes("phase: 'PREPARE_AGGREGATE_ITEMS'"));
+  assert(harness.includes('replayAggregateItemRowsScanned'));
+  assert(harness.includes('DURABLE_AGGREGATE_ITEM_PREPARATION_RESUME'));
   assert(harness.includes("phase: 'MATERIALIZE_AGGREGATE_BATCH'"));
   assert(harness.includes("phase: 'PUBLISH_AGGREGATE_BATCH'"));
   assert(harness.includes("phase: 'FINALIZE_REPLAY_LATEST'"));

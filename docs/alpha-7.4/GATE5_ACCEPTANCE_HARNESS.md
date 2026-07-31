@@ -53,6 +53,8 @@ Replay workbook также содержит:
 - `GATE5_REPLAY_GROUPS` — durable accepted load/reversal order и статус каждой
   группы;
 - `GATE5_FRONTIER` — immutable existing-period frontier;
+- `GATE5_AGGREGATE_ITEMS` — durable canonical combination inventory текущей
+  replay group;
 - `GATE5_AGGREGATE_BATCH_STAGE` — durable immutable stage records текущего
   aggregate replay batch.
 
@@ -213,6 +215,17 @@ resume не изменил checkpoint или workbook; продолжение в
 group 1, combo cursor 300 и series cursor 256. Regression suite проверяет
 как recovery-классификатор, так и финальные allowlist helpers.
 
+Release `4.0.0-alpha.7.4.14` устраняет hard-timeout до создания
+первого aggregate batch третьей replay group. Вместо одного
+монолитного `replayItems()` weekly RAW, monthly RAW и reversal log
+сканируются по 500 rows. Каждый source cursor сохраняется, комбинации
+дедуплицируются в `GATE5_AGGREGATE_ITEMS`, а `FINALIZE` фиксирует
+canonical order и SHA-256. Публикация читает только finalized inventory.
+Остановленный `.13 / state-11` checkpoint продолжает group 2,
+`AGGREGATES`, cursor 0 в режиме
+`DURABLE_AGGREGATE_ITEM_PREPARATION_RESUME` без нового full build,
+replay workbook или повтора groups 0–1.
+
 Контракт и runbook описаны в
 `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md` и
 `GATE5_FAST_TARGET_SCAN_HOTFIX.md`.
@@ -298,7 +311,7 @@ livePublishPhysicalWrites = 0
 - все RAW replay validation rows имеют `PASS`;
 - `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-11`;
+  `4.0-alpha74-gate5-evidence-12`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
@@ -321,7 +334,8 @@ livePublishPhysicalWrites = 0
    `AKORT_alpha74Gate5Start()`; для сохранённой точки release
    `4.0.0-alpha.7.4.6`, exact-duplicate checkpoint
    `4.0.0-alpha.7.4.8 / state-6 / FAILED` или вручную остановленного
-   `.10 / state-8` или `.11 / state-9` использовать только
+   `.10 / state-8`, `.11 / state-9` или текущего
+   `.13 / state-11 / group 2 / AGGREGATES / cursor 0` использовать только
    `AKORT_alpha74Gate5ResumeReplay()`;
 9. не запускать `AKORT_alpha74Gate5Worker()` вручную;
 10. периодически запускать только `AKORT_alpha74Gate5Status()`;
@@ -341,3 +355,5 @@ Adaptive resume `.11 → .12` выполняется по
 `GATE5_ADAPTIVE_PUBLICATION_WINDOW_HOTFIX.md`.
 Фактический DEV resume после allowlist incident выполняется release `.13`
 по `GATE5_RESUME_ALLOWLIST_HOTFIX.md`.
+Таймаут подготовки item inventory устраняется release `.14` по
+`GATE5_DURABLE_AGGREGATE_ITEM_PREPARATION_HOTFIX.md`.
