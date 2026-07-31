@@ -152,7 +152,7 @@ durable materialization:
 - calculation batch ограничен 25 combinations;
 - exact stage records один раз сохраняются в
   `GATE5_AGGREGATE_BATCH_STAGE`;
-- publication batch ограничен 32 logical series;
+- legacy publication batch `.8–.11` ограничен 32 logical series;
 - materialization и каждый publication sub-batch имеют отдельные checkpoints;
 - lost response повторяет только публикацию сохранённого batch и распознаёт
   достигнутый after-state как `NOOP`;
@@ -193,6 +193,19 @@ scan по принятому в Alpha.6 принципу:
 - stopped `.10 / state-8` checkpoint, включая частично опубликованный
   durable batch, продолжается через `AKORT_alpha74Gate5ResumeReplay()` в
   режиме `DURABLE_FAST_TARGET_SCAN_RESUME`.
+
+Начиная с `4.0.0-alpha.7.4.12`, один identity scan обслуживает adaptive
+publication window:
+
+- candidate window содержит до 128 следующих logical series;
+- максимальный непрерывный prefix выбирается двоичным поиском;
+- frozen limits 5 000 rows / 100 000 cells / 500 requests не повышаются;
+- лёгкий step может объединить до четырёх прежних 32-series шагов;
+- тяжёлый step автоматически уменьшается до безопасного размера;
+- atomic write, appended-tail read-back и durable cursor остаются одной
+  подтверждённой границей;
+- stopped `.11 / state-9` checkpoint продолжается в режиме
+  `DURABLE_ADAPTIVE_WINDOW_RESUME`.
 
 Контракт и runbook описаны в
 `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md` и
@@ -248,6 +261,8 @@ Evidence фиксирует:
 - quota backoffs и transient retries;
 - worker duration;
 - identity scan rows/cells, affected ranges/rows и tail read-back rows;
+- adaptive publication windows/series, limit reductions, fit evaluations,
+  maximum series per publication и avoided legacy identity scans;
 - `manualContinuationCalls=0`;
 - `livePublishPhysicalWrites=0`.
 
@@ -277,7 +292,7 @@ livePublishPhysicalWrites = 0
 - все RAW replay validation rows имеют `PASS`;
 - `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-9`;
+  `4.0-alpha74-gate5-evidence-10`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
@@ -300,7 +315,8 @@ livePublishPhysicalWrites = 0
    `AKORT_alpha74Gate5Start()`; для сохранённой точки release
    `4.0.0-alpha.7.4.6`, exact-duplicate checkpoint
    `4.0.0-alpha.7.4.8 / state-6 / FAILED` или вручную остановленного
-   `.10 / state-8` использовать только `AKORT_alpha74Gate5ResumeReplay()`;
+   `.10 / state-8` или `.11 / state-9` использовать только
+   `AKORT_alpha74Gate5ResumeReplay()`;
 9. не запускать `AKORT_alpha74Gate5Worker()` вручную;
 10. периодически запускать только `AKORT_alpha74Gate5Status()`;
 11. после `SUCCESS` сохранить полный результат status и ссылку на evidence.
@@ -315,3 +331,5 @@ Gate 6 начинается только после отдельного review 
 `GATE5_EXACT_DUPLICATE_RECOVERY_HOTFIX.md`.
 Performance resume `.10 → .11` выполняется по
 `GATE5_FAST_TARGET_SCAN_HOTFIX.md`.
+Adaptive resume `.11 → .12` выполняется по
+`GATE5_ADAPTIVE_PUBLICATION_WINDOW_HOTFIX.md`.

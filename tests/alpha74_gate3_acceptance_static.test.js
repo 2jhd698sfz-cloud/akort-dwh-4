@@ -184,7 +184,7 @@ function execute(scenario) {
 
 test('Gate 3 metadata and scenario inventory are exact', () => {
   assert.equal(H.Version, '4.0-alpha74-gate3-acceptance-1');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.11');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.12');
   assert.deepEqual(Object.keys(H.Scenarios).sort(), ['NEW_PERIOD', 'REVERSAL', 'REVISION']);
 });
 

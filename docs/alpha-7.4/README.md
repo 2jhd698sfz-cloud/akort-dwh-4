@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 4 ACCEPTED / GATE 5 FAST TARGET-SCAN HOTFIX READY / DURABLE RESUME PENDING / REGULAR PIPELINE PROHIBITED`
+`GATE 4 ACCEPTED / GATE 5 ADAPTIVE PUBLICATION-WINDOW HOTFIX READY / DURABLE RESUME PENDING / REGULAR PIPELINE PROHIBITED`
 
 Дата фиксации: 31 июля 2026 года.
 
@@ -65,6 +65,9 @@
 - `GATE5_FAST_TARGET_SCAN_HOTFIX.md` — Alpha.6-style identity scan,
   affected-range read, appended-tail verification и продолжение
   `.10 / state-8` checkpoint без потери group/combo/series cursor.
+- `GATE5_ADAPTIVE_PUBLICATION_WINDOW_HOTFIX.md` — adaptive окно до 128
+  logical series, максимальный безопасный prefix под frozen atomic limits и
+  продолжение `.11 / state-9` checkpoint без повторения completed work.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -175,6 +178,15 @@ Lost-response, exact-duplicate и third-state fail-closed гарантии со�
 `AKORT_alpha74Gate5ResumeReplay()` с recovery mode
 `DURABLE_FAST_TARGET_SCAN_RESUME`, включая сохранение частичного series
 cursor текущего materialized batch.
+
+Release `4.0.0-alpha.7.4.12` устраняет оставшуюся линейную зависимость
+identity scans от фиксированных окон по 32 series. Один target scan теперь
+покрывает до 128 следующих logical series, после чего двоичный подбор
+выбирает максимальный prefix под неизменные limits 5 000 rows / 100 000
+cells / 500 requests. Cursor передвигается только после atomic write и
+unique appended-tail read-back. Вручную остановленный `.11 / state-9`
+checkpoint продолжается без нового full build, replay workbook или
+aggregate calculation в режиме `DURABLE_ADAPTIVE_WINDOW_RESUME`.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

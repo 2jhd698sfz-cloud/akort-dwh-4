@@ -10,10 +10,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * - a persistent one-minute trigger continues from a compact checkpoint.
  */
 AKORT.Alpha74Gate5Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate5-acceptance-9';
-  var RELEASE = '4.0.0-alpha.7.4.11';
-  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-9';
-  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-9';
+  var VERSION = '4.0-alpha74-gate5-acceptance-10';
+  var RELEASE = '4.0.0-alpha.7.4.12';
+  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-10';
+  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-10';
   var STATE_KEY = 'AKORT_ALPHA74_GATE5_STATE_V1';
   var STOP_REQUEST_KEY = 'AKORT_ALPHA74_GATE5_STOP_REQUEST_V1';
   var AGGREGATE_WORK_SCHEMA_VERSION = '4.0-alpha74-gate5-aggregate-work-1';
@@ -25,7 +25,8 @@ AKORT.Alpha74Gate5Acceptance = (function () {
   var DIGEST_CHUNK_ROWS = 1000;
   var PRICE_REPLAY_CHUNK_ITEMS = 2;
   var AGGREGATE_COMBO_BATCH = 25;
-  var AGGREGATE_SERIES_BATCH = 32;
+  var LEGACY_AGGREGATE_SERIES_BATCH = 32;
+  var AGGREGATE_SERIES_WINDOW = 128;
   var AGGREGATE_IDENTITY_COLUMNS = Object.freeze([
     { header: 'dataset_code', column: 1 },
     { header: 'frequency', column: 3 },
@@ -455,7 +456,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     var grouped = stageSeries_(records);
     var keys = grouped.keys.slice(
       Math.max(0, Number(seriesCursor || 0)),
-      Math.max(0, Number(seriesCursor || 0)) + AGGREGATE_SERIES_BATCH
+      Math.max(0, Number(seriesCursor || 0)) + AGGREGATE_SERIES_WINDOW
     );
     var selected = [];
     keys.forEach(function (key) { selected = selected.concat(grouped.bySeries[key] || []); });
@@ -730,39 +731,77 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     };
   }
 
+  function replacementForSeriesCount_(targetRows, grouped, start, count) {
+    var keys = grouped.keys.slice(start, start + count);
+    var selected = [];
+    keys.forEach(function (key) { selected = selected.concat(grouped.bySeries[key] || []); });
+    AKORT.AggregateIntegration.Test.validateStageRows(selected, {
+      operationId: selected[0].operation_id,
+      loadId: selected[0].load_id,
+      planId: selected[0].plan_id,
+      planFingerprint: selected[0].plan_fingerprint
+    });
+    return {
+      count: count,
+      records: selected,
+      replacement: AKORT.AggregateIntegration.Test.buildSeriesReplacement(targetRows, selected)
+    };
+  }
+
+  function replacementFits_(candidate, limits) {
+    var replacement = candidate && candidate.replacement || {};
+    return Number(replacement.replacementRowCount || 0) <= Number(limits.maxRows || 0) &&
+      Number(replacement.cellCount || 0) <= Number(limits.maxCells || 0) &&
+      Number(replacement.requestCount || 0) <= Number(limits.maxRequests || 0);
+  }
+
+  function fittedBatchResult_(candidate, totalSeries, candidateSeries, evaluations) {
+    return {
+      complete: false,
+      seriesCount: candidate.count,
+      nextCursor: candidate.start + candidate.count,
+      totalSeries: totalSeries,
+      candidateSeries: candidateSeries,
+      fitEvaluations: evaluations,
+      limitReduced: candidate.count < candidateSeries,
+      replacement: candidate.replacement,
+      records: candidate.records
+    };
+  }
+
   function fitSeriesBatch_(targetRows, records, seriesCursor, limits) {
     var grouped = stageSeries_(records);
     var start = Math.max(0, Number(seriesCursor || 0));
     var remaining = grouped.keys.length - start;
     if (remaining <= 0) return { complete: true, seriesCount: 0, nextCursor: start, replacement: null, records: [] };
-    var count = Math.min(AGGREGATE_SERIES_BATCH, remaining);
-    while (count > 0) {
-      var keys = grouped.keys.slice(start, start + count);
-      var selected = [];
-      keys.forEach(function (key) { selected = selected.concat(grouped.bySeries[key] || []); });
-      AKORT.AggregateIntegration.Test.validateStageRows(selected, {
-        operationId: selected[0].operation_id,
-        loadId: selected[0].load_id,
-        planId: selected[0].plan_id,
-        planFingerprint: selected[0].plan_fingerprint
-      });
-      var replacement = AKORT.AggregateIntegration.Test.buildSeriesReplacement(targetRows, selected);
-      if (replacement.replacementRowCount <= limits.maxRows &&
-          replacement.cellCount <= limits.maxCells &&
-          replacement.requestCount <= limits.maxRequests) {
-        return {
-          complete: false,
-          seriesCount: count,
-          nextCursor: start + count,
-          totalSeries: grouped.keys.length,
-          replacement: replacement,
-          records: selected
-        };
+    var candidateSeries = Math.min(AGGREGATE_SERIES_WINDOW, remaining);
+    var evaluations = 0;
+    var maximum = replacementForSeriesCount_(targetRows, grouped, start, candidateSeries);
+    maximum.start = start;
+    evaluations += 1;
+    if (replacementFits_(maximum, limits)) {
+      return fittedBatchResult_(maximum, grouped.keys.length, candidateSeries, evaluations);
+    }
+    var low = 1, high = candidateSeries - 1, best = null;
+    while (low <= high) {
+      var count = Math.floor((low + high) / 2);
+      var current = replacementForSeriesCount_(targetRows, grouped, start, count);
+      current.start = start;
+      evaluations += 1;
+      if (replacementFits_(current, limits)) {
+        best = current;
+        low = count + 1;
+      } else {
+        high = count - 1;
       }
-      count = Math.floor(count / 2);
+    }
+    if (best) {
+      return fittedBatchResult_(best, grouped.keys.length, candidateSeries, evaluations);
     }
     throw error_('ALPHA74_GATE5_ATOMIC_LIMIT_EXCEEDED', 'One logical aggregate series exceeds the Gate 5 atomic publication limit.', {
       seriesCursor: start,
+      candidateSeries: candidateSeries,
+      evaluations: evaluations,
       limits: limits
     });
   }
@@ -811,9 +850,16 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       exactDuplicateRecoveryAdoptions: 0,
       periodIdentityRecoveryAdoptions: 0,
       performanceRecoveryAdoptions: 0,
+      adaptiveWindowRecoveryAdoptions: 0,
       exactDuplicateRepairSteps: 0,
       exactDuplicateLogicalRowsRepaired: 0,
       exactDuplicateRowsRepaired: 0,
+      adaptivePublicationWindows: 0,
+      adaptivePublicationSeries: 0,
+      adaptivePublicationLimitReductions: 0,
+      adaptivePublicationFitEvaluations: 0,
+      maximumSeriesPerPublication: 0,
+      legacyIdentityScansAvoided: 0,
       targetIdentityScans: 0,
       targetIdentityRowsScanned: 0,
       targetIdentityCellsRead: 0,
@@ -1149,6 +1195,8 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     var compatibleSource = !!state && (
       (sourceVersion === '4.0-alpha74-gate5-state-8' &&
         sourceRelease === '4.0.0-alpha.7.4.10') ||
+      (sourceVersion === '4.0-alpha74-gate5-state-9' &&
+        sourceRelease === '4.0.0-alpha.7.4.11') ||
       (sourceVersion === STATE_SCHEMA_VERSION && sourceRelease === RELEASE)
     );
     var atLogicalBoundary = !work && Number(state && state.aggregateSeriesCursor || 0) === 0;
@@ -1174,7 +1222,9 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       mode: eligible
         ? sourceRelease === '4.0.0-alpha.7.4.10'
           ? 'STOPPED_ALPHA7410_FAST_TARGET_SCAN_ADOPTION'
-          : 'STOPPED_ALPHA7411_FAST_TARGET_SCAN_RESUME'
+          : sourceRelease === '4.0.0-alpha.7.4.11'
+            ? 'STOPPED_ALPHA7411_ADAPTIVE_WINDOW_ADOPTION'
+            : 'STOPPED_ALPHA7412_ADAPTIVE_WINDOW_RESUME'
         : '',
       triggerCount: Number(triggerCount || 0),
       groupIndex: Number(state && state.replayGroupIndex || 0),
@@ -1213,7 +1263,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         : periodIdentityIncident.eligible
           ? 'DURABLE_PERIOD_IDENTITY_REPAIR_RESUME'
           : performanceResume.eligible
-            ? 'DURABLE_FAST_TARGET_SCAN_RESUME'
+            ? 'DURABLE_ADAPTIVE_WINDOW_RESUME'
           : 'DURABLE_AGGREGATE_BATCH_RESUME',
       canonicalReplayRecovery: priorCanonicalRecovery,
       durableAggregateBatchResume: {
@@ -1267,7 +1317,10 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     }
     if (duplicateIncident.eligible) resumedMetrics.exactDuplicateRecoveryAdoptions += 1;
     if (periodIdentityIncident.eligible) resumedMetrics.periodIdentityRecoveryAdoptions += 1;
-    if (performanceResume.eligible) resumedMetrics.performanceRecoveryAdoptions += 1;
+    if (performanceResume.eligible) {
+      resumedMetrics.performanceRecoveryAdoptions += 1;
+      resumedMetrics.adaptiveWindowRecoveryAdoptions += 1;
+    }
     return state;
   }
 
@@ -1691,6 +1744,18 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     }
     aggregateMetrics.replayAggregatePublicationSteps += 1;
     aggregateMetrics.replayAggregateSeriesPublished += batch.seriesCount;
+    aggregateMetrics.adaptivePublicationWindows += 1;
+    aggregateMetrics.adaptivePublicationSeries += batch.seriesCount;
+    aggregateMetrics.adaptivePublicationFitEvaluations += Number(batch.fitEvaluations || 0);
+    if (batch.limitReduced) aggregateMetrics.adaptivePublicationLimitReductions += 1;
+    aggregateMetrics.maximumSeriesPerPublication = Math.max(
+      Number(aggregateMetrics.maximumSeriesPerPublication || 0),
+      Number(batch.seriesCount || 0)
+    );
+    aggregateMetrics.legacyIdentityScansAvoided += Math.max(
+      0,
+      Math.ceil(Number(batch.seriesCount || 0) / LEGACY_AGGREGATE_SERIES_BATCH) - 1
+    );
     aggregateMetrics.atomicApiCalls += Number(write.apiCalls || 0);
     aggregateMetrics.atomicRequests += Number(write.requests || 0);
     aggregateMetrics.maximumReplacementRows = Math.max(aggregateMetrics.maximumReplacementRows, Number(replacement.replacementRowCount || 0));
@@ -1711,6 +1776,9 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       seriesCursor: state.aggregateSeriesCursor,
       seriesTotal: batch.totalSeries,
       seriesPublished: batch.seriesCount,
+      candidateSeries: Number(batch.candidateSeries || 0),
+      fitEvaluations: Number(batch.fitEvaluations || 0),
+      limitReduced: batch.limitReduced === true,
       replacementRows: replacement.replacementRowCount,
       atomicApiCalls: Number(write.apiCalls || 0),
       exactDuplicateRepair: requiresPhysicalRepair,
@@ -2246,7 +2314,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
           : resumeBoundary.periodIdentityIncident && resumeBoundary.periodIdentityIncident.eligible
             ? 'Alpha.7.4 Gate 5 period-identity repair resumed from the preserved durable aggregate batch.'
             : resumeBoundary.performanceResume && resumeBoundary.performanceResume.eligible
-              ? 'Alpha.7.4 Gate 5 fast target-scan replay resumed from the preserved durable aggregate boundary.'
+              ? 'Alpha.7.4 Gate 5 adaptive publication-window replay resumed from the preserved durable aggregate boundary.'
           : 'Alpha.7.4 Gate 5 durable aggregate replay resumed from the preserved logical-series boundary.',
         {
           resumeBoundary: resumeBoundary,

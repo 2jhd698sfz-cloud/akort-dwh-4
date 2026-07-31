@@ -127,10 +127,10 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-9');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.11');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-9');
-  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-9');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-10');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.12');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-10');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-10');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
@@ -359,7 +359,7 @@ test('bounded series batch respects atomic row, cell and request limits', () => 
   assert(batch.replacement.cellCount <= 100000);
 });
 
-test('fast replay coalesces physical rows and limits the candidate series window', () => {
+test('fast replay coalesces physical rows and limits the adaptive candidate series window', () => {
   assert.deepEqual(
     Array.from(H.Test.rowBlocks([9, 3, 4, 4, 7, 8, 20])),
     [
@@ -369,14 +369,51 @@ test('fast replay coalesces physical rows and limits the candidate series window
     ]
   );
   const rows = [];
-  for (let index = 0; index < 40; index += 1) {
+  for (let index = 0; index < 160; index += 1) {
     rows.push(publishRow(`SERIES_${String(index).padStart(2, '0')}`, '2026-01-04', index));
   }
   const records = H.Test.stageRecords(rows, identity);
   const firstWindow = H.Test.candidateStageRecords(records, 0);
-  const secondWindow = H.Test.candidateStageRecords(records, 32);
-  assert.equal(A.Test.validateStageRows(firstWindow, identity).seriesCount, 32);
-  assert.equal(A.Test.validateStageRows(secondWindow, identity).seriesCount, 8);
+  const secondWindow = H.Test.candidateStageRecords(records, 128);
+  assert.equal(A.Test.validateStageRows(firstWindow, identity).seriesCount, 128);
+  assert.equal(A.Test.validateStageRows(secondWindow, identity).seriesCount, 32);
+});
+
+test('adaptive publication selects the largest prefix within frozen atomic limits', () => {
+  const rows = [];
+  for (let index = 0; index < 128; index += 1) {
+    rows.push(publishRow(`ADAPTIVE_${String(index).padStart(3, '0')}`, '2026-01-04', index));
+  }
+  const records = H.Test.stageRecords(rows, identity);
+  const batch = H.Test.fitSeriesBatch([], records, 0, {
+    maxRows: 5000,
+    maxCells: 50 * headers.length,
+    maxRequests: 500
+  });
+  assert.equal(batch.candidateSeries, 128);
+  assert.equal(batch.seriesCount, 50);
+  assert.equal(batch.nextCursor, 50);
+  assert.equal(batch.limitReduced, true);
+  assert(batch.fitEvaluations <= 9);
+  assert.equal(batch.replacement.cellCount, 50 * headers.length);
+});
+
+test('adaptive publication combines four legacy windows when limits permit', () => {
+  const rows = [];
+  for (let index = 0; index < 128; index += 1) {
+    rows.push(publishRow(`WIDE_${String(index).padStart(3, '0')}`, '2026-01-04', index));
+  }
+  const records = H.Test.stageRecords(rows, identity);
+  const batch = H.Test.fitSeriesBatch([], records, 0, {
+    maxRows: 5000,
+    maxCells: 100000,
+    maxRequests: 500
+  });
+  assert.equal(batch.candidateSeries, 128);
+  assert.equal(batch.seriesCount, 128);
+  assert.equal(batch.nextCursor, 128);
+  assert.equal(batch.limitReduced, false);
+  assert.equal(batch.fitEvaluations, 1);
 });
 
 test('fast replay scans only identity columns and fetches only affected physical rows', () => {
@@ -596,8 +633,8 @@ test('durable aggregate resume preserves the exact replay frontier and artifact'
     }
   };
   const resumed = H.Test.buildDurableResumeState(source, 'A74_GATE5_DURABLE_RESUME');
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-9');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.11');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-10');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.12');
   assert.equal(resumed.executionId, 'A74_GATE5_DURABLE_RESUME');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
@@ -666,8 +703,8 @@ test('exact triggerless legacy partial batch is adopted by replaying from combo 
     'A74_GATE5_PARTIAL_ADOPTED',
     { legacyPartialAdoption: adoption }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-9');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.11');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-10');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.12');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 150);
@@ -745,8 +782,8 @@ test('failed exact-duplicate incident preserves the durable cache for physical r
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-9');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.11');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-10');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.12');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 175);
@@ -829,8 +866,8 @@ test('terminal .9 atomic-uncertain checkpoint preserves its cached batch for per
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-9');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.11');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-10');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.12');
   assert.equal(resumed.replayItemCursor, 175);
   assert.equal(resumed.aggregateSeriesCursor, 0);
   assert.equal(resumed.aggregateBatchWork.recordCount, 875);
@@ -841,7 +878,7 @@ test('terminal .9 atomic-uncertain checkpoint preserves its cached batch for per
   assert(Buffer.byteLength(JSON.stringify(resumed), 'utf8') < 8500);
 });
 
-test('stopped .10 checkpoint adopts the fast target scan without losing a partial durable batch', () => {
+test('stopped .11 checkpoint adopts adaptive publication without losing a partial durable batch', () => {
   const source = {
     stateSchemaVersion: '4.0-alpha74-gate5-state-8',
     release: '4.0.0-alpha.7.4.10',
@@ -884,32 +921,40 @@ test('stopped .10 checkpoint adopts the fast target scan without losing a partia
   assert.equal(adoption.boundary, 'DURABLE_SERIES');
   assert.equal(adoption.preserveAggregateBatch, true);
   assert.equal(H.Test.performanceResume(source, 1).eligible, false);
-  const currentReleaseSource = JSON.parse(JSON.stringify(source));
-  currentReleaseSource.stateSchemaVersion = '4.0-alpha74-gate5-state-9';
-  currentReleaseSource.release = '4.0.0-alpha.7.4.11';
-  assert.equal(H.Test.performanceResume(currentReleaseSource, 0).eligible, true);
+  const alpha7411Source = JSON.parse(JSON.stringify(source));
+  alpha7411Source.stateSchemaVersion = '4.0-alpha74-gate5-state-9';
+  alpha7411Source.release = '4.0.0-alpha.7.4.11';
+  alpha7411Source.executionId = 'A74_GATE5_ALPHA7411_SOURCE';
+  alpha7411Source.aggregateSeriesCursor = 96;
+  alpha7411Source.aggregateBatchWork.seriesCursor = 96;
+  alpha7411Source.aggregateBatchWork.seriesCount = 282;
+  const alpha7411Adoption = H.Test.performanceResume(alpha7411Source, 0);
+  assert.equal(alpha7411Adoption.eligible, true);
+  assert.equal(alpha7411Adoption.mode, 'STOPPED_ALPHA7411_ADAPTIVE_WINDOW_ADOPTION');
+  assert.equal(alpha7411Adoption.boundary, 'DURABLE_SERIES');
   const resumed = H.Test.buildDurableResumeState(
-    source,
-    'A74_GATE5_FAST_TARGET_SCAN',
+    alpha7411Source,
+    'A74_GATE5_ADAPTIVE_WINDOW',
     {
       legacyPartialAdoption: { eligible: false },
       exactDuplicateIncident: { eligible: false },
       periodIdentityIncident: { eligible: false },
-      performanceResume: adoption
+      performanceResume: alpha7411Adoption
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-9');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.11');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-10');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.12');
   assert.equal(resumed.replayGroupIndex, 1);
   assert.equal(resumed.replayItemCursor, 25);
-  assert.equal(resumed.aggregateSeriesCursor, 64);
-  assert.equal(resumed.aggregateBatchWork.seriesCursor, 64);
-  assert.equal(resumed.recovery.mode, 'DURABLE_FAST_TARGET_SCAN_RESUME');
+  assert.equal(resumed.aggregateSeriesCursor, 96);
+  assert.equal(resumed.aggregateBatchWork.seriesCursor, 96);
+  assert.equal(resumed.recovery.mode, 'DURABLE_ADAPTIVE_WINDOW_RESUME');
   assert.equal(
     resumed.recovery.durableAggregateBatchResume.performanceResumeBoundary,
     'DURABLE_SERIES'
   );
   assert.equal(resumed.metrics.performanceRecoveryAdoptions, 1);
+  assert.equal(resumed.metrics.adaptiveWindowRecoveryAdoptions, 1);
   assert(Buffer.byteLength(JSON.stringify(resumed), 'utf8') < 8500);
 });
 
@@ -967,7 +1012,9 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(harness.includes('Sheets.Spreadsheets.Values.batchGet'));
   assert(harness.includes('DURABLE_EXACT_DUPLICATE_REPAIR_RESUME'));
   assert(harness.includes('DURABLE_PERIOD_IDENTITY_REPAIR_RESUME'));
-  assert(harness.includes('DURABLE_FAST_TARGET_SCAN_RESUME'));
+  assert(harness.includes('DURABLE_ADAPTIVE_WINDOW_RESUME'));
+  assert(harness.includes('AGGREGATE_SERIES_WINDOW = 128'));
+  assert(harness.includes('adaptivePublicationLimitReductions'));
   assert(harness.includes('REPLAY_PARTIAL_BATCH_FROM_COMBO_CURSOR'));
   const overlapBranch = harness.slice(
     harness.indexOf('if (!lock.tryLock(1000))'),
