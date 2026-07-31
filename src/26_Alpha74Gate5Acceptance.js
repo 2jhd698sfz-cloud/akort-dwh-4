@@ -10,10 +10,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * - a persistent one-minute trigger continues from a compact checkpoint.
  */
 AKORT.Alpha74Gate5Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate5-acceptance-10';
-  var RELEASE = '4.0.0-alpha.7.4.12';
-  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-10';
-  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-10';
+  var VERSION = '4.0-alpha74-gate5-acceptance-11';
+  var RELEASE = '4.0.0-alpha.7.4.13';
+  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-11';
+  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-11';
   var STATE_KEY = 'AKORT_ALPHA74_GATE5_STATE_V1';
   var STOP_REQUEST_KEY = 'AKORT_ALPHA74_GATE5_STOP_REQUEST_V1';
   var AGGREGATE_WORK_SCHEMA_VERSION = '4.0-alpha74-gate5-aggregate-work-1';
@@ -71,6 +71,26 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     'sequentialReplay'
   ]);
   var DIGEST_TARGETS = NORMALIZE_TARGETS;
+  var DURABLE_RESUME_STATE_SCHEMAS = Object.freeze([
+    '4.0-alpha74-gate5-state-4',
+    '4.0-alpha74-gate5-state-5',
+    '4.0-alpha74-gate5-state-6',
+    '4.0-alpha74-gate5-state-7',
+    '4.0-alpha74-gate5-state-8',
+    '4.0-alpha74-gate5-state-9',
+    '4.0-alpha74-gate5-state-10',
+    STATE_SCHEMA_VERSION
+  ]);
+  var DURABLE_RESUME_RELEASES = Object.freeze([
+    '4.0.0-alpha.7.4.6',
+    '4.0.0-alpha.7.4.7',
+    '4.0.0-alpha.7.4.8',
+    '4.0.0-alpha.7.4.9',
+    '4.0.0-alpha.7.4.10',
+    '4.0.0-alpha.7.4.11',
+    '4.0.0-alpha.7.4.12',
+    RELEASE
+  ]);
 
   function text_(value) {
     return value === null || value === undefined ? '' : String(value).trim();
@@ -1197,6 +1217,8 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         sourceRelease === '4.0.0-alpha.7.4.10') ||
       (sourceVersion === '4.0-alpha74-gate5-state-9' &&
         sourceRelease === '4.0.0-alpha.7.4.11') ||
+      (sourceVersion === '4.0-alpha74-gate5-state-10' &&
+        sourceRelease === '4.0.0-alpha.7.4.12') ||
       (sourceVersion === STATE_SCHEMA_VERSION && sourceRelease === RELEASE)
     );
     var atLogicalBoundary = !work && Number(state && state.aggregateSeriesCursor || 0) === 0;
@@ -1224,7 +1246,9 @@ AKORT.Alpha74Gate5Acceptance = (function () {
           ? 'STOPPED_ALPHA7410_FAST_TARGET_SCAN_ADOPTION'
           : sourceRelease === '4.0.0-alpha.7.4.11'
             ? 'STOPPED_ALPHA7411_ADAPTIVE_WINDOW_ADOPTION'
-            : 'STOPPED_ALPHA7412_ADAPTIVE_WINDOW_RESUME'
+            : sourceRelease === '4.0.0-alpha.7.4.12'
+              ? 'STOPPED_ALPHA7412_RESUME_ALLOWLIST_RECOVERY'
+              : 'STOPPED_ALPHA7413_ADAPTIVE_WINDOW_RESUME'
         : '',
       triggerCount: Number(triggerCount || 0),
       groupIndex: Number(state && state.replayGroupIndex || 0),
@@ -1324,6 +1348,14 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     return state;
   }
 
+  function durableResumeStateSchemaCompatible_(value) {
+    return DURABLE_RESUME_STATE_SCHEMAS.indexOf(text_(value)) >= 0;
+  }
+
+  function durableResumeReleaseCompatible_(value) {
+    return DURABLE_RESUME_RELEASES.indexOf(text_(value)) >= 0;
+  }
+
   function assertDurableResumeSource_(state, resources) {
     assert_(state, 'ALPHA74_GATE5_DURABLE_RESUME_STATE_MISSING', 'Gate 5 durable replay resume requires the preserved stopped checkpoint.');
     var triggerCount = triggers_().length;
@@ -1356,13 +1388,13 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       }
     );
     assert_(
-      ['4.0-alpha74-gate5-state-4', '4.0-alpha74-gate5-state-5', '4.0-alpha74-gate5-state-6', '4.0-alpha74-gate5-state-7', '4.0-alpha74-gate5-state-8', STATE_SCHEMA_VERSION].indexOf(text_(state.stateSchemaVersion)) >= 0,
+      durableResumeStateSchemaCompatible_(state.stateSchemaVersion),
       'ALPHA74_GATE5_DURABLE_RESUME_STATE_SCHEMA_INVALID',
       'Gate 5 durable replay resume cannot reuse this checkpoint schema.',
       { stateSchemaVersion: state.stateSchemaVersion || '' }
     );
     assert_(
-      ['4.0.0-alpha.7.4.6', '4.0.0-alpha.7.4.7', '4.0.0-alpha.7.4.8', '4.0.0-alpha.7.4.9', '4.0.0-alpha.7.4.10', RELEASE].indexOf(text_(state.release)) >= 0,
+      durableResumeReleaseCompatible_(state.release),
       'ALPHA74_GATE5_DURABLE_RESUME_RELEASE_INVALID',
       'Gate 5 durable replay resume cannot reuse this release.',
       { release: state.release || '' }
@@ -2502,7 +2534,9 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       legacyPartialAdoption: legacyPartialAdoption_,
       exactDuplicateIncident: exactDuplicateIncident_,
       periodIdentityIncident: periodIdentityIncident_,
-      performanceResume: performanceResume_
+      performanceResume: performanceResume_,
+      durableResumeStateSchemaCompatible: durableResumeStateSchemaCompatible_,
+      durableResumeReleaseCompatible: durableResumeReleaseCompatible_
     })
   });
 })();

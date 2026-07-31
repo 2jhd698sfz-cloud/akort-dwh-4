@@ -127,10 +127,10 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-10');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.12');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-10');
-  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-10');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-11');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.13');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-11');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-11');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
@@ -633,8 +633,8 @@ test('durable aggregate resume preserves the exact replay frontier and artifact'
     }
   };
   const resumed = H.Test.buildDurableResumeState(source, 'A74_GATE5_DURABLE_RESUME');
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-10');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.12');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-11');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.13');
   assert.equal(resumed.executionId, 'A74_GATE5_DURABLE_RESUME');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
@@ -703,8 +703,8 @@ test('exact triggerless legacy partial batch is adopted by replaying from combo 
     'A74_GATE5_PARTIAL_ADOPTED',
     { legacyPartialAdoption: adoption }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-10');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.12');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-11');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.13');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 150);
@@ -782,8 +782,8 @@ test('failed exact-duplicate incident preserves the durable cache for physical r
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-10');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.12');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-11');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.13');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 175);
@@ -866,8 +866,8 @@ test('terminal .9 atomic-uncertain checkpoint preserves its cached batch for per
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-10');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.12');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-11');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.13');
   assert.equal(resumed.replayItemCursor, 175);
   assert.equal(resumed.aggregateSeriesCursor, 0);
   assert.equal(resumed.aggregateBatchWork.recordCount, 875);
@@ -942,8 +942,8 @@ test('stopped .11 checkpoint adopts adaptive publication without losing a partia
       performanceResume: alpha7411Adoption
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-10');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.12');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-11');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.13');
   assert.equal(resumed.replayGroupIndex, 1);
   assert.equal(resumed.replayItemCursor, 25);
   assert.equal(resumed.aggregateSeriesCursor, 96);
@@ -956,6 +956,27 @@ test('stopped .11 checkpoint adopts adaptive publication without losing a partia
   assert.equal(resumed.metrics.performanceRecoveryAdoptions, 1);
   assert.equal(resumed.metrics.adaptiveWindowRecoveryAdoptions, 1);
   assert(Buffer.byteLength(JSON.stringify(resumed), 'utf8') < 8500);
+});
+
+test('durable resume schema and release allowlists include the deployed .11 checkpoint', () => {
+  assert.equal(
+    H.Test.durableResumeStateSchemaCompatible('4.0-alpha74-gate5-state-9'),
+    true
+  );
+  assert.equal(
+    H.Test.durableResumeReleaseCompatible('4.0.0-alpha.7.4.11'),
+    true
+  );
+  assert.equal(
+    H.Test.durableResumeStateSchemaCompatible('4.0-alpha74-gate5-state-10'),
+    true
+  );
+  assert.equal(
+    H.Test.durableResumeReleaseCompatible('4.0.0-alpha.7.4.12'),
+    true
+  );
+  assert.equal(H.Test.durableResumeStateSchemaCompatible('UNKNOWN_STATE'), false);
+  assert.equal(H.Test.durableResumeReleaseCompatible('UNKNOWN_RELEASE'), false);
 });
 
 test('repository wiring protects live Publish and exposes trigger-driven entrypoints', () => {

@@ -191,7 +191,7 @@ AKORT.Alpha4Tests = (function () {
 
   function runContract_(state, config, dwh) {
     var contract = test_('raw_store_contract', function () {
-      require_(['4.0.0-alpha.4', '4.0.0-alpha.5', '4.0.0-alpha.6', '4.0.0-alpha.6.2.4', '4.0.0-alpha.7.4', '4.0.0-alpha.7.4.1', '4.0.0-alpha.7.4.2', '4.0.0-alpha.7.4.3', '4.0.0-alpha.7.4.4', '4.0.0-alpha.7.4.5', '4.0.0-alpha.7.4.6', '4.0.0-alpha.7.4.7', '4.0.0-alpha.7.4.8', '4.0.0-alpha.7.4.9', '4.0.0-alpha.7.4.10', '4.0.0-alpha.7.4.11', '4.0.0-alpha.7.4.12'].indexOf(AKORT.Release.version) >= 0,
+      require_(['4.0.0-alpha.4', '4.0.0-alpha.5', '4.0.0-alpha.6', '4.0.0-alpha.6.2.4', '4.0.0-alpha.7.4', '4.0.0-alpha.7.4.1', '4.0.0-alpha.7.4.2', '4.0.0-alpha.7.4.3', '4.0.0-alpha.7.4.4', '4.0.0-alpha.7.4.5', '4.0.0-alpha.7.4.6', '4.0.0-alpha.7.4.7', '4.0.0-alpha.7.4.8', '4.0.0-alpha.7.4.9', '4.0.0-alpha.7.4.10', '4.0.0-alpha.7.4.11', '4.0.0-alpha.7.4.12', '4.0.0-alpha.7.4.13'].indexOf(AKORT.Release.version) >= 0,
         'RELEASE_VERSION_MISMATCH', 'Unexpected release version for alpha.4 compatibility regression.');
       require_(AKORT.Release.rawSchemaVersion === '4.0-raw-1',
         'RAW_SCHEMA_VERSION_MISMATCH', 'Unexpected RAW schema version.');

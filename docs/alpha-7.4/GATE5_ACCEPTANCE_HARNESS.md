@@ -207,6 +207,12 @@ publication window:
 - stopped `.11 / state-9` checkpoint продолжается в режиме
   `DURABLE_ADAPTIVE_WINDOW_RESUME`.
 
+Release `4.0.0-alpha.7.4.13` добавляет `.11 / state-9` в финальный
+schema/release allowlist `assertDurableResumeSource_`. Fail-closed `.12`
+resume не изменил checkpoint или workbook; продолжение выполняется с
+group 1, combo cursor 300 и series cursor 256. Regression suite проверяет
+как recovery-классификатор, так и финальные allowlist helpers.
+
 Контракт и runbook описаны в
 `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md` и
 `GATE5_FAST_TARGET_SCAN_HOTFIX.md`.
@@ -292,7 +298,7 @@ livePublishPhysicalWrites = 0
 - все RAW replay validation rows имеют `PASS`;
 - `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-10`;
+  `4.0-alpha74-gate5-evidence-11`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
@@ -333,3 +339,5 @@ Performance resume `.10 → .11` выполняется по
 `GATE5_FAST_TARGET_SCAN_HOTFIX.md`.
 Adaptive resume `.11 → .12` выполняется по
 `GATE5_ADAPTIVE_PUBLICATION_WINDOW_HOTFIX.md`.
+Фактический DEV resume после allowlist incident выполняется release `.13`
+по `GATE5_RESUME_ALLOWLIST_HOTFIX.md`.

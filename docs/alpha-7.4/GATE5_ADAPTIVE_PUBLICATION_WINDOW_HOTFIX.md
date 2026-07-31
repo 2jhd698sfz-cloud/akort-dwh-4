@@ -1,5 +1,10 @@
 # Alpha.7.4 Gate 5 adaptive publication-window hotfix
 
+> Deployment note: adaptive algorithm впервые зафиксирован в `.12`, но
+> фактический DEV resume выполняется release `.13` после исправления
+> финального schema/release allowlist. Актуальная последовательность:
+> `GATE5_RESUME_ALLOWLIST_HOTFIX.md`.
+
 ## 1. Назначение
 
 Release `4.0.0-alpha.7.4.12` сокращает число full target identity scans в

@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 4 ACCEPTED / GATE 5 ADAPTIVE PUBLICATION-WINDOW HOTFIX READY / DURABLE RESUME PENDING / REGULAR PIPELINE PROHIBITED`
+`GATE 4 ACCEPTED / GATE 5 RESUME ALLOWLIST HOTFIX READY / DURABLE RESUME PENDING / REGULAR PIPELINE PROHIBITED`
 
 Дата фиксации: 31 июля 2026 года.
 
@@ -68,6 +68,9 @@
 - `GATE5_ADAPTIVE_PUBLICATION_WINDOW_HOTFIX.md` — adaptive окно до 128
   logical series, максимальный безопасный prefix под frozen atomic limits и
   продолжение `.11 / state-9` checkpoint без повторения completed work.
+- `GATE5_RESUME_ALLOWLIST_HOTFIX.md` — исправление финального schema/release
+  allowlist после fail-closed `.12` resume и продолжение сохранённой точки
+  `.11 / state-9 / group 1 / combo 300 / series 256`.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -187,6 +190,12 @@ cells / 500 requests. Cursor передвигается только после 
 unique appended-tail read-back. Вручную остановленный `.11 / state-9`
 checkpoint продолжается без нового full build, replay workbook или
 aggregate calculation в режиме `DURABLE_ADAPTIVE_WINDOW_RESUME`.
+
+Release `4.0.0-alpha.7.4.13` исправляет отдельный финальный allowlist,
+который в `.12` отклонил уже корректно классифицированный `.11 / state-9`
+checkpoint. Ошибка произошла до mutation и trigger creation. `.13`
+продолжает тот же workbook с group 1, combo cursor 300 и series cursor 256;
+adaptive publication и atomic limits не изменяются.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

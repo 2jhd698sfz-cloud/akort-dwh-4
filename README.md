@@ -6,7 +6,7 @@ Apps Script data pipeline for the AKORT analytical system.
 
 Active milestone: **Alpha.7.4 — Aggregate Integration into Existing Operation Engine**.
 
-Status: `GATE 4 ACCEPTED / GATE 5 ADAPTIVE PUBLICATION-WINDOW HOTFIX READY / CURSOR-PRESERVING RESUME PENDING / REGULAR PIPELINE PROHIBITED`.
+Status: `GATE 4 ACCEPTED / GATE 5 RESUME ALLOWLIST HOTFIX READY / CURSOR-PRESERVING RESUME PENDING / REGULAR PIPELINE PROHIBITED`.
 
 Accepted base:
 
