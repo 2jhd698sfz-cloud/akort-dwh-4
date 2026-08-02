@@ -93,10 +93,13 @@ release_version
 7. Alpha.7.4.23 применяет тот же обязательный bounded-work принцип ко всем
    следующим тяжёлым фазам: materialization, stage validation/status,
    logical-series publication, latest, reconciliation и finalization.
-8. Полный ожидаемый affected-set сохраняется в `AGGREGATE_STAGE`.
-9. Publish adapter заменяет логические агрегатные серии в `PUBLISH_PRICE_AGGREGATES`.
-10. Read-back подтверждает keys, hashes, latest и отсутствие изменений вне affected-set.
-11. Reconciliation разрешает переход к `UPDATE_STATUS`, `QUICK_AUDIT`, `FINALIZING`, `SUCCESS`.
+8. Alpha.7.4.24 распознаёт только точный lost-response boundary между
+   завершённой записью `STAGED` и ещё не созданным publish intent, проверяет
+   immutable stage snapshot и возвращает operation в bounded execution.
+9. Полный ожидаемый affected-set сохраняется в `AGGREGATE_STAGE`.
+10. Publish adapter заменяет логические агрегатные серии в `PUBLISH_PRICE_AGGREGATES`.
+11. Read-back подтверждает keys, hashes, latest и отсутствие изменений вне affected-set.
+12. Reconciliation разрешает переход к `UPDATE_STATUS`, `QUICK_AUDIT`, `FINALIZING`, `SUCCESS`.
 
 ## 5. Checkpoint ownership
 

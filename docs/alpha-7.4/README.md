@@ -2,9 +2,9 @@
 
 ## Статус
 
-`GATE 5 ACCEPTED / GATE 6 BOUNDED-PHASE CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`
+`GATE 5 ACCEPTED / GATE 6 STAGED AFTER-STATE RECOVERY READY / USER PIPELINE PROHIBITED`
 
-Дата фиксации: 2 августа 2026 года.
+Дата фиксации: 3 августа 2026 года.
 
 Активная GitHub-ветка: `codex/alpha-7.4-integration-reset`.
 
@@ -50,6 +50,9 @@
 - `GATE6_BOUNDED_AGGREGATE_PHASES_HOTFIX.md` — обязательный bounded-work
   контракт всех тяжёлых aggregate phases и exact продолжение остановленного
   `.22 / STAGING_AGGREGATE_ROWS` checkpoint без повторного расчёта.
+- `GATE6_STAGED_AFTER_STATE_RECOVERY_HOTFIX.md` — exact recovery потерянного
+  ответа `.22`, когда все 392 строки уже `STAGED`, но publish intent и
+  физическая публикация ещё не начались.
 - `INDUSTRY_INPUT_FORM.md` — операторская форма для раздельного ввода периода
   и значения активных `RAW_INDUSTRY` серий через `RAW_LOAD_V4`.
 - `GATE5_FULL_BUILD_CHUNKING_HOTFIX.md` — разбор timeout-loop

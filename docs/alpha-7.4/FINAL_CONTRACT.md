@@ -66,6 +66,10 @@
     weekly/monthly frequency.
 12. Физическая публикация может делиться только между полными логическими
     сериями; одна серия никогда не делится между atomic commits.
+13. Lost-response между stage-status write и operation checkpoint может быть
+    принят только как exact after-state: все строки однородно `STAGED`, scope,
+    schema и fingerprints валидны, а publish intents, target fingerprints и
+    `verified_at` отсутствуют. Смешанный или третий state остаётся fail-closed.
 
 ## 5. Operation phases
 

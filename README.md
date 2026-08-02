@@ -6,7 +6,7 @@ Apps Script data pipeline for the AKORT analytical system.
 
 Active milestone: **Alpha.7.4 — Aggregate Integration into Existing Operation Engine**.
 
-Status: `GATE 5 ACCEPTED / GATE 6 BOUNDED-PHASE CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`.
+Status: `GATE 5 ACCEPTED / GATE 6 STAGED AFTER-STATE RECOVERY READY / USER PIPELINE PROHIBITED`.
 
 Accepted base:
 
@@ -37,10 +37,10 @@ The local Alpha.7.4 implementation includes durable staging, bounded calculation
 
 Gate 6 may enable the regular aggregate pipeline only inside its controlled harness. General operator submission remains prohibited until Gate 7 through `PUBLISH_USER_PIPELINE_ENABLED=FALSE`.
 
-Release `4.0.0-alpha.7.4.23` makes bounded work an invariant of every heavy
-aggregate phase: materialization, stage validation, publication, latest,
-reconciliation and finalization all use durable cursors and fixed per-step
-limits. It resumes the exact stopped `.22` Gate 6 checkpoint from
-`STAGING_AGGREGATE_ROWS`, preserving RAW, ordinary price Publish,
-materialization and all 392 completed aggregate calculations. Runbook:
-[`GATE6_BOUNDED_AGGREGATE_PHASES_HOTFIX.md`](docs/alpha-7.4/GATE6_BOUNDED_AGGREGATE_PHASES_HOTFIX.md).
+Release `4.0.0-alpha.7.4.24` preserves the mandatory bounded-work contract and
+recognizes the exact lost-response after-state left by `.22`: all 392 rows are
+already `STAGED`, while publish intents and target fingerprints remain empty.
+It validates plan scope, payload schema, logical keys and row fingerprints,
+then resumes the same operation without repeating RAW, ordinary price Publish,
+materialization or aggregate calculation. Runbook:
+[`GATE6_STAGED_AFTER_STATE_RECOVERY_HOTFIX.md`](docs/alpha-7.4/GATE6_STAGED_AFTER_STATE_RECOVERY_HOTFIX.md).

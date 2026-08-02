@@ -12,10 +12,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * it has no aggregate impact under the frozen Alpha.7.4 contract.
  */
 AKORT.Alpha74Gate6Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate6-acceptance-5';
+  var VERSION = '4.0-alpha74-gate6-acceptance-6';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate6-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate6-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.23';
+  var RELEASE = '4.0.0-alpha.7.4.24';
   var BASELINE_HEADER_INCIDENT_RELEASE = '4.0.0-alpha.7.4.19';
   var RUNTIME_CONTEXT_INCIDENT_RELEASE = '4.0.0-alpha.7.4.20';
   var MONOLITHIC_STAGE_INCIDENT_RELEASE = '4.0.0-alpha.7.4.22';
@@ -1300,6 +1300,23 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
   }
 
+  function stageRecoveryBoundary_(rows) {
+    var stageRows = rows || [];
+    if (!stageRows.length) return '';
+    var statuses = {};
+    for (var index = 0; index < stageRows.length; index += 1) {
+      var row = stageRows[index] || {};
+      statuses[text_(row.stage_status)] = true;
+      if (text_(row.expected_target_fingerprint) || text_(row.verified_at) ||
+          text_(row.release_version) !== MONOLITHIC_STAGE_INCIDENT_RELEASE) return '';
+    }
+    var values = Object.keys(statuses);
+    if (values.length !== 1) return '';
+    if (values[0] === 'CALCULATED') return 'BEFORE_STAGE_STATUS_WRITE';
+    if (values[0] === 'STAGED') return 'AFTER_STAGE_STATUS_WRITE_LOST_RESPONSE';
+    return '';
+  }
+
   function recoverRuntimeContextIncident() {
     return AKORT.Core.safeRun('ALPHA74_GATE6_RECOVER_RUNTIME_CONTEXT', function () {
       AKORT.EnvironmentGuard.assertDev();
@@ -1431,6 +1448,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       var activeOperationId = text_(state && state.operations && state.operations.canary);
       var activeOperation = activeOperationId ? operation_(activeOperationId) : null;
       var monolithicStageIncident = monolithicStageIncident_(state, activeOperation);
+      var monolithicStageRecovery = null;
       var manuallyStopped = state && state.status === 'STOPPED' && text_(state.stoppedFromPhase);
       assert_(baselineIncident || manuallyStopped,
         'ALPHA74_GATE6_RESUME_STATE_INVALID', 'Gate 6 Resume requires a manually stopped checkpoint or the exact Alpha.7.4.19 baseline-header incident.', {
@@ -1466,9 +1484,9 @@ AKORT.Alpha74Gate6Acceptance = (function () {
           return text_(row.action) === 'PUBLISH_INTENT';
         });
         var expectedCalculatedRows = Number(activeOperation.checkpoint.aggregate.calculationGroupCount || 0);
-        assert_(calculatedRows.length === expectedCalculatedRows && publishIntents.length === 0 && calculatedRows.every(function (row) {
-          return text_(row.stage_status) === 'CALCULATED';
-        }), 'ALPHA74_GATE6_MONOLITHIC_STAGE_RECOVERY_BOUNDARY_INVALID', 'The stopped canary no longer matches the verified pre-staging durable boundary.', {
+        var stageRecoveryBoundary = stageRecoveryBoundary_(calculatedRows);
+        assert_(calculatedRows.length === expectedCalculatedRows && publishIntents.length === 0 && !!stageRecoveryBoundary,
+          'ALPHA74_GATE6_MONOLITHIC_STAGE_RECOVERY_BOUNDARY_INVALID', 'The stopped canary no longer matches a verified bounded staging recovery boundary.', {
           operationId: activeOperationId,
           expectedCalculatedRows: expectedCalculatedRows,
           actualCalculatedRows: calculatedRows.length,
@@ -1477,6 +1495,28 @@ AKORT.Alpha74Gate6Acceptance = (function () {
             return values.indexOf(value) === index;
           })
         });
+        assert_(AKORT.AggregateIntegration && typeof AKORT.AggregateIntegration.validateRecoveryStageSnapshot === 'function',
+          'ALPHA74_GATE6_STAGE_VALIDATOR_UNAVAILABLE', 'Exact aggregate stage recovery validator is unavailable.', {});
+        var aggregateCheckpoint = activeOperation.checkpoint.aggregate || {};
+        var stageValidation = AKORT.AggregateIntegration.validateRecoveryStageSnapshot(calculatedRows, {
+          operationId: activeOperationId,
+          loadId: operationLoadId_(activeOperation),
+          planId: text_(aggregateCheckpoint.planId),
+          planFingerprint: text_(aggregateCheckpoint.planFingerprint)
+        });
+        assert_(stageValidation.complete === true && Number(stageValidation.rowCount || 0) === expectedCalculatedRows,
+          'ALPHA74_GATE6_STAGE_SNAPSHOT_VALIDATION_INCOMPLETE', 'The recovered aggregate stage snapshot did not pass exact bounded validation.', {
+            expectedRows: expectedCalculatedRows,
+            actualRows: Number(stageValidation.rowCount || 0),
+            complete: stageValidation.complete === true
+          });
+        monolithicStageRecovery = {
+          boundary: stageRecoveryBoundary,
+          rowCount: Number(stageValidation.rowCount || 0),
+          seriesCount: Number(stageValidation.seriesCount || 0),
+          stageFingerprint: text_(stageValidation.stageFingerprint),
+          adoptedStageStatusAfterLostResponse: stageRecoveryBoundary === 'AFTER_STAGE_STATUS_WRITE_LOST_RESPONSE'
+        };
       }
       assertNoForeignDataOperations_(state);
       var inspected = AKORT.ExistingSourceParsers.inspectFile(state.canarySource.fileId, {
@@ -1507,8 +1547,10 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         state.failedFromPhase = '';
       }
       if (monolithicStageIncident) {
+        var stageRecoveryMode = monolithicStageRecovery.adoptedStageStatusAfterLostResponse ?
+          'BOUNDED_STAGE_AFTER_STATE_RECOVERY' : 'BOUNDED_AGGREGATE_PHASE_CHECKPOINT_RECOVERY';
         state.recovery = {
-          mode: 'BOUNDED_AGGREGATE_PHASE_CHECKPOINT_RECOVERY',
+          mode: stageRecoveryMode,
           recoveredFromRelease: state.release,
           recoveredFromExecutionId: state.executionId,
           recoveredAt: now_(),
@@ -1522,6 +1564,12 @@ AKORT.Alpha74Gate6Acceptance = (function () {
           repeatedRawCommit: false,
           repeatedPricePublish: false,
           repeatedAggregateCalculation: false,
+          physicalAggregatePublishStarted: false,
+          stageRecoveryBoundary: monolithicStageRecovery.boundary,
+          validatedStageRows: monolithicStageRecovery.rowCount,
+          validatedStageSeries: monolithicStageRecovery.seriesCount,
+          validatedStageFingerprint: monolithicStageRecovery.stageFingerprint,
+          adoptedStageStatusAfterLostResponse: monolithicStageRecovery.adoptedStageStatusAfterLostResponse,
           boundedWorkSchemaVersion: '4.0-aggregate-bounded-work-1',
           previousRecovery: clone_(state.recovery || null)
         };
@@ -1540,7 +1588,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         resumePhase: resumePhase,
         resumedAt: now_(),
         recoveryMode: baselineIncident ? 'BASELINE_HEADER_CONTRACT_RECOVERY' :
-          monolithicStageIncident ? 'BOUNDED_AGGREGATE_PHASE_CHECKPOINT_RECOVERY' : 'MANUAL_STOP_RESUME'
+          monolithicStageIncident ? state.recovery.mode : 'MANUAL_STOP_RESUME'
       };
       saveState_(state);
       writeValidation_('GATE 6 ВОЗОБНОВЛЁН', { executionId: state.executionId, phase: resumePhase });
@@ -1717,6 +1765,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       baselineHeaderIncident: baselineHeaderIncident_,
       runtimeContextIncident: runtimeContextIncident_,
       monolithicStageIncident: monolithicStageIncident_,
+      stageRecoveryBoundary: stageRecoveryBoundary_,
       normalizedJsonSetting: normalizedJsonSetting_,
       compareDigests: compareDigests_,
       changedTargets: changedTargets_,

@@ -1,5 +1,13 @@
 # Alpha.7.4.23 — bounded aggregate phases hotfix
 
+> Актуализация `.24`: первый `.23` Resume обнаружил, что старый `.22` уже
+> записал `STAGED` для всех 392 строк, но не сохранил operation checkpoint.
+> Это точный lost-response after-state без publish intents и target mutation.
+> Его отдельный exact recovery описан в
+> `GATE6_STAGED_AFTER_STATE_RECOVERY_HOTFIX.md`; требование `.23` о статусе
+> `CALCULATED` относится только к before-state и не должно применяться к
+> подтверждённому after-state.
+
 ## Инцидент
 
 Gate 6 execution `A74_GATE6_7F437567A3ABBFBE94F1` был безопасно остановлен

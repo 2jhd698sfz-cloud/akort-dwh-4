@@ -113,7 +113,7 @@ function seriesTarget(seriesId, period, rowNumber) {
 }
 
 test('A74 metadata and schemas are exact', () => {
-  assert.equal(A.Version, '4.0-aggregate-integration-2');
+  assert.equal(A.Version, '4.0-aggregate-integration-3');
   assert.equal(A.OperationSchemaVersion, '4.0-operation-2');
   assert.deepEqual(Array.from(A.Phases), [
     'PREPARING_AGGREGATE_IMPACT',
@@ -226,6 +226,20 @@ test('large stage validation advances only by its durable row budget', () => {
   assert.equal(third.cursor, 235);
   assert.equal(third.complete, true);
   assert.equal(first.stageFingerprint, third.stageFingerprint);
+});
+
+test('Gate 6 recovery snapshot validator is exact and synchronously bounded', () => {
+  const rows = [];
+  for (let index = 0; index < 392; index += 1) {
+    rows.push(seriesStage(`RECOVERY_${index}`, '2026-01-08'));
+  }
+  const validation = A.validateRecoveryStageSnapshot(rows, identity());
+  assert.equal(validation.complete, true);
+  assert.equal(validation.rowCount, 392);
+  assert.throws(
+    () => A.validateRecoveryStageSnapshot(new Array(501).fill(rows[0]), identity()),
+    error => error.code === 'AGGREGATE_RECOVERY_STAGE_SNAPSHOT_TOO_LARGE'
+  );
 });
 
 test('full logical-series replacement retains unaffected periods and updates latest atomically', () => {
@@ -591,7 +605,7 @@ test('repository wiring removes deferred executor and hard-coded write probes', 
   assert(release.includes("'AGGREGATE_STAGE'"));
   assert(release.includes("'FINALIZING'"));
   assert(release.includes("'24_Alpha74Gate3Acceptance.js'"));
-  assert(release.includes("version: '4.0.0-alpha.7.4.23'"));
+  assert(release.includes("version: '4.0.0-alpha.7.4.24'"));
   assert(release.includes('durable bounded work'));
   const boundedSettings = [
     'PUBLISH_AGGREGATE_MATERIALIZATION_COMBOS_PER_STEP',

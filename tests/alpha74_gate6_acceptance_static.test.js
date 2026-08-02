@@ -91,8 +91,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-5');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.23');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-6');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.24');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -259,6 +259,21 @@ test('exact stopped Alpha.7.4.22 pre-staging checkpoint is eligible for bounded 
   assert.equal(G.Test.monolithicStageIncident(state, afterPublication), false);
 });
 
+test('Gate 6 recognizes only exact uniform before/after stage-status recovery boundaries', () => {
+  const row = status => ({
+    stage_status: status,
+    expected_target_fingerprint: '',
+    verified_at: '',
+    release_version: '4.0.0-alpha.7.4.22'
+  });
+  assert.equal(G.Test.stageRecoveryBoundary([row('CALCULATED'), row('CALCULATED')]), 'BEFORE_STAGE_STATUS_WRITE');
+  assert.equal(G.Test.stageRecoveryBoundary([row('STAGED'), row('STAGED')]), 'AFTER_STAGE_STATUS_WRITE_LOST_RESPONSE');
+  assert.equal(G.Test.stageRecoveryBoundary([row('CALCULATED'), row('STAGED')]), '');
+  assert.equal(G.Test.stageRecoveryBoundary([{ ...row('STAGED'), expected_target_fingerprint: 'TARGET_FP' }]), '');
+  assert.equal(G.Test.stageRecoveryBoundary([{ ...row('STAGED'), verified_at: '2026-08-02T00:00:00.000Z' }]), '');
+  assert.equal(G.Test.stageRecoveryBoundary([{ ...row('STAGED'), release_version: '4.0.0-alpha.7.4.24' }]), '');
+});
+
 test('control sheet accepts a Drive file ID or URL and rejects arbitrary text', () => {
   const fileId = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
   assert.equal(G.Test.parseFileId(fileId), fileId);
@@ -347,6 +362,8 @@ test('source contract contains source-file canary, recovery copies, standard rol
   assert(source.includes('AKORT.IncrementalPublish.PublishHeaders'));
   assert(source.includes('BASELINE_HEADER_CONTRACT_RECOVERY'));
   assert(source.includes('OPERATIONAL_RUNTIME_CONTEXT_CHECKPOINT_RECOVERY'));
+  assert(source.includes('BOUNDED_STAGE_AFTER_STATE_RECOVERY'));
+  assert(source.includes('validateRecoveryStageSnapshot'));
   assert(source.includes('AKORT.OperationEngine.recoverFailedPhase'));
   assert(aggregate.includes("text_(context.accepted_by) !== 'ALPHA74_GATE5_FULL_HISTORY_PARITY'"));
   assert(aggregate.includes("text_(context.mutation_boundary) !== 'ALPHA74_ATOMIC_LOGICAL_SERIES'"));

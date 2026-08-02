@@ -8,8 +8,8 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * reconciliation. The default adapter is the only physical-write boundary.
  */
 AKORT.AggregateIntegration = (function () {
-  var VERSION = '4.0-aggregate-integration-2';
-  var RELEASE = '4.0.0-alpha.7.4.23';
+  var VERSION = '4.0-aggregate-integration-3';
+  var RELEASE = '4.0.0-alpha.7.4.24';
   var OPERATION_SCHEMA_VERSION = '4.0-operation-2';
   var STAGE_SCHEMA_VERSION = '4.0-aggregate-stage-1';
   var TARGET_SHEET = 'PUBLISH_PRICE_AGGREGATES';
@@ -812,6 +812,23 @@ AKORT.AggregateIntegration = (function () {
   function validateStageRows(stageRows, identity) {
     var rows = stageRows || [];
     return validateStageRowsChunk_(rows, identity, 0, Math.max(1, rows.length));
+  }
+
+  /**
+   * Recovery-only exact validation for the verified Gate 6 lost-response
+   * incident. The hard ceiling keeps this synchronous diagnostic bounded;
+   * ordinary operation execution always uses validateStageRowsChunk_.
+   */
+  function validateRecoveryStageSnapshot(stageRows, identity) {
+    var rows = stageRows || [];
+    if (rows.length > 500) {
+      throw error_('AGGREGATE_RECOVERY_STAGE_SNAPSHOT_TOO_LARGE', 'Recovery stage snapshot exceeds the bounded synchronous validation ceiling.', {
+        retryable: false,
+        rows: rows.length,
+        maximumRows: 500
+      });
+    }
+    return validateStageRows(rows, identity);
   }
 
   function assertValidatedStageSnapshot_(stageRows, identity, state) {
@@ -3368,6 +3385,7 @@ AKORT.AggregateIntegration = (function () {
     planRequestReadOnly: planRequestReadOnly,
     operationalRuntimeContextStatus: operationalRuntimeContextStatus,
     assertOperationalRuntimeContext: assertOperationalRuntimeContext_,
+    validateRecoveryStageSnapshot: validateRecoveryStageSnapshot,
     statusSummary: statusSummary,
     Gate4: Object.freeze({
       atomicReplaceIsolated: gate4AtomicReplaceIsolated_

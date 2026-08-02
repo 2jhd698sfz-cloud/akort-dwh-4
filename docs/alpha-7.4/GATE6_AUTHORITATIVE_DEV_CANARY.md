@@ -175,6 +175,17 @@ operation/data-plane изменений не произошло. Установ�
 Validate и `Gate6RecoverRuntimeContext` запрещены. Подробности:
 `GATE6_BOUNDED_AGGREGATE_PHASES_HOTFIX.md`.
 
+Если первый Resume на `.23` вернул
+`ALPHA74_GATE6_MONOLITHIC_STAGE_RECOVERY_BOUNDARY_INVALID` и показал
+`actualCalculatedRows=392`, `publishIntents=0`, `statuses=[STAGED]`, это
+точный lost-response after-state старого `.22`, а не начало физической
+aggregate publication. Установить `.24`, выполнить общий Install, включить
+только aggregate execution flag, выполнить smoke test, contract scan и Status,
+затем один раз обычный `AKORT_alpha74Gate6Resume()`. Не выполнять Gate6 Start,
+Install, Validate или runtime-context recovery. Ожидаемый mode:
+`BOUNDED_STAGE_AFTER_STATE_RECOVERY`. Подробности:
+`GATE6_STAGED_AFTER_STATE_RECOVERY_HOTFIX.md`.
+
 Экстренная остановка: `AKORT_alpha74Gate6Stop()`. Она сохраняет исходную фазу,
 operation IDs, digest cursors и recovery-копии. После проверки причины тот же
 execution можно продолжить функцией `AKORT_alpha74Gate6Resume()`; новые копии и
