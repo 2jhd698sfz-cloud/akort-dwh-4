@@ -118,6 +118,13 @@ worker executions снова завершились hard-timeout без изме
 category-level rows декабрьского блока расширялись до canonical dedup.
 Release `7.4.15` дедуплицирует aggregate descriptors до production expansion
 и продолжает тот же `.14 / state-12` item inventory с cursor 4500.
+Execution `.15` после завершения всех 12 groups подтвердил RAW, aggregate,
+quota и live-unchanged acceptance, но получил `exact=false` на финальном
+digest из-за legacy aggregate IDs, Sheets date cells, latest-index coercion и
+физического порядка строк. Release `7.4.16` исправляет эти контракты и
+повторно использует готовые full/replay artifacts через
+`AKORT_alpha74Gate5RecoverReconciliation()`. Новый full build и replay groups
+не запускаются.
 Чек-лист остаётся открытым до
 terminal `SUCCESS`, exact reconciliation и проверки JSON evidence.
 Regular pipeline остаётся выключенным.

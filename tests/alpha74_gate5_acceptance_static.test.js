@@ -127,10 +127,10 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-13');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.15');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-13');
-  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-13');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-14');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.16');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-14');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-14');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
@@ -193,6 +193,50 @@ test('blank price-level RAW index expands to canonical aggregate index types', (
   )).sort();
   assert.deepEqual(weeklyTypes, ['december', 'wow', 'yoy']);
   assert.deepEqual(monthlyTypes, ['december', 'mom', 'yoy']);
+});
+
+test('incremental aggregate identifiers reuse the established full-build identity', () => {
+  function formatDate(value, _timezone, pattern) {
+    const date = value instanceof Date ? value : new Date(value);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return pattern === 'yyyy-MM' ? `${year}-${month}` : `${year}-${month}-${day}`;
+  }
+  function computeDigest(_algorithm, value) {
+    return Array.from(crypto.createHash('sha256').update(String(value)).digest()).map(byte => byte > 127 ? byte - 256 : byte);
+  }
+  const incrementalContext = vm.createContext({
+    console, JSON, Date, Math, Object, Array, String, Number, Boolean,
+    RegExp, Error, isFinite, parseInt,
+    Utilities: {
+      formatDate,
+      computeDigest,
+      DigestAlgorithm: { SHA_256: 'SHA_256' },
+      Charset: { UTF_8: 'UTF_8' }
+    },
+    AKORT: {}
+  });
+  vm.runInContext(
+    fs.readFileSync(path.join(root, 'src/07_IncrementalPublish.js'), 'utf8'),
+    incrementalContext,
+    { filename: 'src/07_IncrementalPublish.js' }
+  );
+  const canonicalId = incrementalContext.AKORT.IncrementalPublish.Test.canonicalAggregateId;
+  const suffix = value => sha(value).slice(0, 20).toUpperCase();
+  assert.equal(canonicalId({
+    dataset_code: 'AKORT_WEEKLY', frequency: 'weekly', aggregate_level: 'category',
+    category_id: 'C1', value_type: 'розница', index_type: 'wow', period_start: '2026-01-04'
+  }), `AGG_CAT_${suffix('AKORT_WEEKLY|weekly|розница|wow|C1')}`);
+  assert.equal(canonicalId({
+    dataset_code: 'AKORT_WEEKLY', frequency: 'weekly', aggregate_level: 'group',
+    aggregate_name: 'Молочные продукты', product_group: 'Молочные продукты',
+    value_type: 'розница', index_type: 'wow', period_start: '2026-01-04'
+  }), `AGG_${suffix('AKORT_WEEKLY|weekly|розница|wow|2026-01-04|group|Молочные продукты')}`);
+  assert.equal(canonicalId({
+    dataset_code: 'AKORT_MONTHLY', frequency: 'monthly', aggregate_level: 'custom_group',
+    aggregate_id: 'AGG_BORSHCH_LEGACY', value_type: 'розница', index_type: 'mom', period_start: '2026-01-01'
+  }), `AGG_BORSHCH_${suffix('AKORT_MONTHLY|monthly|розница|mom|2026-01-01')}`);
 });
 
 test('durable aggregate item inventory uses the production expansion and frontier', () => {
@@ -651,6 +695,30 @@ test('canonical digest normalizes Google Sheets period types', () => {
   assert.equal(H.Test.canonicalCell(new Date(Date.UTC(2026, 0, 4)), 'period_start', row), 'D:2026-01-04');
   assert.equal(H.Test.canonicalCell(1.25, 'aggregate_change_pp', row), 'F:1.25');
   assert.equal(H.Test.canonicalCell('', 'aggregate_change_pp', row), 'N:');
+  assert.equal(
+    H.Test.canonicalCell('2026-01-01T00:00:00.000Z', 'period_label', { frequency: 'monthly' }),
+    'S:2026-01'
+  );
+});
+
+test('row-multiset digest is independent of physical row order and preserves multiplicity', () => {
+  const first = headers.map(() => '');
+  const second = headers.map(() => '');
+  first[0] = 'D';
+  first[2] = 'monthly';
+  first[11] = '2026-01-01';
+  first[15] = '2026-01-01T00:00:00.000Z';
+  first[19] = 1.25;
+  second[0] = 'D';
+  second[2] = 'weekly';
+  second[11] = new Date(Date.UTC(2026, 0, 4));
+  second[15] = '2026-01-04';
+  second[19] = 2.5;
+  const forward = H.Test.addRowsToDigestWork({}, [first, second], headers);
+  const reverse = H.Test.addRowsToDigestWork({}, [second, first], headers);
+  const duplicate = H.Test.addRowsToDigestWork({}, [first, second, second], headers);
+  assert.equal(H.Test.orderIndependentDigest(forward, 2, headers.length), H.Test.orderIndependentDigest(reverse, 2, headers.length));
+  assert.notEqual(H.Test.orderIndependentDigest(forward, 2, headers.length), H.Test.orderIndependentDigest(duplicate, 3, headers.length));
 });
 
 test('quota and transient errors retain automatic retry semantics', () => {
@@ -768,8 +836,8 @@ test('durable aggregate resume preserves the exact replay frontier and artifact'
     }
   };
   const resumed = H.Test.buildDurableResumeState(source, 'A74_GATE5_DURABLE_RESUME');
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
   assert.equal(resumed.executionId, 'A74_GATE5_DURABLE_RESUME');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
@@ -838,8 +906,8 @@ test('exact triggerless legacy partial batch is adopted by replaying from combo 
     'A74_GATE5_PARTIAL_ADOPTED',
     { legacyPartialAdoption: adoption }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 150);
@@ -917,8 +985,8 @@ test('failed exact-duplicate incident preserves the durable cache for physical r
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 175);
@@ -1001,8 +1069,8 @@ test('terminal .9 atomic-uncertain checkpoint preserves its cached batch for per
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
   assert.equal(resumed.replayItemCursor, 175);
   assert.equal(resumed.aggregateSeriesCursor, 0);
   assert.equal(resumed.aggregateBatchWork.recordCount, 875);
@@ -1077,8 +1145,8 @@ test('stopped .11 checkpoint adopts adaptive publication without losing a partia
       performanceResume: alpha7411Adoption
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
   assert.equal(resumed.replayGroupIndex, 1);
   assert.equal(resumed.replayItemCursor, 25);
   assert.equal(resumed.aggregateSeriesCursor, 96);
@@ -1163,8 +1231,8 @@ test('stopped .13 timeout boundary resumes through durable item preparation', ()
       performanceResume: adoption
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-13');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.15');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
   assert.equal(resumed.replayGroupIndex, 2);
   assert.equal(resumed.replayItemCursor, 0);
   assert.equal(resumed.aggregateItemsWork, null);
@@ -1268,6 +1336,107 @@ test('partial .14 aggregate item scan is preserved across durable resume', () =>
   assert.equal(publishingResume.aggregateSeriesCursor, 64);
 });
 
+test('terminal .15 digest incident is the only state adopted by reconciliation recovery', () => {
+  const source = {
+    stateSchemaVersion: '4.0-alpha74-gate5-state-13',
+    release: '4.0.0-alpha.7.4.15',
+    executionId: 'A74_GATE5_TERMINAL_SOURCE',
+    status: 'FAILED',
+    phase: 'FAILED',
+    failureCode: 'ALPHA74_GATE5_RECONCILIATION_FAILED',
+    failureDetails: {
+      exact: false,
+      liveUnchanged: true,
+      quotaAccepted: true,
+      aggregateAccepted: true,
+      rawAccepted: true
+    },
+    replayGroupCount: 12,
+    replayGroupIndex: 12,
+    replayStage: 'WEEKLY',
+    fullBuildWork: null,
+    aggregateItemsWork: null,
+    aggregateBatchWork: null,
+    replayLatestWork: null,
+    artifacts: {
+      baselineCanonical: { id: 'BASELINE' },
+      liveSnapshot: { id: 'LIVE' },
+      fullBuild: { id: 'FULL' },
+      sequentialReplay: { id: 'REPLAY' }
+    },
+    evidence: { id: 'OLD_EVIDENCE' },
+    rawReplayValidation: [{ status: 'PASS' }],
+    metrics: {
+      workerExecutions: 100,
+      replayAggregateRowsCalculated: 50000,
+      replayAggregateSeriesPublished: 1000,
+      manualContinuationCalls: 0
+    }
+  };
+  assert.equal(H.Test.reconciliationIncident(source, 0).eligible, true);
+  assert.equal(H.Test.reconciliationIncident(source, 1).eligible, false);
+  const wrongReason = JSON.parse(JSON.stringify(source));
+  wrongReason.failureDetails.liveUnchanged = false;
+  assert.equal(H.Test.reconciliationIncident(wrongReason, 0).eligible, false);
+  const recovered = H.Test.buildReconciliationRecoveryState(source, 'A74_GATE5_RECONCILIATION_RECOVERY');
+  assert.equal(recovered.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
+  assert.equal(recovered.release, '4.0.0-alpha.7.4.16');
+  assert.equal(recovered.phase, 'RECOVER_RECONCILIATION');
+  assert.equal(recovered.reconciliationRecoveryStage, 'REPAIR_REPLAY');
+  assert.equal(recovered.artifacts.fullBuild.id, 'FULL');
+  assert.equal(recovered.artifacts.sequentialReplay.id, 'REPLAY');
+  assert.equal(recovered.evidence, null);
+  assert.equal(recovered.metrics.reconciliationRecoveryAdoptions, 1);
+  assert.equal(recovered.metrics.replayAggregateRowsCalculated, 50000);
+  assert.equal(recovered.recovery.recoveredFromEvidence.id, 'OLD_EVIDENCE');
+  assert(Buffer.byteLength(JSON.stringify(recovered), 'utf8') < 8500);
+});
+
+test('terminal reconciliation recovery advances through repair and both latest passes', () => {
+  const originalRepair = context.AKORT.IncrementalPublish.Gate5.repairCanonicalChunk;
+  const originalFullBuild = context.AKORT.IncrementalPublish.Gate5.fullBuildChunk;
+  const calls = [];
+  context.AKORT.IncrementalPublish.Gate5.repairCanonicalChunk = (id, work) => {
+    calls.push(['REPAIR', id, work]);
+    return { complete: true, work: null, rowsScanned: 61636, rowsUpdated: 61636, total: 61636 };
+  };
+  context.AKORT.IncrementalPublish.Gate5.fullBuildChunk = (id, stage, work) => {
+    calls.push(['LATEST', id, stage, work]);
+    return { complete: true, work: null, phase: 'APPLY_FLAGS', rowsScanned: 0, rowsProcessed: 61636, total: 61636 };
+  };
+  try {
+    const state = {
+      phase: 'RECOVER_RECONCILIATION',
+      reconciliationRecoveryStage: 'REPAIR_REPLAY',
+      reconciliationRepairWork: null,
+      replayLatestWork: null,
+      artifacts: {
+        fullBuild: { id: 'FULL' },
+        sequentialReplay: { id: 'REPLAY' }
+      },
+      metrics: {}
+    };
+    H.Test.reconciliationRecoveryStep(state);
+    assert.equal(state.reconciliationRecoveryStage, 'FULL_LATEST');
+    H.Test.reconciliationRecoveryStep(state);
+    assert.equal(state.reconciliationRecoveryStage, 'REPLAY_LATEST');
+    H.Test.reconciliationRecoveryStep(state);
+    assert.equal(state.reconciliationRecoveryStage, 'COMPLETE');
+    assert.equal(state.phase, 'NORMALIZE');
+    assert.equal(state.metrics.reconciliationRepairRowsScanned, 61636);
+    assert.equal(state.metrics.reconciliationRepairRowsUpdated, 61636);
+    assert.equal(state.metrics.replayLatestRowsUpdated, 123272);
+    assert.deepEqual(calls.map(call => Array.from(call.slice(0, 3))), [
+      ['REPAIR', 'REPLAY', null],
+      ['LATEST', 'FULL', 'AGGREGATES_LATEST'],
+      ['LATEST', 'REPLAY', 'AGGREGATES_LATEST']
+    ]);
+  } finally {
+    context.AKORT.IncrementalPublish.Gate5.repairCanonicalChunk = originalRepair;
+    context.AKORT.IncrementalPublish.Gate5.fullBuildChunk = originalFullBuild;
+  }
+});
+
 test('repository wiring protects live Publish and exposes trigger-driven entrypoints', () => {
   const incremental = fs.readFileSync(path.join(root, 'src/07_IncrementalPublish.js'), 'utf8');
   const harness = fs.readFileSync(path.join(root, 'src/26_Alpha74Gate5Acceptance.js'), 'utf8');
@@ -1336,6 +1505,10 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(harness.includes('DURABLE_EXACT_DUPLICATE_REPAIR_RESUME'));
   assert(harness.includes('DURABLE_PERIOD_IDENTITY_REPAIR_RESUME'));
   assert(harness.includes('DURABLE_ADAPTIVE_WINDOW_RESUME'));
+  assert(harness.includes("mode: 'TERMINAL_RECONCILIATION_RECOVERY'"));
+  assert(harness.includes("mode: 'ROW_MULTISET_V1'"));
+  assert(incremental.includes('repairCanonicalChunk:gate5CanonicalRepairChunk_'));
+  assert(incremental.includes('period=v300DateKey_(row[1])'));
   assert(harness.includes('AGGREGATE_SERIES_WINDOW = 128'));
   assert(harness.includes('adaptivePublicationLimitReductions'));
   assert(harness.includes('REPLAY_PARTIAL_BATCH_FROM_COMBO_CURSOR'));
@@ -1350,6 +1523,7 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(entries.includes('AKORT_alpha74Gate5Start'));
   assert(entries.includes('AKORT_alpha74Gate5RestartReplay'));
   assert(entries.includes('AKORT_alpha74Gate5ResumeReplay'));
+  assert(entries.includes('AKORT_alpha74Gate5RecoverReconciliation'));
   assert(entries.includes('AKORT_alpha74Gate5Worker'));
   assert(entries.includes('AKORT_alpha74Gate5Stop'));
   assert(release.includes("'26_Alpha74Gate5Acceptance.js'"));

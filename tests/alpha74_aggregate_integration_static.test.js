@@ -116,6 +116,23 @@ test('A74 metadata and schemas are exact', () => {
   assert(!A.StageHeaders.some(header => /row_number|physical/i.test(header)));
 });
 
+test('atomic aggregate publication preserves the canonical Publish date contract', () => {
+  const monthly = { frequency: 'monthly' };
+  const weekly = { frequency: 'weekly' };
+  assert.deepEqual(
+    A.Test.userEnteredValue('2023-04-01', 'period_start', monthly),
+    { numberValue: 45017.5 }
+  );
+  assert.deepEqual(
+    A.Test.userEnteredValue('2023-04-01T00:00:00.000Z', 'period_label', monthly),
+    { numberValue: 45017 }
+  );
+  assert.deepEqual(
+    A.Test.userEnteredValue('2023-04-02', 'period_label', weekly),
+    { stringValue: '2023-04-02' }
+  );
+});
+
 test('PUBLISH_IMPACT is scoped, parsed and deduplicated', () => {
   const record = {
     impact_id: 'I1',

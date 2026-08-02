@@ -10,10 +10,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * - a persistent one-minute trigger continues from a compact checkpoint.
  */
 AKORT.Alpha74Gate5Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate5-acceptance-13';
-  var RELEASE = '4.0.0-alpha.7.4.15';
-  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-13';
-  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-13';
+  var VERSION = '4.0-alpha74-gate5-acceptance-14';
+  var RELEASE = '4.0.0-alpha.7.4.16';
+  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-14';
+  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-14';
   var STATE_KEY = 'AKORT_ALPHA74_GATE5_STATE_V1';
   var STOP_REQUEST_KEY = 'AKORT_ALPHA74_GATE5_STOP_REQUEST_V1';
   var AGGREGATE_WORK_SCHEMA_VERSION = '4.0-alpha74-gate5-aggregate-work-1';
@@ -83,6 +83,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     '4.0-alpha74-gate5-state-10',
     '4.0-alpha74-gate5-state-11',
     '4.0-alpha74-gate5-state-12',
+    '4.0-alpha74-gate5-state-13',
     STATE_SCHEMA_VERSION
   ]);
   var DURABLE_RESUME_RELEASES = Object.freeze([
@@ -95,6 +96,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     '4.0.0-alpha.7.4.12',
     '4.0.0-alpha.7.4.13',
     '4.0.0-alpha.7.4.14',
+    '4.0.0-alpha.7.4.15',
     RELEASE
   ]);
 
@@ -894,6 +896,10 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       replayLatestRowsScanned: 0,
       replayLatestRowsUpdated: 0,
       replayLatestChunks: 0,
+      reconciliationRecoveryAdoptions: 0,
+      reconciliationRepairRowsScanned: 0,
+      reconciliationRepairRowsUpdated: 0,
+      orderIndependentDigestChunks: 0,
       legacyPartialBatchAdoptions: 0,
       legacyPartialSeriesCursorReplayed: 0,
       exactDuplicateRecoveryAdoptions: 0,
@@ -2028,6 +2034,9 @@ AKORT.Alpha74Gate5Acceptance = (function () {
   function canonicalCell_(value, header, row) {
     if (value === null || value === undefined || value === '') return 'N:';
     if (header === 'period_start') return 'D:' + periodKey_(row.frequency, value);
+    if (header === 'period_label' && text_(row.frequency).toLowerCase() === 'monthly') {
+      return 'S:' + periodKey_(row.frequency, value);
+    }
     if (header === 'period_label' &&
         (Object.prototype.toString.call(value) === '[object Date]' || (typeof value === 'number' && isFinite(value)))) {
       return 'S:' + periodKey_(row.frequency, value);
@@ -2036,6 +2045,58 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     if (typeof value === 'number' && isFinite(value)) return 'F:' + String(value);
     if (typeof value === 'boolean') return 'B:' + (value ? '1' : '0');
     return 'S:' + JSON.stringify(String(value));
+  }
+
+  function emptyDigestAccumulator_() {
+    return new Array(16).fill(0);
+  }
+
+  function addDigestHash_(accumulator, hex) {
+    var carry = 0, normalized = String(hex || '').toLowerCase();
+    assert_(/^[0-9a-f]{64}$/.test(normalized), 'ALPHA74_GATE5_DIGEST_HASH_INVALID', 'Gate 5 row digest is not a SHA-256 value.', { hash: normalized });
+    for (var index = 0; index < 16; index += 1) {
+      var end = 64 - index * 4;
+      var value = parseInt(normalized.slice(end - 4, end), 16);
+      var total = Number(accumulator[index] || 0) + value + carry;
+      accumulator[index] = total % 65536;
+      carry = Math.floor(total / 65536);
+    }
+    return accumulator;
+  }
+
+  function digestAccumulatorHex_(accumulator) {
+    return (accumulator || []).slice().reverse().map(function (value) {
+      return ('0000' + Number(value || 0).toString(16)).slice(-4);
+    }).join('');
+  }
+
+  function canonicalRowHash_(valuesRow, headers) {
+    var object = {};
+    headers.forEach(function (header, index) { object[header] = valuesRow[index]; });
+    return hash_(valuesRow.map(function (value, index) {
+      return canonicalCell_(value, headers[index], object);
+    }).join('\u001f'));
+  }
+
+  function addRowsToDigestWork_(work, values, headers) {
+    work.primary = work.primary || emptyDigestAccumulator_();
+    work.secondary = work.secondary || emptyDigestAccumulator_();
+    (values || []).forEach(function (valuesRow) {
+      var rowHash = canonicalRowHash_(valuesRow, headers);
+      addDigestHash_(work.primary, rowHash);
+      addDigestHash_(work.secondary, hash_('GATE5_ROW_SECONDARY|' + rowHash));
+    });
+    return work;
+  }
+
+  function orderIndependentDigest_(work, rows, columns) {
+    return hash_([
+      'GATE5_ROW_MULTISET_V1',
+      Number(rows || 0),
+      Number(columns || 0),
+      digestAccumulatorHex_(work && work.primary || emptyDigestAccumulator_()),
+      digestAccumulatorHex_(work && work.secondary || emptyDigestAccumulator_())
+    ].join('|'));
   }
 
   function persistDigestPart_(state, target, chunkNo, sha256) {
@@ -2078,33 +2139,34 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     var sheet = SpreadsheetApp.openById(spreadsheetId).getSheetByName(TARGET_SHEET);
     var headers = AKORT.AggregateContract.Headers.slice();
     var rows = Math.max(0, sheet.getLastRow() - 1);
+    work = clone_(work || {});
+    work.schemaVersion = work.schemaVersion || '4.0-alpha74-gate5-order-independent-digest-1';
+    assert_(work.schemaVersion === '4.0-alpha74-gate5-order-independent-digest-1', 'ALPHA74_GATE5_DIGEST_WORK_INVALID', 'Gate 5 digest work has an incompatible schema.', { work: work });
+    work.primary = work.primary || emptyDigestAccumulator_();
+    work.secondary = work.secondary || emptyDigestAccumulator_();
+    work.chunks = Number(work.chunks || 0);
     var cursor = Math.max(0, Number(work.cursor || 0));
     if (cursor < rows) {
       var count = Math.min(DIGEST_CHUNK_ROWS, rows - cursor);
       var values = sheet.getRange(cursor + 2, 1, count, headers.length).getValues();
-      var serialized = values.map(function (valuesRow) {
-        var object = {};
-        headers.forEach(function (header, index) { object[header] = valuesRow[index]; });
-        return valuesRow.map(function (value, index) {
-          return canonicalCell_(value, headers[index], object);
-        }).join('\u001f');
-      }).join('\u001e');
-      var chunkNo = Math.floor(cursor / DIGEST_CHUNK_ROWS);
-      var persisted = persistDigestPart_(state, target, chunkNo, hash_(serialized));
+      addRowsToDigestWork_(work, values, headers);
+      work.cursor = cursor + count;
+      work.chunks += 1;
+      metrics_(state).orderIndependentDigestChunks += 1;
       return {
         complete: false,
-        work: { cursor: cursor + count },
-        progress: { rows: rows, cursor: cursor + count, chunks: chunkNo + 1, recovered: persisted.recovered }
+        work: work,
+        progress: { rows: rows, cursor: work.cursor, chunks: work.chunks, orderIndependent: true }
       };
     }
-    var parts = readDigestParts_(state, target);
     return {
       complete: true,
       digest: {
         rows: rows,
         columns: headers.length,
-        hash: hash_(parts.join('|')),
-        chunks: parts.length
+        hash: orderIndependentDigest_(work, rows, headers.length),
+        chunks: work.chunks,
+        mode: 'ROW_MULTISET_V1'
       }
     };
   }
@@ -2126,6 +2188,192 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     state.digestIndex = Number(state.digestIndex || 0) + 1;
     state.digestWork = null;
     return { target: target, digest: result.digest, nextIndex: state.digestIndex };
+  }
+
+  function reconciliationIncident_(state, triggerCount) {
+    var details = state && state.failureDetails || {};
+    var metrics = state && state.metrics || {};
+    var eligible = !!state &&
+      state.status === 'FAILED' &&
+      state.phase === 'FAILED' &&
+      text_(state.failureCode) === 'ALPHA74_GATE5_RECONCILIATION_FAILED' &&
+      text_(state.stateSchemaVersion) === '4.0-alpha74-gate5-state-13' &&
+      text_(state.release) === '4.0.0-alpha.7.4.15' &&
+      Number(triggerCount || 0) === 0 &&
+      Number(state.replayGroupCount || 0) === 12 &&
+      Number(state.replayGroupIndex || 0) >= Number(state.replayGroupCount || 0) &&
+      !state.fullBuildWork &&
+      !state.aggregateItemsWork &&
+      !state.aggregateBatchWork &&
+      !state.replayLatestWork &&
+      !!(state.evidence && text_(state.evidence.id)) &&
+      details.exact === false &&
+      details.liveUnchanged === true &&
+      details.quotaAccepted === true &&
+      details.aggregateAccepted === true &&
+      details.rawAccepted === true &&
+      Number(metrics.replayAggregateRowsCalculated || 0) > 0 &&
+      Number(metrics.replayAggregateSeriesPublished || 0) > 0;
+    return {
+      eligible: eligible,
+      mode: eligible ? 'ALPHA7415_TERMINAL_RECONCILIATION_RECOVERY' : '',
+      triggerCount: Number(triggerCount || 0),
+      replayGroupCount: Number(state && state.replayGroupCount || 0),
+      replayGroupIndex: Number(state && state.replayGroupIndex || 0),
+      failureCode: text_(state && state.failureCode),
+      failureDetails: clone_(details)
+    };
+  }
+
+  function assertReconciliationRecoverySource_(state, resources) {
+    assert_(state, 'ALPHA74_GATE5_RECONCILIATION_RECOVERY_STATE_MISSING', 'Gate 5 reconciliation recovery requires the preserved terminal checkpoint.');
+    var incident = reconciliationIncident_(state, triggers_().length);
+    assert_(incident.eligible, 'ALPHA74_GATE5_RECONCILIATION_RECOVERY_SOURCE_INVALID', 'Gate 5 reconciliation recovery is restricted to the verified terminal Alpha.7.4.15 digest incident.', incident);
+    var inventories = {
+      baselineCanonical: assertArtifactInTestFiles_(state.artifacts && state.artifacts.baselineCanonical, resources.testFilesFolderId, 'baselineCanonical'),
+      liveSnapshot: assertArtifactInTestFiles_(state.artifacts && state.artifacts.liveSnapshot, resources.testFilesFolderId, 'liveSnapshot'),
+      fullBuild: assertArtifactInTestFiles_(state.artifacts && state.artifacts.fullBuild, resources.testFilesFolderId, 'fullBuild'),
+      sequentialReplay: assertArtifactInTestFiles_(state.artifacts && state.artifacts.sequentialReplay, resources.testFilesFolderId, 'sequentialReplay')
+    };
+    var expectedRows = inventories.baselineCanonical.aggregateRows;
+    assert_(expectedRows > 0 && Object.keys(inventories).every(function (key) {
+      return inventories[key].aggregateRows === expectedRows;
+    }), 'ALPHA74_GATE5_RECONCILIATION_RECOVERY_INVENTORY_MISMATCH', 'Gate 5 reconciliation recovery requires four complete aggregate artifacts with the same row count.', inventories);
+    var live = AKORT.AggregateContract.inventory();
+    assert_(
+      Number(live.rows) === Number(state.liveBefore && state.liveBefore.rows || 0) &&
+        text_(live.data_hash) === text_(state.liveBefore && state.liveBefore.dataHash),
+      'ALPHA74_GATE5_RECONCILIATION_RECOVERY_LIVE_CHANGED',
+      'DEV Publish changed after the preserved Gate 5 snapshot, so terminal reconciliation recovery cannot reuse it.',
+      {
+        expectedRows: Number(state.liveBefore && state.liveBefore.rows || 0),
+        actualRows: Number(live.rows || 0),
+        expectedDataHash: text_(state.liveBefore && state.liveBefore.dataHash),
+        actualDataHash: text_(live.data_hash)
+      }
+    );
+    return { incident: incident, inventories: inventories };
+  }
+
+  function clearAuxiliaryRows_(spreadsheetId, sheetName) {
+    var sheet = SpreadsheetApp.openById(spreadsheetId).getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() < 2) return 0;
+    var rows = sheet.getLastRow() - 1;
+    sheet.getRange(2, 1, rows, Math.max(1, sheet.getLastColumn())).clearContent();
+    return rows;
+  }
+
+  function buildReconciliationRecoveryState_(sourceState, executionId) {
+    var state = clone_(sourceState || {}), recoveredAt = now_();
+    var sourceRecovery = state.recovery || {};
+    var sourceEvidence = state.evidence || {};
+    state.stateSchemaVersion = STATE_SCHEMA_VERSION;
+    state.release = RELEASE;
+    state.executionId = executionId;
+    state.status = 'RUNNING';
+    state.phase = 'RECOVER_RECONCILIATION';
+    state.startedAt = recoveredAt;
+    state.updatedAt = recoveredAt;
+    state.finishedAt = '';
+    state.nextRetryAt = '';
+    state.consecutiveErrors = 0;
+    state.lastError = null;
+    state.lastStep = null;
+    state.failureCode = '';
+    state.failureDetails = null;
+    state.evidence = null;
+    state.evidenceCompletedAt = '';
+    state.fullBuildWork = null;
+    state.aggregateItemsWork = null;
+    state.aggregateBatchWork = null;
+    state.replayLatestWork = null;
+    state.reconciliationRecoveryStage = 'REPAIR_REPLAY';
+    state.reconciliationRepairWork = null;
+    state.normalizeIndex = 0;
+    state.digestIndex = 0;
+    state.digestWork = null;
+    state.digests = {};
+    state.recovery = {
+      mode: 'TERMINAL_RECONCILIATION_RECOVERY',
+      recoveredFromExecutionId: text_(sourceState && sourceState.executionId),
+      recoveredFromRelease: text_(sourceState && sourceState.release),
+      recoveredFromStateSchemaVersion: text_(sourceState && sourceState.stateSchemaVersion),
+      recoveredFromEvidence: {
+        id: text_(sourceEvidence.id),
+        name: text_(sourceEvidence.name),
+        sha256: text_(sourceEvidence.sha256)
+      },
+      recoveredAt: recoveredAt,
+      preservedArtifacts: true,
+      preservedFullBuild: true,
+      preservedSequentialReplay: true,
+      sourceRecovery: {
+        mode: text_(sourceRecovery.mode),
+        recoveredFromExecutionId: text_(sourceRecovery.recoveredFromExecutionId),
+        recoveredFromRelease: text_(sourceRecovery.recoveredFromRelease),
+        durableResumeMode: text_(sourceRecovery.durableAggregateBatchResume && sourceRecovery.durableAggregateBatchResume.performanceResumeMode)
+      }
+    };
+    metrics_(state).reconciliationRecoveryAdoptions += 1;
+    return state;
+  }
+
+  function reconciliationRecoveryStep_(state) {
+    var stage = text_(state.reconciliationRecoveryStage || 'REPAIR_REPLAY');
+    var result, metrics = metrics_(state);
+    if (stage === 'REPAIR_REPLAY') {
+      result = AKORT.IncrementalPublish.Gate5.repairCanonicalChunk(
+        state.artifacts.sequentialReplay.id,
+        state.reconciliationRepairWork
+      );
+      metrics.reconciliationRepairRowsScanned += Number(result.rowsScanned || 0);
+      metrics.reconciliationRepairRowsUpdated += Number(result.rowsUpdated || 0);
+      state.reconciliationRepairWork = result.work || null;
+      if (result.complete) state.reconciliationRecoveryStage = 'FULL_LATEST';
+      return {
+        stage: stage,
+        cursor: result.work ? Number(result.work.cursor || 0) : Number(result.total || 0),
+        total: Number(result.total || 0),
+        rowsScanned: Number(result.rowsScanned || 0),
+        rowsUpdated: Number(result.rowsUpdated || 0),
+        complete: result.complete === true,
+        nextStage: state.reconciliationRecoveryStage
+      };
+    }
+    if (stage === 'FULL_LATEST' || stage === 'REPLAY_LATEST') {
+      var artifact = stage === 'FULL_LATEST' ? 'fullBuild' : 'sequentialReplay';
+      result = AKORT.IncrementalPublish.Gate5.fullBuildChunk(
+        state.artifacts[artifact].id,
+        'AGGREGATES_LATEST',
+        state.replayLatestWork
+      );
+      metrics.replayLatestRowsScanned += Number(result.rowsScanned || 0);
+      metrics.replayLatestRowsUpdated += Number(result.rowsProcessed || 0);
+      metrics.replayLatestChunks += result.phase === 'PREPARE' ? 0 : 1;
+      state.replayLatestWork = result.work || null;
+      if (result.complete) {
+        state.replayLatestWork = null;
+        if (stage === 'FULL_LATEST') {
+          state.reconciliationRecoveryStage = 'REPLAY_LATEST';
+        } else {
+          state.reconciliationRecoveryStage = 'COMPLETE';
+          state.phase = 'NORMALIZE';
+          state.normalizeIndex = 0;
+        }
+      }
+      return {
+        stage: stage,
+        latestPhase: result.phase || '',
+        cursor: result.work ? Number(result.work.cursor || 0) : Number(result.total || 0),
+        total: Number(result.total || 0),
+        rowsScanned: Number(result.rowsScanned || 0),
+        rowsUpdated: Number(result.rowsProcessed || 0),
+        complete: result.complete === true,
+        nextStage: state.reconciliationRecoveryStage,
+        nextPhase: state.phase
+      };
+    }
+    throw error_('ALPHA74_GATE5_RECONCILIATION_RECOVERY_STAGE_INVALID', 'Gate 5 terminal reconciliation recovery has an unsupported stage.', { stage: stage });
   }
 
   function persistEvidenceIntent_(state, evidence) {
@@ -2264,6 +2512,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
   }
 
   function step_(state) {
+    if (state.phase === 'RECOVER_RECONCILIATION') return reconciliationRecoveryStep_(state);
     if (state.phase === 'FULL_BUILD') return fullBuildStep_(state);
     if (state.phase === 'PREPARE_REPLAY') return prepareReplayStep_(state);
     if (state.phase === 'SEQUENTIAL_REPLAY') return replayStep_(state);
@@ -2348,6 +2597,15 @@ AKORT.Alpha74Gate5Acceptance = (function () {
         cursor: Number(state.replayLatestWork.cursor || 0),
         total: Number(state.replayLatestWork.total || 0),
         chunkRows: Number(state.replayLatestWork.chunkRows || 0)
+      } : null,
+      reconciliationRecovery: state.phase === 'RECOVER_RECONCILIATION' || state.reconciliationRecoveryStage ? {
+        stage: state.reconciliationRecoveryStage || '',
+        repairWork: state.reconciliationRepairWork ? {
+          workSchemaVersion: state.reconciliationRepairWork.workSchemaVersion || '',
+          cursor: Number(state.reconciliationRepairWork.cursor || 0),
+          total: Number(state.reconciliationRepairWork.total || 0),
+          chunkRows: Number(state.reconciliationRepairWork.chunkRows || 0)
+        } : null
       } : null,
       metrics: clone_(metrics_(state)),
       artifacts: clone_(state.artifacts || {}),
@@ -2536,6 +2794,39 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     }, { lock: true, persistLogs: true });
   }
 
+  function recoverReconciliation() {
+    return AKORT.Core.safeRun('ALPHA74_GATE5_RECOVER_RECONCILIATION', function () {
+      AKORT.EnvironmentGuard.assertDev();
+      assertFlags_();
+      var sourceState = loadState_(), resources = resources_();
+      var source = assertReconciliationRecoverySource_(sourceState, resources);
+      deleteTriggers_();
+      clearStopRequest_();
+      var stamp = timestamp_();
+      var executionId = 'A74_GATE5_' + hash_(['RECONCILIATION_RECOVERY', stamp, Utilities.getUuid()]).slice(0, 20).toUpperCase();
+      var state = buildReconciliationRecoveryState_(sourceState, executionId);
+      state.recovery.clearedEvidenceIntentRows = 0;
+      state.recovery.clearedLegacyDigestRows = 0;
+      state.recovery.verifiedInventories = source.inventories;
+      assert_(stateBytes_(state) <= PROPERTY_MAX_BYTES, 'ALPHA74_GATE5_RECONCILIATION_RECOVERY_STATE_TOO_LARGE', 'Gate 5 terminal reconciliation recovery checkpoint is too large to persist safely.', {
+        bytes: stateBytes_(state),
+        maxBytes: PROPERTY_MAX_BYTES
+      });
+      var replayId = sourceState.artifacts.sequentialReplay.id;
+      var clearedEvidenceIntentRows = clearAuxiliaryRows_(replayId, EVIDENCE_INTENT_SHEET);
+      var clearedDigestRows = clearAuxiliaryRows_(replayId, DIGEST_SHEET);
+      state.recovery.clearedEvidenceIntentRows = clearedEvidenceIntentRows;
+      state.recovery.clearedLegacyDigestRows = clearedDigestRows;
+      saveState_(state);
+      state.triggerCount = ensureTrigger_();
+      saveState_(state);
+      return AKORT.Result.success(
+        'Alpha.7.4 Gate 5 terminal reconciliation recovery started. Existing full-build and replay artifacts were reused.',
+        publicState_(state)
+      );
+    }, { lock: true, persistLogs: true });
+  }
+
   function worker() {
     var lock = LockService.getUserLock();
     if (!lock.tryLock(1000)) {
@@ -2690,6 +2981,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     start: start,
     restartReplay: restartReplay,
     resumeReplay: resumeReplay,
+    recoverReconciliation: recoverReconciliation,
     worker: worker,
     stop: stop,
     Test: Object.freeze({
@@ -2706,6 +2998,8 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       aggregateItemInventoryIdentity: aggregateItemInventoryIdentity_,
       prepareAggregateItemInventoryStep: prepareAggregateItemInventoryStep_,
       canonicalCell: canonicalCell_,
+      addRowsToDigestWork: addRowsToDigestWork_,
+      orderIndependentDigest: orderIndependentDigest_,
       classifyError: classifyError_,
       fullBuildStep: fullBuildStep_,
       finalizeReplayStep: finalizeReplayStep_,
@@ -2713,10 +3007,13 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       assertAggregateReplayProgress: assertAggregateReplayProgress_,
       buildReplayOnlyState: buildReplayOnlyState_,
       buildDurableResumeState: buildDurableResumeState_,
+      buildReconciliationRecoveryState: buildReconciliationRecoveryState_,
+      reconciliationRecoveryStep: reconciliationRecoveryStep_,
       legacyPartialAdoption: legacyPartialAdoption_,
       exactDuplicateIncident: exactDuplicateIncident_,
       periodIdentityIncident: periodIdentityIncident_,
       performanceResume: performanceResume_,
+      reconciliationIncident: reconciliationIncident_,
       durableResumeStateSchemaCompatible: durableResumeStateSchemaCompatible_,
       durableResumeReleaseCompatible: durableResumeReleaseCompatible_
     })

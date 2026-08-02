@@ -235,6 +235,16 @@ category-level affected rows чанка проходили dependent-period expa
 960 inventory items и source cursor 4500 переиспользуются; результат expansion
 зафиксирован parity-тестом против недедуплицированного production planner.
 
+Release `4.0.0-alpha.7.4.16` восстанавливает terminal `.15 / state-13`
+reconciliation failure без повторения full build и 12 replay groups. Все
+61 636 logical rows и аналитические значения уже совпали; расходились только
+legacy aggregate IDs, типы date cells, latest flags и физический порядок строк.
+Recovery чанками нормализует сохранённый replay, пересчитывает latest для full
+и replay и использует duplicate-sensitive row-multiset digest, независимый от
+порядка строк. Точка входа
+`AKORT_alpha74Gate5RecoverReconciliation()` принимает только exact failure
+profile с неизменной live Publish и удалённым trigger.
+
 Контракт и runbook описаны в
 `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md` и
 `GATE5_FAST_TARGET_SCAN_HOTFIX.md`.
@@ -320,7 +330,7 @@ livePublishPhysicalWrites = 0
 - все RAW replay validation rows имеют `PASS`;
 - `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-13`;
+  `4.0-alpha74-gate5-evidence-14`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
@@ -339,7 +349,9 @@ livePublishPhysicalWrites = 0
 6. проверить, что
    `PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED=FALSE`;
 7. запустить `AKORT_alpha74Gate5Status()` и проверить `ready=true`;
-8. для нового запуска без reusable full build один раз запустить
+8. для terminal `.15 / state-13 / ALPHA74_GATE5_RECONCILIATION_FAILED`
+   запустить только `AKORT_alpha74Gate5RecoverReconciliation()`; для нового
+   запуска без reusable full build один раз запустить
    `AKORT_alpha74Gate5Start()`; для сохранённой точки release
    `4.0.0-alpha.7.4.6`, exact-duplicate checkpoint
    `4.0.0-alpha.7.4.8 / state-6 / FAILED` или вручную остановленного
@@ -369,3 +381,5 @@ Adaptive resume `.11 → .12` выполняется по
 `GATE5_DURABLE_AGGREGATE_ITEM_PREPARATION_HOTFIX.md`.
 Content-dependent timeout внутри отдельного RAW chunk устраняется release
 `.15` по `GATE5_PRE_EXPANSION_DESCRIPTOR_DEDUP_HOTFIX.md`.
+Terminal reconciliation incident `.15` восстанавливается release `.16` по
+`GATE5_TERMINAL_RECONCILIATION_RECOVERY_HOTFIX.md`.

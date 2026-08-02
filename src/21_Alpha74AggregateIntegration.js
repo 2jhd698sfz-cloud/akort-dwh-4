@@ -9,7 +9,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  */
 AKORT.AggregateIntegration = (function () {
   var VERSION = '4.0-aggregate-integration-1';
-  var RELEASE = '4.0.0-alpha.7.4.15';
+  var RELEASE = '4.0.0-alpha.7.4.16';
   var OPERATION_SCHEMA_VERSION = '4.0-operation-2';
   var STAGE_SCHEMA_VERSION = '4.0-aggregate-stage-1';
   var TARGET_SHEET = 'PUBLISH_PRICE_AGGREGATES';
@@ -1660,12 +1660,26 @@ AKORT.AggregateIntegration = (function () {
       var period = periodKey_(row && row.frequency, value);
       var key = String(row && row.frequency).toLowerCase() === 'monthly' ? period + '-01' : period;
       var parts = key.split('-');
-      var serial = Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) / 86400000 + 25569;
+      // The established Publish contract stores canonical periods at local
+      // noon. The half-day offset prevents a date from crossing a boundary
+      // when Apps Script and the spreadsheet use different time zones.
+      var serial = Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) / 86400000 + 25569 + 0.5;
       return { numberValue: serial };
     }
-    if (header === 'period_label' &&
-        (value instanceof Date || (typeof value === 'number' && isFinite(value)))) {
-      return { stringValue: periodKey_(row && row.frequency, value) };
+    if (header === 'period_label') {
+      var frequency = String(row && row.frequency || '').toLowerCase();
+      if (frequency === 'monthly') {
+        var month = periodKey_(frequency, value);
+        var monthParts = month.split('-');
+        if (monthParts.length >= 2) {
+          return {
+            numberValue: Date.UTC(Number(monthParts[0]), Number(monthParts[1]) - 1, 1) / 86400000 + 25569
+          };
+        }
+      }
+      if (value instanceof Date || (typeof value === 'number' && isFinite(value))) {
+        return { stringValue: periodKey_(frequency, value) };
+      }
     }
     if (typeof value === 'number' && isFinite(value)) return { numberValue: value };
     if (typeof value === 'boolean') return { boolValue: value };
@@ -1726,7 +1740,9 @@ AKORT.AggregateIntegration = (function () {
             return {
               values: AKORT.AggregateContract.Headers.map(function (header) {
                 var cell = { userEnteredValue: userEnteredValue_(row[header], header, row) };
-                if (header === 'period_start' && Object.keys(cell.userEnteredValue).length) {
+                if ((header === 'period_start' ||
+                    (header === 'period_label' && String(row.frequency || '').toLowerCase() === 'monthly')) &&
+                    Object.keys(cell.userEnteredValue).length) {
                   cell.userEnteredFormat = { numberFormat: { type: 'DATE', pattern: 'yyyy-mm-dd' } };
                 }
                 return cell;
@@ -2100,7 +2116,8 @@ AKORT.AggregateIntegration = (function () {
       currentAffectedFingerprint: currentAffectedFingerprint,
       validateLatest: validateLatest,
       reconcileTarget: reconcileTarget,
-      deleteBlocks: deleteBlocks_
+      deleteBlocks: deleteBlocks_,
+      userEnteredValue: userEnteredValue_
     })
   });
 })();

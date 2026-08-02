@@ -2,9 +2,9 @@
 
 ## Статус
 
-`GATE 4 ACCEPTED / GATE 5 DURABLE AGGREGATE-ITEM PREPARATION HOTFIX READY / GROUP 2 RESUME PENDING / REGULAR PIPELINE PROHIBITED`
+`GATE 4 ACCEPTED / GATE 5 TERMINAL RECONCILIATION RECOVERY HOTFIX READY / REGULAR PIPELINE PROHIBITED`
 
-Дата фиксации: 31 июля 2026 года.
+Дата фиксации: 2 августа 2026 года.
 
 Активная GitHub-ветка: `codex/alpha-7.4-integration-reset`.
 
@@ -78,6 +78,10 @@
   category-level affected rows до production dependency expansion и
   продолжение `.14 / state-12 / SCAN_WEEKLY / source cursor 4500` с тем же
   частично подготовленным item inventory.
+- `GATE5_TERMINAL_RECONCILIATION_RECOVERY_HOTFIX.md` — восстановление
+  terminal `.15 / state-13` с финальной сверки, канонические aggregate IDs и
+  даты, корректный latest и order-independent row-multiset digest без повтора
+  full build и 12 replay groups.
 - `STATUS.json` — машиночитаемый статус ветки.
 
 ## Запрещённые решения
@@ -222,6 +226,19 @@ production `v310ExpandAffectedTargets_()` и применяет тот же froz
 Остановленный `.14 / state-12` checkpoint продолжает существующий inventory
 с `source cursor=4500`; full build, replay workbook и готовые группы не
 повторяются.
+
+Execution `.15` завершил full build, все 12 replay groups, latest и quota
+acceptance, но финальная сверка завершилась с
+`ALPHA74_GATE5_RECONCILIATION_FAILED`: `exact=false`, тогда как
+`liveUnchanged`, `quotaAccepted`, `aggregateAccepted` и `rawAccepted` равны
+`true`. Диагностика всех 61 636 logical rows подтвердила полное совпадение
+аналитических значений и выявила только legacy aggregate ID, Sheets date,
+latest-index и physical-order representation differences. Release
+`4.0.0-alpha.7.4.16` исправляет эти четыре контракта и добавляет строго
+ограниченный `AKORT_alpha74Gate5RecoverReconciliation()`. Он повторно
+использует все четыре готовых артефакта, ремонтирует replay чанками,
+пересчитывает latest для full/replay и повторяет только normalization, digest
+и final reconciliation. Новый full build и повтор 12 загрузок запрещены.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

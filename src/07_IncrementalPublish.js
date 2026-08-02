@@ -1755,7 +1755,39 @@ function v310BuildAggregateRowsForCombos_(comboIndex) {
   totals.push.apply(totals, v310AggregateTotals_(categoryRows, 'total_cpi'));
   if (typeof v314BuildBorshchCustomGroupRows_ === 'function') totals.push.apply(totals, v314BuildBorshchCustomGroupRows_(categoryRows));
   if (typeof v314BuildAkortAggregateMarkupPctRows_ === 'function') totals.push.apply(totals, v314BuildAkortAggregateMarkupPctRows_(comboIndex));
-  return categoryRows.concat(totals);
+  return categoryRows.concat(totals).map(function(row) {
+    row.aggregate_id = v317CanonicalAggregateId_(row);
+    return row;
+  });
+}
+
+/**
+ * Preserve the aggregate identifiers already published by the full-build
+ * contract. Earlier incremental helpers grouped the same rows with a different
+ * internal key order, which changed aggregate_id even though every analytical
+ * value was identical.
+ */
+function v317CanonicalAggregateId_(row) {
+  const dataset = v300Text_(row && row.dataset_code);
+  const frequency = v300Text_(row && row.frequency);
+  const level = v300Text_(row && row.aggregate_level);
+  const valueType = v300ValueType_(row && row.value_type);
+  const indexType = v300IndexType_(row && row.index_type || '');
+  const period = v300DateKey_(row && row.period_start);
+  const current = v300Text_(row && row.aggregate_id);
+  if (level === 'category') {
+    return v300Id_('AGG_CAT', [dataset, frequency, valueType, indexType, v300Text_(row && row.category_id)].join('|'));
+  }
+  if (current.indexOf('AGG_MARKUP_PCT_') === 0 || valueType === 'наценка, %') {
+    return v300Id_('AGG_MARKUP_PCT', [dataset, frequency, level, indexType, period].join('|'));
+  }
+  if (current.indexOf('AGG_BORSHCH_') === 0 || level === 'custom_group') {
+    return v300Id_('AGG_BORSHCH', [dataset, frequency, valueType, indexType, period].join('|'));
+  }
+  const name = level === 'group'
+    ? v300Text_(row && row.product_group || row && row.aggregate_name)
+    : v300Text_(row && row.aggregate_name);
+  return v300Id_('AGG', [dataset, frequency, valueType, indexType, period, level, name].join('|'));
 }
 
 function v310AggregateCategoryRowsFromPublish_(sheetName, headers, frequency, comboIndex, weights) {
@@ -3115,7 +3147,7 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
   }
   function gate5LatestIndexMap_(sheet) {
     var map={},rows=sheet.getLastRow()>1?sheet.getRange(2,1,sheet.getLastRow()-1,2).getValues():[];
-    rows.forEach(function(row){var key=String(row[0]||''),period=String(row[1]||'');if(key&&period&&(!map[key]||period>map[key]))map[key]=period;});
+    rows.forEach(function(row){var key=String(row[0]||''),period=v300DateKey_(row[1]);if(key&&period&&(!map[key]||period>map[key]))map[key]=period;});
     return map;
   }
   function gate5PersistLatestIndex_(spreadsheet,indexSheet,map) {
@@ -3399,7 +3431,32 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
     return rows;
   }
 
+  var GATE5_CANONICAL_REPAIR_WORK_SCHEMA='4.0-alpha74-gate5-canonical-repair-work-1';
+  function gate5CanonicalRepairChunk_(spreadsheetId,work) {
+    var spreadsheet=gate5AssertIsolated_(spreadsheetId),headers=AKORT_V300.HEADERS.PUBLISH_PRICE_AGGREGATES,sheet=spreadsheet.getSheetByName(AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES);
+    if(!work){work={workSchemaVersion:GATE5_CANONICAL_REPAIR_WORK_SCHEMA,cursor:0,total:Math.max(0,sheet.getLastRow()-1),chunkRows:1000};}
+    if(work.workSchemaVersion!==GATE5_CANONICAL_REPAIR_WORK_SCHEMA)throw AKORT.Core.error('ALPHA74_GATE5_CANONICAL_REPAIR_WORK_INVALID','Gate 5 canonical repair cursor has an incompatible schema.',{work:work||null});
+    work=clone_(work);
+    var cursor=Math.max(0,Number(work.cursor||0)),total=Math.max(0,Number(work.total||0)),count=Math.min(Math.max(1,Number(work.chunkRows||1000)),Math.max(0,total-cursor));
+    if(!count)return{complete:true,work:null,rowsScanned:0,rowsUpdated:0,total:total};
+    var values=sheet.getRange(cursor+2,1,count,headers.length).getValues(),objects=gate5RowsToObjects_(values,headers),aggregateIds=[],periodStarts=[],periodLabels=[];
+    objects.forEach(function(row){
+      var frequency=v300Text_(row.frequency).toLowerCase(),period=frequency==='monthly'?v300MonthStart_(row.period_start):v300DateOnly_(row.period_start);
+      if(!period)throw AKORT.Core.error('ALPHA74_GATE5_CANONICAL_REPAIR_PERIOD_INVALID','Gate 5 canonical repair found an invalid aggregate period.',{row:cursor+2,frequency:frequency,periodStart:row.period_start});
+      aggregateIds.push([v317CanonicalAggregateId_(row)]);
+      periodStarts.push([period]);
+      periodLabels.push([frequency==='monthly'?new Date(period.getFullYear(),period.getMonth(),1,0,0,0,0):row.period_label]);
+    });
+    var index=v300HeaderIndex_(headers);
+    sheet.getRange(cursor+2,index.aggregate_id+1,count,1).setValues(aggregateIds);
+    sheet.getRange(cursor+2,index.period_start+1,count,1).setValues(periodStarts).setNumberFormat('yyyy-mm-dd');
+    sheet.getRange(cursor+2,index.period_label+1,count,1).setValues(periodLabels).setNumberFormat('yyyy-mm-dd');
+    work.cursor=cursor+count;
+    var complete=work.cursor>=total;
+    return{complete:complete,work:complete?null:work,rowsScanned:count,rowsUpdated:count,chunkStart:cursor,chunkEnd:cursor+count,total:total};
+  }
+
   function statusSummary(){var ss=getDwh_(),tables={};Object.keys(TABLES).forEach(function(n){var sh=ss.getSheetByName(n);tables[n]=sh?{rows:Math.max(0,sh.getLastRow()-1),columns:sh.getLastColumn()}:null;});return{release:AKORT.Release.manifest(),manifestHash:AKORT.Core.manifestHash(),publishSchemaVersion:AKORT.Release.publishSchemaVersion,dependencySchemaVersion:AKORT.Release.dependencySchemaVersion,dispatcherSchemaVersion:AKORT.Release.dispatcherSchemaVersion,scopeCorrection:clone_(ALPHA6_SCOPE),runtimeSettings:runtimeSettings_(),serviceTables:tables,reconciliation:publicRecon_(loadRecon_()),dispatcher:dispatcherPublic_(dispatcherLoad_())};}
 
-  return {Tables:clone_(TABLES),install:install,createPublishBackup:createPublishBackup,runtimeSettings:runtimeSettings_,planLoad:planLoad,planReversal:planReversal,planFromAffected:planFromAffected_,summarizePlan:summarizePlan_,appendImpact:appendImpact_,applyPublish:applyPublish,applyAggregates:applyAggregates,statusSummary:statusSummary,startReconciliation:startReconciliation,continueReconciliation:continueReconciliation,reconciliationStatus:reconciliationStatus,resetReconciliation:resetReconciliation,recoverFailedReconciliation:recoverFailedReconciliation,startReconciliationDispatcher:startReconciliationDispatcher,stopReconciliationDispatcher:stopReconciliationDispatcher,reconciliationDispatcherStatus:reconciliationDispatcherStatus,reconciliationDispatcherWorker:reconciliationDispatcherWorker,Gate5:Object.freeze({initializeBook:gate5InitializeBook_,fullBuildChunk:gate5FullBuildChunk_,replayGroups:gate5ReplayGroups_,validateReplayRaw:gate5ValidateReplayRaw_,replayItems:gate5ReplayItems_,prepareAggregateItemsChunk:gate5PrepareAggregateItemsChunk_,inspectAggregateItems:gate5InspectAggregateItems_,readAggregateItemsChunk:gate5ReadAggregateItemsChunk_,applyReplayChunk:gate5ApplyReplayChunk_,buildAggregateRows:gate5BuildAggregateRows_,finalizeAggregateLatest:gate5FinalizeLatest_,frontierKeys:gate5FrontierKeys_,canonicalSort:gate5CanonicalSort_}),Test:{storageMutationProbe:v300StorageMutationProbe_,seriesReplacementRollbackProbe:v300SeriesReplacementRollbackProbe_,weeklyDependentPeriods:v310WeeklyDependentPeriods_,monthlyDependentPeriods:v310MonthlyDependentPeriods_,weeklyDynamics:v310CalculateWeeklyDynamics_,monthlyDynamics:v310CalculateMonthlyDynamics_,industryDynamics:v300CalculateIndustryDynamics_,setLatestPrices:v317SetLatestBySeriesRows_,setLatestAggregates:v317SetLatestAggregateRows_,expandAffected:v310ExpandAffectedTargets_,aggregateIndexTypes:v310AggregateIndexTypes_,frontierKey:v310AggregateFrontierKey_,seriesId:v300SeriesId_,aggregateSeriesKey:v317AggregateSeriesKey_,selectReplayLatest:v300SelectReplayLatest_,buildWeeklyRows:v310BuildWeeklyRowsForTargets_,buildMonthlyRows:v310BuildMonthlyRowsForTargets_,monthlyDescriptors:v310MonthlyDescriptors_,seriesIdsForTargets:seriesIdsForTargets_,buildDerivedMonthlyMarkupSeries:v310BuildDerivedMonthlyMarkupSeries_,parityProbe:alpha624ParityProbe_,markupParityProbe:alpha624ParityProbe_,buildImpactRecords:buildImpactRecords_,jsonArrayChunks:jsonArrayChunks_,dispatcherControlMatches:dispatcherControlMatches_,dispatcherStateKey:dispatcherStateKey_,impactPreviewComboKey:impactPreviewComboKey_,impactPreviewHeaders:impactPreviewHeaders_,impactPreviewSheet:impactPreviewSheet_,impactPreviewAggregateCombos:impactPreviewAggregateCombos_,replayImpactPreviewStep:replayImpactPreviewStep_,setImpactTestAdapter:impactPreviewSetTestAdapter_,replayTarget:replayTarget_,nextReplayStage:nextReplayStage_,reconciliationFingerprint:reconciliationFingerprint_,dispatcherProgressDecision:dispatcherProgressDecision_,dispatcherClassifyError:dispatcherClassifyError_,dispatcherRetryDelayMs:dispatcherRetryDelayMs_,dispatcherResultSummary:dispatcherResultSummary_,utf8Bytes:utf8Bytes_,replayStageItemsForGroup:replayStageItemsForGroup_,gate5AggregateDescriptors:gate5AggregateDescriptors_,gate5AggregateItemsForAffected:gate5AggregateItemsForAffected_}};
+  return {Tables:clone_(TABLES),install:install,createPublishBackup:createPublishBackup,runtimeSettings:runtimeSettings_,planLoad:planLoad,planReversal:planReversal,planFromAffected:planFromAffected_,summarizePlan:summarizePlan_,appendImpact:appendImpact_,applyPublish:applyPublish,applyAggregates:applyAggregates,statusSummary:statusSummary,startReconciliation:startReconciliation,continueReconciliation:continueReconciliation,reconciliationStatus:reconciliationStatus,resetReconciliation:resetReconciliation,recoverFailedReconciliation:recoverFailedReconciliation,startReconciliationDispatcher:startReconciliationDispatcher,stopReconciliationDispatcher:stopReconciliationDispatcher,reconciliationDispatcherStatus:reconciliationDispatcherStatus,reconciliationDispatcherWorker:reconciliationDispatcherWorker,Gate5:Object.freeze({initializeBook:gate5InitializeBook_,fullBuildChunk:gate5FullBuildChunk_,replayGroups:gate5ReplayGroups_,validateReplayRaw:gate5ValidateReplayRaw_,replayItems:gate5ReplayItems_,prepareAggregateItemsChunk:gate5PrepareAggregateItemsChunk_,inspectAggregateItems:gate5InspectAggregateItems_,readAggregateItemsChunk:gate5ReadAggregateItemsChunk_,applyReplayChunk:gate5ApplyReplayChunk_,buildAggregateRows:gate5BuildAggregateRows_,finalizeAggregateLatest:gate5FinalizeLatest_,frontierKeys:gate5FrontierKeys_,canonicalSort:gate5CanonicalSort_,repairCanonicalChunk:gate5CanonicalRepairChunk_}),Test:{storageMutationProbe:v300StorageMutationProbe_,seriesReplacementRollbackProbe:v300SeriesReplacementRollbackProbe_,weeklyDependentPeriods:v310WeeklyDependentPeriods_,monthlyDependentPeriods:v310MonthlyDependentPeriods_,weeklyDynamics:v310CalculateWeeklyDynamics_,monthlyDynamics:v310CalculateMonthlyDynamics_,industryDynamics:v300CalculateIndustryDynamics_,setLatestPrices:v317SetLatestBySeriesRows_,setLatestAggregates:v317SetLatestAggregateRows_,expandAffected:v310ExpandAffectedTargets_,aggregateIndexTypes:v310AggregateIndexTypes_,frontierKey:v310AggregateFrontierKey_,seriesId:v300SeriesId_,aggregateSeriesKey:v317AggregateSeriesKey_,canonicalAggregateId:v317CanonicalAggregateId_,selectReplayLatest:v300SelectReplayLatest_,buildWeeklyRows:v310BuildWeeklyRowsForTargets_,buildMonthlyRows:v310BuildMonthlyRowsForTargets_,monthlyDescriptors:v310MonthlyDescriptors_,seriesIdsForTargets:seriesIdsForTargets_,buildDerivedMonthlyMarkupSeries:v310BuildDerivedMonthlyMarkupSeries_,parityProbe:alpha624ParityProbe_,markupParityProbe:alpha624ParityProbe_,buildImpactRecords:buildImpactRecords_,jsonArrayChunks:jsonArrayChunks_,dispatcherControlMatches:dispatcherControlMatches_,dispatcherStateKey:dispatcherStateKey_,impactPreviewComboKey:impactPreviewComboKey_,impactPreviewHeaders:impactPreviewHeaders_,impactPreviewSheet:impactPreviewSheet_,impactPreviewAggregateCombos:impactPreviewAggregateCombos_,replayImpactPreviewStep:replayImpactPreviewStep_,setImpactTestAdapter:impactPreviewSetTestAdapter_,replayTarget:replayTarget_,nextReplayStage:nextReplayStage_,reconciliationFingerprint:reconciliationFingerprint_,dispatcherProgressDecision:dispatcherProgressDecision_,dispatcherClassifyError:dispatcherClassifyError_,dispatcherRetryDelayMs:dispatcherRetryDelayMs_,dispatcherResultSummary:dispatcherResultSummary_,utf8Bytes:utf8Bytes_,replayStageItemsForGroup:replayStageItemsForGroup_,gate5AggregateDescriptors:gate5AggregateDescriptors_,gate5AggregateItemsForAffected:gate5AggregateItemsForAffected_}};
 })();
