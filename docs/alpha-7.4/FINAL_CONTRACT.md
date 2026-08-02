@@ -61,6 +61,11 @@
 8. Неполная coverage не публикуется, если frozen contract возвращает `publication_allowed=false`.
 9. Все версии definitions, weights и memberships фиксируются snapshot id + hash.
 10. Один и тот же authoritative input fingerprint обязан давать тот же plan, rows и publish fingerprint.
+11. Любая тяжёлая фаза обязана иметь фиксированный per-step limit и durable
+    cursor. Монолитная обработка крупного набора запрещена независимо от
+    weekly/monthly frequency.
+12. Физическая публикация может делиться только между полными логическими
+    сериями; одна серия никогда не делится между atomic commits.
 
 ## 5. Operation phases
 
@@ -85,10 +90,14 @@
 
 ### MATERIALIZING_AGGREGATE_INPUTS
 
-- Однократно прочитать необходимые weekly/monthly Publish rows, weights и membership rules.
+- Обрабатывать фиксированное количество aggregate combinations за шаг.
 - Запретить per-row Sheets reads.
 - Сохранить immutable input artifact или эквивалентный durable snapshot.
+- Сохранять materialization cursor; lost response повторяет только текущую
+  порцию идемпотентно.
 - На resume проверять artifact hash и frozen versions.
+- Адаптер без durable materialization обязан fail-closed отклонить крупный
+  набор до planner/physical write boundary.
 
 ### CALCULATING_AGGREGATE_SLICES
 
@@ -100,7 +109,9 @@
 ### STAGING_AGGREGATE_ROWS
 
 - Сохранить строки в `AGGREGATE_STAGE`.
-- Проверить contract headers, logical keys, duplicates, expected row count и stage hash.
+- Bounded-порциями проверить payload schema и row fingerprints.
+- Durable cursor отдельно фиксирует validation и перевод stage statuses.
+- Проверить logical keys, duplicates, expected row count и stage hash.
 - До полного подтверждения expected affected-set публикация запрещена.
 
 ### UPDATING_AGGREGATES
@@ -109,28 +120,32 @@
 
 Алгоритм:
 
-1. одним bounded read построить current logical-key index affected-set;
-2. проверить target-before fingerprint;
-3. объединить неизменившиеся периоды серии со staged affected periods;
-4. получить полный replacement set каждой affected series;
-5. проверить keys, coverage, versions и expected hash;
-6. выполнить один atomic Google Sheets `batchUpdate` для всего regular affected-set;
-7. выполнить read-back;
-8. только после совпадения target-after hash завершить phase.
+1. выбрать bounded окно полных logical series из durable cursor;
+2. одним bounded identity scan прочитать только физические строки выбранных
+   серий;
+3. проверить durable target-before fingerprint;
+4. объединить неизменившиеся периоды серии со staged affected periods;
+5. получить полный replacement set каждой выбранной series;
+6. при необходимости уменьшить окно до frozen row/cell/request limits;
+7. сохранить отдельный durable before/after intent;
+8. выполнить один atomic Google Sheets `batchUpdate` для выбранных полных
+   серий;
+9. выполнить read-back и только после совпадения target-after hash передвинуть
+   publish cursor;
+10. повторять до покрытия всего affected-set.
 
-Если весь affected-set не помещается в утверждённый atomic request limit:
-
-- Publish не изменяется;
-- операция получает `AGGREGATE_PUBLISH_ATOMIC_LIMIT_EXCEEDED`;
-- данные остаются в stage;
-- используется isolated rebuild/reconciliation path;
-- разбиение на видимые DataLens частичные commits запрещено.
+Если одна полная logical series не помещается в утверждённый atomic request
+limit, Publish не изменяется и операция завершается fail-closed. Делить одну
+series между commits запрещено. Разбиение affected-set между bounded пакетами
+полных серий разрешено; каждый пакет самодостаточен, включает latest этой
+series и проходит read-back до следующего cursor.
 
 ### UPDATING_AGGREGATE_LATEST
 
 - Latest intents строит Alpha.7.3.
-- Latest применяется в том же atomic publish request либо phase подтверждает уже опубликованный latest state.
-- Read-back проверяет один latest на series и отсутствие future latest.
+- Latest применяется в atomic publish request каждой полной series.
+- Отдельная phase bounded-порциями подтверждает один latest на series и
+  отсутствие future latest.
 
 ### RECONCILING_AGGREGATES
 
@@ -143,11 +158,15 @@
 - latest correct;
 - versions/fingerprints match;
 - full-vs-incremental reconciliation при соответствующем run mode.
+- reconciliation cursor продвигается только после проверки durable intent
+  очередного publication batch.
 
 ### UPDATE_STATUS / QUICK_AUDIT / FINALIZING
 
 - `PUBLISH_RUNS` получает окончательный status и метрики.
 - `PUBLISH_RECONCILIATION` получает hashes/counts.
+- Stage status и expected fingerprint обновляются bounded-порциями с durable
+  finalization cursor.
 - Stage получает terminal status.
 - `SUCCESS` разрешён только после всех проверок.
 

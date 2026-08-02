@@ -113,7 +113,7 @@ function seriesTarget(seriesId, period, rowNumber) {
 }
 
 test('A74 metadata and schemas are exact', () => {
-  assert.equal(A.Version, '4.0-aggregate-integration-1');
+  assert.equal(A.Version, '4.0-aggregate-integration-2');
   assert.equal(A.OperationSchemaVersion, '4.0-operation-2');
   assert.deepEqual(Array.from(A.Phases), [
     'PREPARING_AGGREGATE_IMPACT',
@@ -209,6 +209,23 @@ test('stage fingerprint survives Google Sheets date coercion', () => {
   const validation = A.Test.validateStageRows([row], identity());
   assert.equal(validation.rowCount, 1);
   assert.equal(validation.seriesCount, 1);
+});
+
+test('large stage validation advances only by its durable row budget', () => {
+  const rows = [];
+  for (let index = 0; index < 235; index += 1) {
+    rows.push(seriesStage(`G${index}`, '2026-01-08'));
+  }
+  const first = A.Test.validateStageRowsChunk(rows, identity(), 0, 100);
+  const second = A.Test.validateStageRowsChunk(rows, identity(), first.cursor, 100);
+  const third = A.Test.validateStageRowsChunk(rows, identity(), second.cursor, 100);
+  assert.equal(first.cursor, 100);
+  assert.equal(first.complete, false);
+  assert.equal(second.cursor, 200);
+  assert.equal(second.complete, false);
+  assert.equal(third.cursor, 235);
+  assert.equal(third.complete, true);
+  assert.equal(first.stageFingerprint, third.stageFingerprint);
 });
 
 test('full logical-series replacement retains unaffected periods and updates latest atomically', () => {
@@ -381,6 +398,10 @@ test('bounded phase execution checkpoints and recovers to SUCCESS', () => {
         PUBLISH_AGGREGATE_EXECUTION_ENABLED: true,
         PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED: true,
         PUBLISH_AGGREGATE_CALCULATION_GROUPS_PER_STEP: 1,
+        PUBLISH_AGGREGATE_STAGE_VALIDATION_ROWS_PER_STEP: 1,
+        PUBLISH_AGGREGATE_PUBLICATION_SERIES_PER_STEP: 1,
+        PUBLISH_AGGREGATE_LATEST_SERIES_PER_STEP: 1,
+        PUBLISH_AGGREGATE_STAGE_STATUS_ROWS_PER_STEP: 1,
         PUBLISH_AGGREGATE_ATOMIC_MAX_ROWS: 100,
         PUBLISH_AGGREGATE_ATOMIC_MAX_CELLS: 2900,
         PUBLISH_AGGREGATE_ARTIFACT_CHUNK_CHARS: 30000
@@ -407,6 +428,10 @@ test('bounded phase execution checkpoints and recovers to SUCCESS', () => {
     },
     readCalculatedRows() { return JSON.parse(JSON.stringify(stageRows)); },
     updateStageStatus() {},
+    updateStageStatusChunk(_identity, _status, _fingerprint, cursor, maxRows) {
+      const end = Math.min(stageRows.length, Number(cursor || 0) + Number(maxRows || 1));
+      return { cursor: end, total: stageRows.length, complete: end >= stageRows.length };
+    },
     updateStageExpectedFingerprint() {},
     persistPublishIntent(_identity, value, batchKey) {
       intents[batchKey || 'FINAL'] = JSON.parse(JSON.stringify(value));
@@ -416,6 +441,10 @@ test('bounded phase execution checkpoints and recovers to SUCCESS', () => {
       return value && JSON.parse(JSON.stringify(value));
     },
     readTargetRows() { return JSON.parse(JSON.stringify(targetRows)); },
+    readTargetRowsForStage(records) {
+      const signatures = new Set(records.map(record => A.Test.publicSignature(JSON.parse(record.row_payload_json))));
+      return JSON.parse(JSON.stringify(targetRows.filter(row => signatures.has(A.Test.publicSignature(row)))));
+    },
     atomicReplace(replacement) {
       const unaffected = targetRows.filter(row => A.Test.publicSignature(row) !== A.Test.publicSignature(replacement.replacementRows[0]));
       targetRows = unaffected.concat(replacement.replacementRows.map((row, index) => ({ ...row, __row: unaffected.length + index + 2 })));
@@ -437,14 +466,26 @@ test('bounded phase execution checkpoints and recovers to SUCCESS', () => {
   assert.equal(first.repeatPhase, true);
   const second = A.execute('CALCULATING_AGGREGATE_SLICES', executionContext, options);
   assert.equal(second.repeatPhase, false);
-  A.execute('STAGING_AGGREGATE_ROWS', executionContext, options);
+  let staging;
+  do {
+    staging = A.execute('STAGING_AGGREGATE_ROWS', executionContext, options);
+  } while (staging.repeatPhase);
   let publishing;
   do {
     publishing = A.execute('UPDATING_AGGREGATES', executionContext, options);
   } while (publishing.repeatPhase);
-  A.execute('UPDATING_AGGREGATE_LATEST', executionContext, options);
-  A.execute('RECONCILING_AGGREGATES', executionContext, options);
-  A.execute('FINALIZING', executionContext, options);
+  let latest;
+  do {
+    latest = A.execute('UPDATING_AGGREGATE_LATEST', executionContext, options);
+  } while (latest.repeatPhase);
+  let reconciliation;
+  do {
+    reconciliation = A.execute('RECONCILING_AGGREGATES', executionContext, options);
+  } while (reconciliation.repeatPhase);
+  let finalizing;
+  do {
+    finalizing = A.execute('FINALIZING', executionContext, options);
+  } while (finalizing.repeatPhase);
   assert.equal(executionContext.checkpoint.aggregate.status, 'SUCCESS');
   assert.equal(finalized, true);
 });
@@ -463,12 +504,56 @@ test('disabled-by-default gate prevents all adapter reads and writes', () => {
   assert.equal(executionContext.checkpoint.aggregate.status, 'SKIPPED_DISABLED');
 });
 
+test('large materialization without a durable chunk adapter is forbidden before planner execution', () => {
+  const combos = Array.from({ length: 9 }, (_value, index) => ({
+    frequency: 'monthly',
+    datasetCode: 'D',
+    period: `2026-${String(index + 1).padStart(2, '0')}`,
+    valueType: 'price',
+    indexType: 'mom'
+  }));
+  const impact = {
+    impact_id: 'I_LARGE',
+    operation_id: 'OP_LARGE',
+    load_id: 'LOAD_LARGE',
+    frequency: 'monthly',
+    dataset_code: 'D',
+    category_id: 'C',
+    value_type: 'price',
+    source_period: '2026-01',
+    aggregate_combos_json: JSON.stringify(combos),
+    series_ids_json: '[]',
+    affected_periods_json: JSON.stringify(combos.map(combo => combo.period))
+  };
+  let plannerCalled = false;
+  const adapter = {
+    runtimeSettings() {
+      return {
+        PUBLISH_AGGREGATE_EXECUTION_ENABLED: true,
+        PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED: true,
+        PUBLISH_AGGREGATE_MONOLITHIC_COMBO_LIMIT: 8
+      };
+    },
+    readImpactRecords() { return [impact]; },
+    materializeArtifact() { plannerCalled = true; return null; }
+  };
+  const executionContext = { operation: { operation_id: 'OP_LARGE' }, checkpoint: {} };
+  const options = { adapter, loadId: 'LOAD_LARGE' };
+  A.execute('PREPARING_AGGREGATE_IMPACT', executionContext, options);
+  assert.throws(
+    () => A.execute('MATERIALIZING_AGGREGATE_INPUTS', executionContext, options),
+    error => error.code === 'AGGREGATE_MONOLITHIC_MATERIALIZATION_FORBIDDEN'
+  );
+  assert.equal(plannerCalled, false);
+});
+
 test('repository wiring removes deferred executor and hard-coded write probes', () => {
   const engine = fs.readFileSync(path.join(root, 'src/03_OperationEngine.js'), 'utf8');
   const raw = fs.readFileSync(path.join(root, 'src/05_RawStore.js'), 'utf8');
   const parser = fs.readFileSync(path.join(root, 'src/06_ExistingSourceParsers.js'), 'utf8');
   const entries = fs.readFileSync(path.join(root, 'src/08_EntryPoints.js'), 'utf8');
   const release = fs.readFileSync(path.join(root, 'src/00_Release.js'), 'utf8');
+  const aggregate = fs.readFileSync(path.join(root, 'src/21_Alpha74AggregateIntegration.js'), 'utf8');
   const gate1Cleanup = fs.readFileSync(path.join(root, 'src/23_Alpha74Gate1Cleanup.js'), 'utf8');
   const gate3Acceptance = fs.readFileSync(path.join(root, 'src/24_Alpha74Gate3Acceptance.js'), 'utf8');
   assert(engine.includes("value: '4.0-operation-2'"));
@@ -506,6 +591,23 @@ test('repository wiring removes deferred executor and hard-coded write probes', 
   assert(release.includes("'AGGREGATE_STAGE'"));
   assert(release.includes("'FINALIZING'"));
   assert(release.includes("'24_Alpha74Gate3Acceptance.js'"));
+  assert(release.includes("version: '4.0.0-alpha.7.4.23'"));
+  assert(release.includes('durable bounded work'));
+  const boundedSettings = [
+    'PUBLISH_AGGREGATE_MATERIALIZATION_COMBOS_PER_STEP',
+    'PUBLISH_AGGREGATE_STAGE_VALIDATION_ROWS_PER_STEP',
+    'PUBLISH_AGGREGATE_PUBLICATION_SERIES_PER_STEP',
+    'PUBLISH_AGGREGATE_LATEST_SERIES_PER_STEP',
+    'PUBLISH_AGGREGATE_RECONCILIATION_SERIES_PER_STEP',
+    'PUBLISH_AGGREGATE_STAGE_STATUS_ROWS_PER_STEP',
+    'PUBLISH_AGGREGATE_MONOLITHIC_COMBO_LIMIT'
+  ];
+  for (const setting of boundedSettings) {
+    assert(aggregate.includes(setting), `missing bounded aggregate setting: ${setting}`);
+  }
+  assert(aggregate.includes('materializeArtifactChunk: acceptedParityChunk_'));
+  assert(aggregate.includes('AGGREGATE_MONOLITHIC_MATERIALIZATION_FORBIDDEN'));
+  assert(aggregate.includes("publicationMode: 'DURABLE_BOUNDED_LOGICAL_SERIES'"));
   const releaseContext = vm.createContext({ console, Object, JSON });
   releaseContext.AKORT = {};
   vm.runInContext(release, releaseContext, { filename: 'src/00_Release.js' });

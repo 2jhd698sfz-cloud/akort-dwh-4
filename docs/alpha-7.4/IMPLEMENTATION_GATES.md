@@ -150,7 +150,7 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
-Release `4.0.0-alpha.7.4.22` готов к точному DEV-продолжению Gate 6. Harness
+Release `4.0.0-alpha.7.4.23` готов к точному DEV-продолжению Gate 6. Harness
 создаёт DWH/Publish recovery copies, выполняет canary из нового weekly/monthly
 файла через `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторную
 source-file загрузку для восстановления. Acceptance требует фактического
@@ -175,6 +175,14 @@ RAW commit и ordinary price Publish запрещены.
 `AKORT.Config` вернул JSON-настройку уже типизированным объектом, а recovery
 попытался разобрать её повторно. `.22` принимает объект или JSON-строку,
 сохраняя остальной exact allowlist без изменений.
+После recovery `.22` canary завершила 392 из 392 aggregate calculations, но
+монолитная `STAGING_AGGREGATE_ROWS` не имела durable cursor и повторяла один
+и тот же полный проход. `.23` вводит обязательные bounded cursors для
+materialization, stage validation/status, logical-series publication, latest,
+reconciliation и finalization. Точный остановленный `.22` checkpoint
+продолжается обычным `AKORT_alpha74Gate6Resume()` с сохранением RAW, ordinary
+price Publish, materialization и рассчитанных stage rows. Нормативный runbook:
+`GATE6_BOUNDED_AGGREGATE_PHASES_HOTFIX.md`.
 
 ## Gate 7 — Acceptance
 

@@ -91,8 +91,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-4');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.22');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-5');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.23');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -210,6 +210,53 @@ test('exact Alpha.7.4.20 runtime-context incident resumes only after RAW and pri
   const afterMaterialization = JSON.parse(JSON.stringify(operation));
   afterMaterialization.checkpoint.completedPhases.push('MATERIALIZING_AGGREGATE_INPUTS');
   assert.equal(G.Test.runtimeContextIncident(state, afterMaterialization), false);
+});
+
+test('exact stopped Alpha.7.4.22 pre-staging checkpoint is eligible for bounded phase recovery', () => {
+  const operationId = 'OP_SOURCE_FILE_LOAD_V4_CANARY';
+  const state = {
+    stateSchemaVersion: '4.0-alpha74-gate6-state-1',
+    release: '4.0.0-alpha.7.4.22',
+    executionId: 'A74_GATE6_7F437567A3ABBFBE94F1',
+    status: 'STOPPED',
+    phase: 'STOPPED',
+    stoppedFromPhase: 'RUN_CANARY',
+    operations: { canary: operationId, reversal: '', restore: '' },
+    artifacts: {
+      dwhBackup: { id: 'DWH_BACKUP' },
+      publishBackup: { id: 'PUBLISH_BACKUP' }
+    }
+  };
+  const operation = {
+    operation_id: operationId,
+    operation_type: 'SOURCE_FILE_LOAD_V4',
+    status: 'PAUSED',
+    current_phase: 'STAGING_AGGREGATE_ROWS',
+    checkpoint: {
+      nextPhase: 'STAGING_AGGREGATE_ROWS',
+      completedPhases: [
+        'COMMIT_RAW', 'UPDATE_PUBLISH', 'PREPARING_AGGREGATE_IMPACT',
+        'MATERIALIZING_AGGREGATE_INPUTS', 'CALCULATING_AGGREGATE_SLICES'
+      ],
+      control: { stopRequested: true },
+      handlerState: { loadId: 'LOAD_CANARY' },
+      aggregate: {
+        status: 'CALCULATED',
+        calculationCursor: 392,
+        calculationGroupCount: 392,
+        stagingCursor: 0,
+        stageFingerprint: '',
+        expectedStageRows: 0
+      }
+    }
+  };
+  assert.equal(G.Test.monolithicStageIncident(state, operation), true);
+  const afterStagingStarted = JSON.parse(JSON.stringify(operation));
+  afterStagingStarted.checkpoint.aggregate.stagingCursor = 1;
+  assert.equal(G.Test.monolithicStageIncident(state, afterStagingStarted), false);
+  const afterPublication = JSON.parse(JSON.stringify(operation));
+  afterPublication.checkpoint.completedPhases.push('STAGING_AGGREGATE_ROWS');
+  assert.equal(G.Test.monolithicStageIncident(state, afterPublication), false);
 });
 
 test('control sheet accepts a Drive file ID or URL and rejects arbitrary text', () => {

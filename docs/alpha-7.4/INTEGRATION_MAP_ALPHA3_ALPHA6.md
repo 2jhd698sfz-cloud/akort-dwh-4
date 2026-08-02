@@ -90,10 +90,13 @@ release_version
 4. Aggregate integration читает impact только для текущих `operation_id + load_id`.
 5. Alpha.7.3 расширяет impact до aggregate definitions, memberships, dependent periods и latest intents.
 6. Alpha.7.2 рассчитывает bounded deterministic batches.
-7. Полный ожидаемый affected-set сохраняется в `AGGREGATE_STAGE`.
-8. Publish adapter заменяет логические агрегатные серии в `PUBLISH_PRICE_AGGREGATES`.
-9. Read-back подтверждает keys, hashes, latest и отсутствие изменений вне affected-set.
-10. Reconciliation разрешает переход к `UPDATE_STATUS`, `QUICK_AUDIT`, `FINALIZING`, `SUCCESS`.
+7. Alpha.7.4.23 применяет тот же обязательный bounded-work принцип ко всем
+   следующим тяжёлым фазам: materialization, stage validation/status,
+   logical-series publication, latest, reconciliation и finalization.
+8. Полный ожидаемый affected-set сохраняется в `AGGREGATE_STAGE`.
+9. Publish adapter заменяет логические агрегатные серии в `PUBLISH_PRICE_AGGREGATES`.
+10. Read-back подтверждает keys, hashes, latest и отсутствие изменений вне affected-set.
+11. Reconciliation разрешает переход к `UPDATE_STATUS`, `QUICK_AUDIT`, `FINALIZING`, `SUCCESS`.
 
 ## 5. Checkpoint ownership
 

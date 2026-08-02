@@ -165,6 +165,16 @@ scan и Status. Не выполнять Gate6 Install, Validate, Start или о
 operation/data-plane изменений не произошло. Установить `.22` и повторить
 только exact recovery-функцию по указанной последовательности.
 
+Если `.22` был вручную остановлен на `RUN_CANARY`, а canary operation уже
+завершила все aggregate calculations и находится на
+`STAGING_AGGREGATE_ROWS`, установить `.23`, выполнить Install, вернуть только
+`PUBLISH_AGGREGATE_EXECUTION_ENABLED=TRUE` при выключенных regular/user flags,
+затем выполнить smoke test, contract scan и Status и один раз вызвать обычный
+`AKORT_alpha74Gate6Resume()`. `.23` проверяет exact pre-staging boundary и
+продолжает сохранённую operation bounded-порциями; `Gate6Start`, повторная
+Validate и `Gate6RecoverRuntimeContext` запрещены. Подробности:
+`GATE6_BOUNDED_AGGREGATE_PHASES_HOTFIX.md`.
+
 Экстренная остановка: `AKORT_alpha74Gate6Stop()`. Она сохраняет исходную фазу,
 operation IDs, digest cursors и recovery-копии. После проверки причины тот же
 execution можно продолжить функцией `AKORT_alpha74Gate6Resume()`; новые копии и

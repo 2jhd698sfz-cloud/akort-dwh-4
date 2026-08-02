@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 5 ACCEPTED / GATE 6 RUNTIME-CONTEXT CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`
+`GATE 5 ACCEPTED / GATE 6 BOUNDED-PHASE CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`
 
 Дата фиксации: 2 августа 2026 года.
 
@@ -47,6 +47,9 @@
 - `GATE5_ACCEPTANCE_HARNESS.md` — full build, sequential replay, exact reconciliation, quota и automatic continuation contract.
 - `GATE6_AUTHORITATIVE_DEV_CANARY.md` — recovery copies, live canary,
   standard reversal, deterministic restore, read-back и evidence contract.
+- `GATE6_BOUNDED_AGGREGATE_PHASES_HOTFIX.md` — обязательный bounded-work
+  контракт всех тяжёлых aggregate phases и exact продолжение остановленного
+  `.22 / STAGING_AGGREGATE_ROWS` checkpoint без повторного расчёта.
 - `INDUSTRY_INPUT_FORM.md` — операторская форма для раздельного ввода периода
   и значения активных `RAW_INDUSTRY` серий через `RAW_LOAD_V4`.
 - `GATE5_FULL_BUILD_CHUNKING_HOTFIX.md` — разбор timeout-loop
@@ -95,7 +98,7 @@
 - ручное продолжение после штатного timeout;
 - per-row чтение Google Sheets;
 - регулярный full-sheet clear/rewrite;
-- частичная публикация affected-set;
+- разделение одной logical series между физическими commits;
 - `SUCCESS` до read-back и reconciliation;
 - перенос full replay, performance или operational enablement в Alpha.7.5.
 
@@ -105,7 +108,8 @@
 - `AGGREGATE_STAGE` с immutable input artifact, calculated rows и durable publish intent;
 - authoritative `PUBLISH_IMPACT` → Alpha.7.3 planner → Alpha.7.2 calculator;
 - полная замена затронутых логических серий без сохранения физических номеров строк;
-- один atomic Sheets API request для regular affected-set;
+- durable bounded atomic Sheets API batches, каждый из которых содержит
+  только полные logical series;
 - read-back, latest validation, lost-response recovery и third-state fail-closed;
 - aggregate execution, regular pipeline и user pipeline flags `FALSE` по
   умолчанию;
