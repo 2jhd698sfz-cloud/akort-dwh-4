@@ -258,7 +258,7 @@ Gate 5 закрыт 2 августа 2026 года. Execution
 артефакта содержат 61 636 строк по 29 колонок и имеют одинаковый
 row-multiset digest. DEV Publish не изменялась.
 
-Release `4.0.0-alpha.7.4.19` подготавливает Gate 6: две recovery-копии,
+Release `4.0.0-alpha.7.4.20` подготавливает Gate 6: две recovery-копии,
 durable digest четырёх Publish-листов, новый weekly/monthly
 `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторный
 `SOURCE_FILE_LOAD_V4` для восстановления целевого состояния. Gate 6 требует,
@@ -271,6 +271,14 @@ DEV `SUCCESS` и evidence. Обычный
 пунктуация единиц канонизируется до сопоставления; исходный файл и
 `DIM_PRODUCTS` не изменяются. Повторный запуск начинается с read-only Validate,
 поскольку Gate 6 operation и live writes ещё не создавались.
+
+Первый Start на `.19` создал recovery-копии, но fail-closed завершился в
+`BASELINE_SCAN` до первого digest chunk: Gate 6 обращался к внутренней
+`AKORT_V300.HEADERS`, недоступной за границей модуля Incremental Publish.
+В `.20` Publish headers экспортируются через
+`AKORT.IncrementalPublish.PublishHeaders`. Точный incident
+`A74_GATE6_7F437567A3ABBFBE94F1` можно продолжить функцией Resume с тем же
+execution ID, source hash и recovery-копиями; новый Start запрещён.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

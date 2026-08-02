@@ -12,10 +12,11 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * it has no aggregate impact under the frozen Alpha.7.4 contract.
  */
 AKORT.Alpha74Gate6Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate6-acceptance-1';
+  var VERSION = '4.0-alpha74-gate6-acceptance-2';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate6-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate6-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.19';
+  var RELEASE = '4.0.0-alpha.7.4.20';
+  var BASELINE_HEADER_INCIDENT_RELEASE = '4.0.0-alpha.7.4.19';
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE6_STATE_V1';
   var CONTROL_SHEET = 'GATE6_CANARY_INPUT';
   var TRIGGER_HANDLER = 'AKORT_alpha74Gate6Worker';
@@ -522,6 +523,15 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     return { schemaVersion: '4.0-alpha74-gate6-scan-1', bucket: bucket, targetIndex: 0, work: null };
   }
 
+  function expectedHeaders_(target) {
+    if (target === 'PUBLISH_PRICE_AGGREGATES') return AKORT.AggregateContract.Headers.slice();
+    var registry = AKORT.IncrementalPublish && AKORT.IncrementalPublish.PublishHeaders;
+    var headers = registry && registry[target];
+    assert_(Array.isArray(headers), 'ALPHA74_GATE6_PUBLISH_CONTRACT_MISSING',
+      'Gate 6 cannot load the exported Publish header contract.', { target: target });
+    return headers.slice();
+  }
+
   function scanStep_(state, bucket, nextPhase) {
     var resources = resources_();
     assert_(text_(resources.publishSpreadsheetId) === text_(state.liveResources.publishSpreadsheetId),
@@ -543,8 +553,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     var columns = sheet.getLastColumn();
     assert_(columns > 0, 'ALPHA74_GATE6_TARGET_EMPTY_SCHEMA', 'Gate 6 target has no columns.', { target: target });
     var headers = sheet.getRange(1, 1, 1, columns).getValues()[0].map(String);
-    var expectedHeaders = target === 'PUBLISH_PRICE_AGGREGATES'
-      ? AKORT.AggregateContract.Headers.slice() : AKORT_V300.HEADERS[target].slice();
+    var expectedHeaders = expectedHeaders_(target);
     assert_(JSON.stringify(headers) === JSON.stringify(expectedHeaders),
       'ALPHA74_GATE6_PUBLISH_SCHEMA_MISMATCH', 'A Publish schema changed before or during Gate 6.', {
         target: target,
@@ -1012,6 +1021,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       } : null,
       acceptance: clone_(state.acceptance || {}),
       evidence: clone_(state.evidence || null),
+      recovery: clone_(state.recovery || null),
       metrics: clone_(state.metrics || {}),
       consecutiveErrors: Number(state.consecutiveErrors || 0),
       lastError: clone_(state.lastError || null),
@@ -1143,16 +1153,45 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     }, { lock: true, persistLogs: true, lockTimeoutMs: 60000 });
   }
 
+  function blankCycleIds_(value) {
+    value = value || {};
+    return !text_(value.canary) && !text_(value.reversal) && !text_(value.restore);
+  }
+
+  function baselineHeaderIncident_(state) {
+    var metrics = state && state.metrics || {};
+    var scan = state && state.scan || null;
+    var artifacts = state && state.artifacts || {};
+    return !!state &&
+      state.stateSchemaVersion === STATE_SCHEMA &&
+      state.release === BASELINE_HEADER_INCIDENT_RELEASE &&
+      state.status === 'FAILED' && state.phase === 'FAILED' &&
+      state.failedFromPhase === 'BASELINE_SCAN' &&
+      state.lastError && state.lastError.code === 'ALPHA74_GATE6_UNEXPECTED_ERROR' &&
+      text_(state.lastError.message).indexOf('AKORT_V300 is not defined') >= 0 &&
+      blankCycleIds_(state.operations) && blankCycleIds_(state.loads) &&
+      Object.keys(state.digests || {}).length === 0 &&
+      scan && scan.schemaVersion === '4.0-alpha74-gate6-scan-1' &&
+      scan.bucket === 'baseline' && Number(scan.targetIndex || 0) === 0 && !scan.work &&
+      Number(metrics.digestChunks || 0) === 0 && Number(metrics.rowsScanned || 0) === 0 &&
+      !!text_(artifacts.dwhBackup && artifacts.dwhBackup.id) &&
+      !!text_(artifacts.publishBackup && artifacts.publishBackup.id);
+  }
+
   function resume() {
     return AKORT.Core.safeRun('ALPHA74_GATE6_RESUME', function () {
       AKORT.EnvironmentGuard.assertDev();
       var state = loadState_();
-      assert_(state && state.status === 'STOPPED' && text_(state.stoppedFromPhase),
-        'ALPHA74_GATE6_RESUME_STATE_INVALID', 'Gate 6 Resume requires a manually stopped durable checkpoint.', {
+      var baselineIncident = baselineHeaderIncident_(state);
+      var manuallyStopped = state && state.status === 'STOPPED' && text_(state.stoppedFromPhase);
+      assert_(baselineIncident || manuallyStopped,
+        'ALPHA74_GATE6_RESUME_STATE_INVALID', 'Gate 6 Resume requires a manually stopped checkpoint or the exact Alpha.7.4.19 baseline-header incident.', {
           status: state ? state.status : 'NOT_FOUND',
-          stoppedFromPhase: state ? state.stoppedFromPhase || '' : ''
+          stoppedFromPhase: state ? state.stoppedFromPhase || '' : '',
+          failedFromPhase: state ? state.failedFromPhase || '' : '',
+          baselineHeaderIncident: baselineIncident
         });
-      assert_(state.stateSchemaVersion === STATE_SCHEMA && state.release === RELEASE,
+      assert_(baselineIncident || (state.stateSchemaVersion === STATE_SCHEMA && state.release === RELEASE),
         'ALPHA74_GATE6_RESUME_SCHEMA_INVALID', 'Gate 6 checkpoint is not compatible with this release.', {
           stateSchemaVersion: state.stateSchemaVersion,
           release: state.release
@@ -1182,7 +1221,21 @@ AKORT.Alpha74Gate6Acceptance = (function () {
           expectedSourceHash: state.canarySource.sourceHash,
           actualSourceHash: inspected.sourceHash
         });
-      var resumePhase = state.stoppedFromPhase;
+      var resumePhase = baselineIncident ? 'BASELINE_SCAN' : state.stoppedFromPhase;
+      if (baselineIncident) {
+        state.recovery = {
+          mode: 'BASELINE_HEADER_CONTRACT_RECOVERY',
+          recoveredFromRelease: state.release,
+          recoveredFromExecutionId: state.executionId,
+          recoveredAt: now_(),
+          preservedRecoveryCopies: true,
+          preservedCanarySource: true,
+          physicalWritesBeforeRecovery: false
+        };
+        state.release = RELEASE;
+        state.scan = newScan_('baseline');
+        state.failedFromPhase = '';
+      }
       if (['BASELINE_SCAN', 'ARM_CANARY'].indexOf(resumePhase) < 0) setRegularPipeline_(true);
       state.status = 'RUNNING';
       state.phase = resumePhase;
@@ -1191,7 +1244,12 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       state.stoppedFromPhase = '';
       state.lastError = null;
       state.consecutiveErrors = 0;
-      state.lastStep = { phase: 'RESUMED', resumePhase: resumePhase, resumedAt: now_() };
+      state.lastStep = {
+        phase: 'RESUMED',
+        resumePhase: resumePhase,
+        resumedAt: now_(),
+        recoveryMode: baselineIncident ? 'BASELINE_HEADER_CONTRACT_RECOVERY' : 'MANUAL_STOP_RESUME'
+      };
       saveState_(state);
       writeValidation_('GATE 6 ВОЗОБНОВЛЁН', { executionId: state.executionId, phase: resumePhase });
       ensureTrigger_();
@@ -1362,6 +1420,8 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       canonicalCell: canonicalCell_,
       addRowsToDigest: addRowsToDigest_,
       digestValue: digestValue_,
+      expectedHeaders: expectedHeaders_,
+      baselineHeaderIncident: baselineHeaderIncident_,
       compareDigests: compareDigests_,
       changedTargets: changedTargets_,
       operationSummary: operationSummary_

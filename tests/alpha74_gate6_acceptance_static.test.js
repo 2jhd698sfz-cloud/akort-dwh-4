@@ -44,6 +44,15 @@ vm.runInContext(
   { filename: 'src/06_ExistingSourceParsers.js' }
 );
 
+context.AKORT.IncrementalPublish = {
+  PublishHeaders: {
+    PUBLISH_PRICES_WEEKLY: ['weekly_header'],
+    PUBLISH_PRICES_MONTHLY: ['monthly_header'],
+    PUBLISH_INDUSTRY: ['industry_header']
+  }
+};
+context.AKORT.AggregateContract = { Headers: ['aggregate_header'] };
+
 vm.runInContext(
   fs.readFileSync(path.join(root, 'src/28_Alpha74Gate6Acceptance.js'), 'utf8'),
   context,
@@ -82,8 +91,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-1');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.19');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-2');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.20');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -93,6 +102,52 @@ test('Gate 6 metadata and authoritative target set are exact', () => {
     'PUBLISH_INDUSTRY',
     'PUBLISH_PRICE_AGGREGATES'
   ]);
+});
+
+test('Gate 6 reads Publish schemas only through exported contracts', () => {
+  assert.deepEqual(Array.from(G.Test.expectedHeaders('PUBLISH_PRICES_WEEKLY')), ['weekly_header']);
+  assert.deepEqual(Array.from(G.Test.expectedHeaders('PUBLISH_PRICES_MONTHLY')), ['monthly_header']);
+  assert.deepEqual(Array.from(G.Test.expectedHeaders('PUBLISH_INDUSTRY')), ['industry_header']);
+  assert.deepEqual(Array.from(G.Test.expectedHeaders('PUBLISH_PRICE_AGGREGATES')), ['aggregate_header']);
+});
+
+test('exact Alpha.7.4.19 baseline-header failure is eligible for durable recovery only before writes', () => {
+  const incident = {
+    stateSchemaVersion: '4.0-alpha74-gate6-state-1',
+    release: '4.0.0-alpha.7.4.19',
+    executionId: 'A74_GATE6_7F437567A3ABBFBE94F1',
+    status: 'FAILED',
+    phase: 'FAILED',
+    failedFromPhase: 'BASELINE_SCAN',
+    operations: { canary: '', reversal: '', restore: '' },
+    loads: { canary: '', reversal: '', restore: '' },
+    digests: {},
+    scan: {
+      schemaVersion: '4.0-alpha74-gate6-scan-1',
+      bucket: 'baseline',
+      targetIndex: 0,
+      work: null
+    },
+    metrics: { digestChunks: 0, rowsScanned: 0 },
+    artifacts: {
+      dwhBackup: { id: 'DWH_BACKUP' },
+      publishBackup: { id: 'PUBLISH_BACKUP' }
+    },
+    lastError: {
+      code: 'ALPHA74_GATE6_UNEXPECTED_ERROR',
+      message: 'AKORT_V300 is not defined'
+    }
+  };
+  assert.equal(G.Test.baselineHeaderIncident(incident), true);
+  const afterWrite = JSON.parse(JSON.stringify(incident));
+  afterWrite.operations.canary = 'OP_CANARY';
+  assert.equal(G.Test.baselineHeaderIncident(afterWrite), false);
+  const afterScan = JSON.parse(JSON.stringify(incident));
+  afterScan.metrics.rowsScanned = 1;
+  assert.equal(G.Test.baselineHeaderIncident(afterScan), false);
+  const wrongError = JSON.parse(JSON.stringify(incident));
+  wrongError.lastError.message = 'Some other failure';
+  assert.equal(G.Test.baselineHeaderIncident(wrongError), false);
 });
 
 test('Gate 6 source parser treats terminal unit punctuation as equivalent', () => {
@@ -155,7 +210,7 @@ test('operation acceptance requires all aggregate phases, RAW audit and SUCCESS'
     operation_type: 'SOURCE_FILE_LOAD_V4',
     status: 'SUCCESS',
     current_phase: 'SUCCESS',
-    release_version: '4.0.0-alpha.7.4.19',
+    release_version: '4.0.0-alpha.7.4.20',
     checkpoint: {
       completedPhases: phases,
       aggregate: { status: 'SUCCESS', targetAfterFingerprint: 'AFTER' },
@@ -174,6 +229,7 @@ test('operation acceptance requires all aggregate phases, RAW audit and SUCCESS'
 
 test('source contract contains source-file canary, recovery copies, standard rollback, restore and fail-closed flags', () => {
   const source = fs.readFileSync(path.join(root, 'src/28_Alpha74Gate6Acceptance.js'), 'utf8');
+  const publish = fs.readFileSync(path.join(root, 'src/07_IncrementalPublish.js'), 'utf8');
   assert(source.includes("var CONTROL_SHEET = 'GATE6_CANARY_INPUT'"));
   assert(source.includes('AKORT.ExistingSourceParsers.previewFile'));
   assert(source.includes('AKORT.ExistingSourceParsers.enqueueFile'));
@@ -189,6 +245,10 @@ test('source contract contains source-file canary, recovery copies, standard rol
   assert(source.includes("setRegularPipeline_(false)"));
   assert(source.includes("setUserPipeline_(false)"));
   assert(source.includes('regularCyclesWithoutManualContinuation: 3'));
+  assert(source.includes('AKORT.IncrementalPublish.PublishHeaders'));
+  assert(source.includes('BASELINE_HEADER_CONTRACT_RECOVERY'));
+  assert(!source.includes('AKORT_V300.HEADERS'));
+  assert(publish.includes('PublishHeaders:PUBLISH_HEADERS'));
   assert(!source.includes('AKORT.IndustryInput.submit'));
   assert(!source.includes('deleteRow('));
   assert(!source.includes('clearContent('));

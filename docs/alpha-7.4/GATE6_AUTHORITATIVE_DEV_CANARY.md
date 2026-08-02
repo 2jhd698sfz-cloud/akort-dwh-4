@@ -36,7 +36,8 @@ Canary может быть новым периодом или уточнение
 чтобы это был реальный файл, который должен остаться в DEV после успешного
 завершения Gate 6.
 
-Текущий release `.19` канонизирует завершающую пунктуацию единиц измерения.
+Текущий release `.20` сохраняет канонизацию завершающей пунктуации единиц
+из `.19`.
 Например, `10 шт` в источнике и `10 шт.` в `DIM_PRODUCTS` считаются одной
 единицей. Это parser normalization: справочник и исходный файл вручную менять
 не требуется.
@@ -98,6 +99,15 @@ Canary может быть новым периодом или уточнение
 восстановление из физической копии не выполняется: штатный rollback —
 `RAW_REVERSAL_V4`, а recovery-копии являются последним контролируемым якорем.
 
+Для точного terminal `.19` incident
+`A74_GATE6_7F437567A3ABBFBE94F1 / FAILED / BASELINE_SCAN /
+AKORT_V300 is not defined` release `.20` разрешает отдельное fail-closed
+продолжение через обычный `AKORT_alpha74Gate6Resume()`. Оно допускается только
+если digest chunks и scanned rows равны нулю, operation/load IDs пусты,
+source hash не изменился и обе recovery-копии доступны. Resume сохраняет
+execution ID и копии, переводит checkpoint обратно в `BASELINE_SCAN` и не
+включает regular pipeline до завершения baseline.
+
 ## Установка и запуск
 
 После публикации commit и `clasp push`:
@@ -128,6 +138,11 @@ Canary может быть новым периодом или уточнение
 `10 шт.`, после установки `.19` повторить `Install`, smoke test, contract scan
 и `Gate6Validate`. Новый canary-файл, recovery или Resume не нужны: операция
 Gate 6 ещё не была запущена и live-данные не изменялись.
+
+Если `.19` завершился точным baseline-header incident после Start, после
+установки `.20` не выполнять `Install`, `Validate` или `Start` повторно.
+Запустить smoke test, contract scan, проверить terminal status и один раз
+выполнить `AKORT_alpha74Gate6Resume()`. Затем использовать только Status.
 
 Экстренная остановка: `AKORT_alpha74Gate6Stop()`. Она сохраняет исходную фазу,
 operation IDs, digest cursors и recovery-копии. После проверки причины тот же

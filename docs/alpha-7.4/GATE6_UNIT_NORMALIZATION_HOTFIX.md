@@ -61,3 +61,7 @@ Resume не требуются.
    запустить `AKORT_alpha74Gate6Start()`.
 
 До `Gate6Start` флаги regular и user pipeline остаются `FALSE`.
+
+После успешного Validate `.19` Start дошёл до отдельного baseline-header
+инцидента, описанного в `GATE6_BASELINE_HEADER_RECOVERY_HOTFIX.md`. Это не
+отменяет unit normalization и не требует изменения source file.

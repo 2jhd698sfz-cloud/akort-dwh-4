@@ -150,7 +150,7 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
-Release `4.0.0-alpha.7.4.19` готов к DEV-запуску Gate 6. Harness
+Release `4.0.0-alpha.7.4.20` готов к DEV-продолжению Gate 6. Harness
 создаёт DWH/Publish recovery copies, выполняет canary из нового weekly/monthly
 файла через `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторную
 source-file загрузку для восстановления. Acceptance требует фактического
@@ -160,6 +160,10 @@ source-file загрузку для восстановления. Acceptance т�
 заблокированы. Нормативный runbook: `GATE6_AUTHORITATIVE_DEV_CANARY.md`.
 Hotfix `.19` устраняет обнаруженный до Start parser blocker `10 шт` /
 `10 шт.` без изменения справочников или canary-файла.
+Hotfix `.20` заменяет недоступную межмодульную ссылку `AKORT_V300.HEADERS` на
+явный `AKORT.IncrementalPublish.PublishHeaders` и разрешает Resume только для
+точного `.19 / BASELINE_SCAN` incident до любых scan chunks, operations и
+live writes. Существующие recovery-копии переиспользуются.
 
 ## Gate 7 — Acceptance
 
