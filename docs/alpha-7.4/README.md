@@ -294,6 +294,13 @@ operation с `MATERIALIZING_AGGREGATE_INPUTS`, не повторяя RAW и ordi
 Publish. Нормативная инструкция:
 `GATE6_RUNTIME_CONTEXT_RECOVERY_HOTFIX.md`.
 
+Первый вызов exact recovery на `.21` завершился до любых мутаций с
+`ALPHA74_GATE6_RUNTIME_CONTEXT_SETTING_INVALID`: слой `AKORT.Config` уже
+преобразовал `{}` из `SYSTEM_SETTINGS` в объект, а recovery повторно вызвал
+`JSON.parse(String(value))`. `.22` нормализует как типизированный объект, так и
+JSON-строку. Исходный `.20` checkpoint и recovery-копии сохранены; инструкция:
+`GATE6_RUNTIME_CONTEXT_TYPED_SETTING_HOTFIX.md`.
+
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию
 `DIM_INDUSTRY_SERIES`, два пользовательских поля (`Период`, `Значение`),

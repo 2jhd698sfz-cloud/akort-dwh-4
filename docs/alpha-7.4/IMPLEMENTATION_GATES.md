@@ -150,7 +150,7 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
-Release `4.0.0-alpha.7.4.21` готов к точному DEV-продолжению Gate 6. Harness
+Release `4.0.0-alpha.7.4.22` готов к точному DEV-продолжению Gate 6. Harness
 создаёт DWH/Publish recovery copies, выполняет canary из нового weekly/monthly
 файла через `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторную
 source-file загрузку для восстановления. Acceptance требует фактического
@@ -171,6 +171,10 @@ Alpha.7.4 stage/atomic boundary, публикует большие affected sets
 пакетами целых logical series и разрешает только exact `.20` checkpoint
 recovery через `AKORT_alpha74Gate6RecoverRuntimeContext()`. Повторный Start,
 RAW commit и ordinary price Publish запрещены.
+Первый вызов recovery на `.21` безопасно остановился до мутаций, поскольку
+`AKORT.Config` вернул JSON-настройку уже типизированным объектом, а recovery
+попытался разобрать её повторно. `.22` принимает объект или JSON-строку,
+сохраняя остальной exact allowlist без изменений.
 
 ## Gate 7 — Acceptance
 

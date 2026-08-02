@@ -1,4 +1,7 @@
-# Alpha.7.4.21 — Gate 6 operational runtime-context recovery hotfix
+# Alpha.7.4.21/.22 — Gate 6 operational runtime-context recovery hotfix
+
+> Актуальная установка выполняется на `.22`: `.21` содержал безопасную ошибку
+> повторного разбора уже типизированной JSON-настройки и не изменил operation.
 
 ## Зафиксированный инцидент
 

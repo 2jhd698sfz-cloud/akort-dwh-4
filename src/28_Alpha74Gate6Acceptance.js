@@ -12,10 +12,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * it has no aggregate impact under the frozen Alpha.7.4 contract.
  */
 AKORT.Alpha74Gate6Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate6-acceptance-3';
+  var VERSION = '4.0-alpha74-gate6-acceptance-4';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate6-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate6-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.21';
+  var RELEASE = '4.0.0-alpha.7.4.22';
   var BASELINE_HEADER_INCIDENT_RELEASE = '4.0.0-alpha.7.4.19';
   var RUNTIME_CONTEXT_INCIDENT_RELEASE = '4.0.0-alpha.7.4.20';
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE6_STATE_V1';
@@ -365,6 +365,26 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       gate5_evidence_required: true,
       mutation_boundary: 'ALPHA74_ATOMIC_LOGICAL_SERIES'
     };
+  }
+
+  function normalizedJsonSetting_(value) {
+    if (value === '' || value === null || value === undefined) return {};
+    if (Object.prototype.toString.call(value) === '[object Object]') return clone_(value);
+    if (typeof value !== 'string') {
+      throw error_('ALPHA74_GATE6_RUNTIME_CONTEXT_SETTING_INVALID', 'Existing operational aggregate runtime-context setting is invalid JSON.', {
+        valueType: typeof value
+      });
+    }
+    try {
+      if (!value.trim()) return {};
+      var parsed = JSON.parse(value);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON root must be an object.');
+      return parsed;
+    } catch (caught) {
+      throw error_('ALPHA74_GATE6_RUNTIME_CONTEXT_SETTING_INVALID', 'Existing operational aggregate runtime-context setting is invalid JSON.', {
+        cause: String(caught && caught.message || caught)
+      });
+    }
   }
 
   function assertOperationalRuntimeContext_() {
@@ -1295,13 +1315,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       });
       var configured = AKORT.Config.readSystemSettings().PUBLISH_AGGREGATE_RUNTIME_CONTEXT_JSON;
       var expectedContext = acceptedParityRuntimeContext_();
-      var currentContext = {};
-      try { currentContext = configured ? JSON.parse(String(configured)) : {}; }
-      catch (caughtContext) {
-        throw error_('ALPHA74_GATE6_RUNTIME_CONTEXT_SETTING_INVALID', 'Existing operational aggregate runtime-context setting is invalid JSON.', {
-          cause: String(caughtContext && caughtContext.message || caughtContext)
-        });
-      }
+      var currentContext = normalizedJsonSetting_(configured);
       assert_(Object.keys(currentContext).length === 0 || stableStringify_(currentContext) === stableStringify_(expectedContext),
         'ALPHA74_GATE6_RUNTIME_CONTEXT_SETTING_CONFLICT', 'A different operational aggregate runtime context is already configured.', {
           configuredFingerprint: hash_(currentContext),
@@ -1319,7 +1333,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         operationType: 'SOURCE_FILE_LOAD_V4',
         phase: 'MATERIALIZING_AGGREGATE_INPUTS',
         errorCode: 'AGGREGATE_RUNTIME_CONTEXT_MISSING',
-        reason: 'Alpha.7.4.21 exact Gate 6 operational runtime-context recovery'
+        reason: 'Alpha.7.4.22 exact Gate 6 operational runtime-context recovery'
       });
       assert_(prepared && prepared.ok, prepared && prepared.code || 'ALPHA74_GATE6_OPERATION_RECOVERY_FAILED',
         prepared && prepared.message || 'The failed canary operation could not be prepared for recovery.', prepared && prepared.details || {});
@@ -1625,6 +1639,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       expectedHeaders: expectedHeaders_,
       baselineHeaderIncident: baselineHeaderIncident_,
       runtimeContextIncident: runtimeContextIncident_,
+      normalizedJsonSetting: normalizedJsonSetting_,
       compareDigests: compareDigests_,
       changedTargets: changedTargets_,
       operationSummary: operationSummary_

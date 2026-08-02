@@ -12,7 +12,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  */
 AKORT.IndustryInput = (function () {
   var VERSION = '4.0-alpha74-industry-input-1';
-  var RELEASE = '4.0.0-alpha.7.4.21';
+  var RELEASE = '4.0.0-alpha.7.4.22';
   var INPUT_SHEET = 'INDUSTRY_INPUT';
   var LOG_SHEET = 'INDUSTRY_INPUT_LOG';
   var HEADER_ROW = 5;

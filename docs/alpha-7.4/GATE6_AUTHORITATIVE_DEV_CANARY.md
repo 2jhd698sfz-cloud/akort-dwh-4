@@ -155,10 +155,15 @@ Gate 6 ещё не была запущена и live-данные не изме�
 выполнить `AKORT_alpha74Gate6Resume()`. Затем использовать только Status.
 
 Если `.20` завершился точным runtime-context incident после RAW/price Publish,
-после установки `.21` выполнить `AKORT_alpha74Install()`, smoke test, contract
+после установки текущего `.22` выполнить `AKORT_alpha74Install()`, smoke test, contract
 scan и Status. Не выполнять Gate6 Install, Validate, Start или обычный Resume.
 Один раз выполнить `AKORT_alpha74Gate6RecoverRuntimeContext()`, затем
 использовать только `AKORT_alpha74Gate6Status()`.
+
+Если первый вызов этой функции на `.21` вернул
+`ALPHA74_GATE6_RUNTIME_CONTEXT_SETTING_INVALID / [object Object]`, никаких
+operation/data-plane изменений не произошло. Установить `.22` и повторить
+только exact recovery-функцию по указанной последовательности.
 
 Экстренная остановка: `AKORT_alpha74Gate6Stop()`. Она сохраняет исходную фазу,
 operation IDs, digest cursors и recovery-копии. После проверки причины тот же

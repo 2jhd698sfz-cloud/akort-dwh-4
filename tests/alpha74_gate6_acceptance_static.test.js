@@ -91,8 +91,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-3');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.21');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-4');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.22');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -158,6 +158,20 @@ test('Gate 6 source parser treats terminal unit punctuation as equivalent', () =
   assert.deepEqual(
     JSON.parse(JSON.stringify(parser.convertUnit(123.45, '10 шт', '10 шт.'))),
     { value: 123.45 }
+  );
+});
+
+test('runtime-context setting accepts Config-typed objects and serialized JSON', () => {
+  const typed = { adapter_mode: 'ALPHA6_ACCEPTED_PARITY' };
+  assert.deepEqual(JSON.parse(JSON.stringify(G.Test.normalizedJsonSetting(typed))), typed);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(G.Test.normalizedJsonSetting('{"adapter_mode":"ALPHA6_ACCEPTED_PARITY"}'))),
+    typed
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(G.Test.normalizedJsonSetting(null))), {});
+  assert.throws(
+    () => G.Test.normalizedJsonSetting('["not-an-object"]'),
+    error => error.code === 'ALPHA74_GATE6_RUNTIME_CONTEXT_SETTING_INVALID'
   );
 });
 
@@ -247,7 +261,7 @@ test('operation acceptance requires all aggregate phases, RAW audit and SUCCESS'
     operation_type: 'SOURCE_FILE_LOAD_V4',
     status: 'SUCCESS',
     current_phase: 'SUCCESS',
-    release_version: '4.0.0-alpha.7.4.21',
+    release_version: '4.0.0-alpha.7.4.22',
     checkpoint: {
       completedPhases: phases,
       aggregate: { status: 'SUCCESS', targetAfterFingerprint: 'AFTER' },
