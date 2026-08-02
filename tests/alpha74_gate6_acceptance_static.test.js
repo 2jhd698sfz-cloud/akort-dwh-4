@@ -39,6 +39,12 @@ context.AKORT = {
 };
 
 vm.runInContext(
+  fs.readFileSync(path.join(root, 'src/06_ExistingSourceParsers.js'), 'utf8'),
+  context,
+  { filename: 'src/06_ExistingSourceParsers.js' }
+);
+
+vm.runInContext(
   fs.readFileSync(path.join(root, 'src/28_Alpha74Gate6Acceptance.js'), 'utf8'),
   context,
   { filename: 'src/28_Alpha74Gate6Acceptance.js' }
@@ -77,7 +83,7 @@ function allTargets(value) {
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
   assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-1');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.18');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.19');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -87,6 +93,17 @@ test('Gate 6 metadata and authoritative target set are exact', () => {
     'PUBLISH_INDUSTRY',
     'PUBLISH_PRICE_AGGREGATES'
   ]);
+});
+
+test('Gate 6 source parser treats terminal unit punctuation as equivalent', () => {
+  const parser = context.AKORT.ExistingSourceParsers.Test;
+  assert.equal(parser.unitKey('10 шт'), 'ten_pieces');
+  assert.equal(parser.unitKey('10 шт.'), 'ten_pieces');
+  assert.equal(parser.unitKey('шт.'), 'piece');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(parser.convertUnit(123.45, '10 шт', '10 шт.'))),
+    { value: 123.45 }
+  );
 });
 
 test('control sheet accepts a Drive file ID or URL and rejects arbitrary text', () => {
@@ -138,7 +155,7 @@ test('operation acceptance requires all aggregate phases, RAW audit and SUCCESS'
     operation_type: 'SOURCE_FILE_LOAD_V4',
     status: 'SUCCESS',
     current_phase: 'SUCCESS',
-    release_version: '4.0.0-alpha.7.4.18',
+    release_version: '4.0.0-alpha.7.4.19',
     checkpoint: {
       completedPhases: phases,
       aggregate: { status: 'SUCCESS', targetAfterFingerprint: 'AFTER' },

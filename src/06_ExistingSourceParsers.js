@@ -606,7 +606,7 @@ AKORT.ExistingSourceParsers = (function () {
   }
 
   function unitKey_(unit) {
-    var value = norm_(unit).replace(/\s+/g, ' ');
+    var value = norm_(unit).replace(/\s+/g, ' ').replace(/[.,;:]+$/g, '').trim();
     if (!value) return '';
     if (value === 'кг' || value === 'килограмм') return 'kg';
     if (value === 'л' || value === 'литр') return 'liter';

@@ -258,13 +258,19 @@ Gate 5 закрыт 2 августа 2026 года. Execution
 артефакта содержат 61 636 строк по 29 колонок и имеют одинаковый
 row-multiset digest. DEV Publish не изменялась.
 
-Release `4.0.0-alpha.7.4.18` подготавливает Gate 6: две recovery-копии,
+Release `4.0.0-alpha.7.4.19` подготавливает Gate 6: две recovery-копии,
 durable digest четырёх Publish-листов, новый weekly/monthly
 `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторный
 `SOURCE_FILE_LOAD_V4` для восстановления целевого состояния. Gate 6 требует,
 чтобы canary изменил `PUBLISH_PRICE_AGGREGATES`. Gate 6 ещё не закрыт: нужен
 DEV `SUCCESS` и evidence. Обычный
 пользовательский Submit остаётся закрыт до Gate 7.
+
+Первичная DEV-валидация на `.18` выявила только parser blocker для пары единиц
+`10 шт` / `10 шт.` у категории «Яйца куриные, 10 шт.». В `.19` завершающая
+пунктуация единиц канонизируется до сопоставления; исходный файл и
+`DIM_PRODUCTS` не изменяются. Повторный запуск начинается с read-only Validate,
+поскольку Gate 6 operation и live writes ещё не создавались.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию
