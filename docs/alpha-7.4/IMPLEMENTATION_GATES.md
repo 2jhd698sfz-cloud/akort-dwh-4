@@ -150,7 +150,7 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
-Release `4.0.0-alpha.7.4.25` готов к точному DEV-продолжению Gate 6. Harness
+Release `4.0.0-alpha.7.4.26` готов к точному DEV-продолжению Gate 6. Harness
 создаёт DWH/Publish recovery copies, выполняет canary из нового weekly/monthly
 файла через `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторную
 source-file загрузку для восстановления. Acceptance требует фактического
@@ -201,6 +201,11 @@ UPDATING_AGGREGATES` checkpoint. Исправляется первая пачк�
 RAW, ordinary price Publish, materialization, calculation и staging не
 повторяются. Нормативный runbook:
 `GATE6_MONTHLY_PERIOD_LABEL_RECOVERY_HOTFIX.md`.
+Recovery `.25` остановилась до любых мутаций на неверной private-ссылке
+`readCalculatedRows_`. `.26` вызывает принятый
+`DefaultAdapter.readCalculatedRows`, сохраняет exact `.24` source-state и
+добавляет в mandatory test chain проверку всех unresolved private
+Apps Script calls.
 
 ## Gate 7 — Acceptance
 

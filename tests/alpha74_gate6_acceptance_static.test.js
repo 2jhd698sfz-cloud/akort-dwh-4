@@ -91,8 +91,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-7');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.25');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-8');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.26');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');

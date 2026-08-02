@@ -37,11 +37,13 @@ The local Alpha.7.4 implementation includes durable staging, bounded calculation
 
 Gate 6 may enable the regular aggregate pipeline only inside its controlled harness. General operator submission remains prohibited until Gate 7 through `PUBLISH_USER_PIPELINE_ENABLED=FALSE`.
 
-Release `4.0.0-alpha.7.4.25` fixes the verified first-batch monthly calendar
+Release `4.0.0-alpha.7.4.26` fixes the verified first-batch monthly calendar
 incident: `period_start=2026-07-01` was physically written with
 `period_label=2026-06-01` after a Moscow Date crossed the UTC month boundary.
 Monthly labels and fingerprints now derive from `period_start`; exact recovery
 repairs only the preserved 32-series batch and resumes the same operation
 without repeating RAW, ordinary price Publish, materialization, calculation or
-staging. Runbook:
+staging. `.26` also fixes the `.25` recovery adapter reference that failed
+before any intent, operation, flag, trigger or Publish mutation, and adds a
+repository-wide unresolved private-call check to the mandatory test chain. Runbook:
 [`GATE6_MONTHLY_PERIOD_LABEL_RECOVERY_HOTFIX.md`](docs/alpha-7.4/GATE6_MONTHLY_PERIOD_LABEL_RECOVERY_HOTFIX.md).

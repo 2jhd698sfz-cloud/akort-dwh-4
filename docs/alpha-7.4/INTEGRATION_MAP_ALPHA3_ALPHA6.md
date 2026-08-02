@@ -96,9 +96,11 @@ release_version
 8. Alpha.7.4.24 распознаёт только точный lost-response boundary между
    завершённой записью `STAGED` и ещё не созданным publish intent, проверяет
    immutable stage snapshot и возвращает operation в bounded execution.
-9. Alpha.7.4.25 выводит monthly `period_label` только из canonical
+9. Alpha.7.4.26 выводит monthly `period_label` только из canonical
    `period_start`, отдельно проверяет physical label и exact-recovery первой
    `.24` пачки из 32 серий без повторения завершённых upstream phases.
+   `.26` исправляет неверную recovery-ссылку `.25` и вводит repository-wide
+   unresolved-private-call test.
 10. Полный ожидаемый affected-set сохраняется в `AGGREGATE_STAGE`.
 11. Publish adapter заменяет логические агрегатные серии в `PUBLISH_PRICE_AGGREGATES`.
 12. Read-back подтверждает keys, hashes, calendar labels, latest и отсутствие изменений вне affected-set.

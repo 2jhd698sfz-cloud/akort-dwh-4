@@ -56,7 +56,8 @@
 - `GATE6_MONTHLY_PERIOD_LABEL_RECOVERY_HOTFIX.md` — exact recovery первой
   32-series publication batch `.24`, где UTC-сериализация сместила monthly
   `period_label` на предыдущий месяц; исправление только этой пачки с
-  продолжением того же operation checkpoint.
+  продолжением того же operation checkpoint; `.26` исправляет runtime-ссылку
+  `.25`, не дошедшую до мутаций.
 - `INDUSTRY_INPUT_FORM.md` — операторская форма для раздельного ввода периода
   и значения активных `RAW_INDUSTRY` серий через `RAW_LOAD_V4`.
 - `GATE5_FULL_BUILD_CHUNKING_HOTFIX.md` — разбор timeout-loop
@@ -323,7 +324,7 @@ publication без повторения upstream work.
 Первый `.24` publication batch из 32 monthly series физически записался, но
 read-back обнаружил `period_start=2026-07-01` вместе с
 `period_label=2026-06-01`. Причина — извлечение месяца из UTC-сериализации
-московской Date. `.25` выводит monthly label и fingerprint из canonical
+московской Date. `.26` выводит monthly label и fingerprint из canonical
 `period_start`, отдельно обнаруживает physical label mismatch и разрешает
 только exact recovery текущего `FAILED_REQUIRES_REVIEW /
 UPDATING_AGGREGATES` checkpoint через
@@ -331,6 +332,9 @@ UPDATING_AGGREGATES` checkpoint через
 32-series пачка; RAW, ordinary price Publish, materialization, calculation и
 staging сохраняются. Инструкция:
 `GATE6_MONTHLY_PERIOD_LABEL_RECOVERY_HOTFIX.md`.
+`.25` не начала recovery из-за неверной private-ссылки;
+`.26` использует `DefaultAdapter.readCalculatedRows` и добавляет общий
+статический контроль всех private Apps Script calls.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

@@ -1,4 +1,4 @@
-# Alpha.7.4.25 — Gate 6 monthly period-label recovery
+# Alpha.7.4.26 — Gate 6 monthly period-label recovery
 
 ## Инцидент
 
@@ -46,6 +46,18 @@ UTC-строки и записывал июнь, хотя в часовом по
 
 Новые операции, RAW, ordinary weekly/monthly Publish, materialization,
 calculation и staging не повторяются.
+
+## Runtime correction `.26`
+
+Первый запуск `.25` завершился на `readCalculatedRows_ is not defined`.
+Сбой произошёл до обновления durable intent, operation checkpoint, flags,
+trigger и Publish. Поэтому source-state остался точным `.24 / FAILED`
+и не требует нового recovery режима.
+
+`.26` заменяет несуществующую private-ссылку на фактический
+`DefaultAdapter.readCalculatedRows(identity)`. В mandatory `npm test` добавлена
+отдельная проверка всех вызовов private Apps Script функций на
+наличие объявления в полном комплекте `src`.
 
 ## Exact allowlist
 
@@ -99,7 +111,7 @@ worker. Не выполнять `Gate6Start`, `Gate6Install`, `Gate6Validate`, �
 
 Ожидаемый ответ recovery:
 
-- `release=4.0.0-alpha.7.4.25`;
+- `release=4.0.0-alpha.7.4.26`;
 - `status=RUNNING`, `phase=RUN_CANARY`;
 - `recovery.mode=MONTHLY_PERIOD_LABEL_READBACK_RECOVERY`;
 - `recovery.repairedBatchKey=SERIES_000001_000032`;

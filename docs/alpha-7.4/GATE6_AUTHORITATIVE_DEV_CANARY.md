@@ -191,11 +191,13 @@ Install, Validate или runtime-context recovery. Ожидаемый mode:
 AGGREGATE_PUBLISH_READBACK_MISMATCH`, не выполнять обычный Resume. Это
 проверенный first-batch incident: atomic write состоялся, но monthly
 `period_label` 1 июля был записан как 1 июня из-за UTC-сериализации. Установить
-`.25`, выполнить общий Install, оставить только aggregate execution flag,
+`.26`, выполнить общий Install, оставить только aggregate execution flag,
 выполнить smoke test, contract scan и Status, затем один раз вызвать
 `AKORT_alpha74Gate6RecoverMonthlyPeriodLabel()`. Ожидаемый mode:
 `MONTHLY_PERIOD_LABEL_READBACK_RECOVERY`. После этого использовать только
 Status. Подробности: `GATE6_MONTHLY_PERIOD_LABEL_RECOVERY_HOTFIX.md`.
+`.25` завершилась до мутаций на неверной private-ссылке;
+`.26` использует реальный DefaultAdapter и тот же exact `.24` checkpoint.
 
 Экстренная остановка: `AKORT_alpha74Gate6Stop()`. Она сохраняет исходную фазу,
 operation IDs, digest cursors и recovery-копии. После проверки причины тот же

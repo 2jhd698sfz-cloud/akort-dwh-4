@@ -11,7 +11,7 @@
   "user_pipeline_allowed": false,
   "operation_schema_version": "4.0-operation-2",
   "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
-  "implementation_release": "4.0.0-alpha.7.4.25",
+  "implementation_release": "4.0.0-alpha.7.4.26",
   "completed_gates": [0, 1, 2, 3, 4, 5],
   "partially_completed_gates": [7],
   "next_gate": 6,
@@ -530,8 +530,8 @@
     }
   },
   "gate_6_acceptance_harness": {
-    "version": "4.0-alpha74-gate6-acceptance-7",
-    "release": "4.0.0-alpha.7.4.25",
+    "version": "4.0-alpha74-gate6-acceptance-8",
+    "release": "4.0.0-alpha.7.4.26",
     "state_schema": "4.0-alpha74-gate6-state-1",
     "evidence_schema": "4.0-alpha74-gate6-evidence-1",
     "status": "MONTHLY_PERIOD_LABEL_RECOVERY_READY_REDEPLOY_REQUIRED",
@@ -685,7 +685,7 @@
       "recovery_copies_preserved": true,
       "regular_pipeline_enabled": false,
       "user_pipeline_enabled": false,
-      "resolved_in_release": "4.0.0-alpha.7.4.25",
+      "resolved_in_release": "4.0.0-alpha.7.4.26",
       "recovery_entrypoint": "AKORT_alpha74Gate6RecoverMonthlyPeriodLabel",
       "recovery_mode": "MONTHLY_PERIOD_LABEL_READBACK_RECOVERY",
       "repeat_raw_commit": false,
@@ -693,7 +693,22 @@
       "repeat_aggregate_materialization": false,
       "repeat_aggregate_calculation": false,
       "repeat_aggregate_staging": false,
-      "physical_repair_scope": "EXACT_FIRST_32_LOGICAL_SERIES"
+      "physical_repair_scope": "EXACT_FIRST_32_LOGICAL_SERIES",
+      "recovery_runtime_reference_incident": {
+        "detected_on_release": "4.0.0-alpha.7.4.25",
+        "code": "UNEXPECTED_ERROR",
+        "message": "readCalculatedRows_ is not defined",
+        "cause": "RECOVERY_CALLED_A_NONEXISTENT_PRIVATE_FUNCTION_INSTEAD_OF_DEFAULT_ADAPTER_METHOD",
+        "mutation_started": false,
+        "intent_updated": false,
+        "operation_checkpoint_updated": false,
+        "flags_changed": false,
+        "trigger_created": false,
+        "publish_changed": false,
+        "source_state_preserved": "4.0.0-alpha.7.4.24_FAILED",
+        "resolved_in_release": "4.0.0-alpha.7.4.26",
+        "preventive_test": "apps_script_private_references_static"
+      }
     },
     "bounded_phase_limits": {
       "materialization_combos_per_step": 4,

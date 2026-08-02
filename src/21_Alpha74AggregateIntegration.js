@@ -8,8 +8,8 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * reconciliation. The default adapter is the only physical-write boundary.
  */
 AKORT.AggregateIntegration = (function () {
-  var VERSION = '4.0-aggregate-integration-4';
-  var RELEASE = '4.0.0-alpha.7.4.25';
+  var VERSION = '4.0-aggregate-integration-5';
+  var RELEASE = '4.0.0-alpha.7.4.26';
   var MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE = '4.0.0-alpha.7.4.24';
   var OPERATION_SCHEMA_VERSION = '4.0-operation-2';
   var STAGE_SCHEMA_VERSION = '4.0-aggregate-stage-1';
@@ -2798,7 +2798,7 @@ AKORT.AggregateIntegration = (function () {
         batchKey: batchKey
       });
     }
-    var staged = readCalculatedRows_(identity);
+    var staged = DefaultAdapter.readCalculatedRows(identity);
     var validation = validateRecoveryStageSnapshot(staged, identity);
     if (!validation.complete || validation.rowCount !== expectedRows ||
         validation.stageFingerprint !== expectedStageFingerprint || validation.seriesCount !== 392) {
