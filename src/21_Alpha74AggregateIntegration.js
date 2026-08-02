@@ -8,8 +8,9 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * reconciliation. The default adapter is the only physical-write boundary.
  */
 AKORT.AggregateIntegration = (function () {
-  var VERSION = '4.0-aggregate-integration-3';
-  var RELEASE = '4.0.0-alpha.7.4.24';
+  var VERSION = '4.0-aggregate-integration-4';
+  var RELEASE = '4.0.0-alpha.7.4.25';
+  var MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE = '4.0.0-alpha.7.4.24';
   var OPERATION_SCHEMA_VERSION = '4.0-operation-2';
   var STAGE_SCHEMA_VERSION = '4.0-aggregate-stage-1';
   var TARGET_SHEET = 'PUBLISH_PRICE_AGGREGATES';
@@ -190,12 +191,27 @@ AKORT.AggregateIntegration = (function () {
     });
   }
 
+  function monthlyPeriodLabelKey_(row) {
+    var source = row || {};
+    if (text_(source.frequency).toLowerCase() !== 'monthly') return '';
+    return periodKey_('monthly', source.period_start);
+  }
+
+  function monthlyPeriodLabelMismatch_(row) {
+    var expected = monthlyPeriodLabelKey_(row);
+    if (!expected) return false;
+    return periodKey_('monthly', row && row.period_label) !== expected;
+  }
+
   function fingerprintRowValues_(row, headers) {
     return headers.map(function (header) {
       var value = row && row[header];
       if (header === 'period_start') {
         var period = periodKey_(row && row.frequency, value);
         return String(row && row.frequency).toLowerCase() === 'monthly' && period ? period + '-01' : period;
+      }
+      if (header === 'period_label' && text_(row && row.frequency).toLowerCase() === 'monthly') {
+        return monthlyPeriodLabelKey_(row);
       }
       if (header === 'period_label' &&
           (value instanceof Date || (typeof value === 'number' && isFinite(value)))) {
@@ -881,6 +897,7 @@ AKORT.AggregateIntegration = (function () {
     var headers = AKORT.AggregateContract.Headers.slice();
     var signatures = stageSeriesMap_(stageRows), affected = {}, unrelated = [], physicalRows = [], byRowKey = {};
     var duplicateLogicalRows = [], duplicatePhysicalRows = [];
+    var monthlyPeriodLabelLogicalRows = [], monthlyPeriodLabelPhysicalRows = [];
     (stageRows || []).forEach(function (record) { affected[text_(record.aggregate_series_key)] = true; });
     (targetRows || []).forEach(function (row) {
       var series = signatures[publicSignature_(row)] || '';
@@ -889,6 +906,10 @@ AKORT.AggregateIntegration = (function () {
         return;
       }
       var rowKey = series + '|' + periodKey_(row.frequency, row.period_start);
+      if (monthlyPeriodLabelMismatch_(row)) {
+        monthlyPeriodLabelLogicalRows.push(rowKey);
+        monthlyPeriodLabelPhysicalRows.push(Number(row.__row || row._rowNumber || 0));
+      }
       if (byRowKey[rowKey]) {
         var existingCanonical = stableStringify_(fingerprintRowValues_(byRowKey[rowKey], headers));
         var duplicateCanonical = stableStringify_(fingerprintRowValues_(row, headers));
@@ -916,7 +937,9 @@ AKORT.AggregateIntegration = (function () {
       unrelatedRows: unrelated,
       physicalRows: physicalRows.filter(function (rowNumber) { return rowNumber > 1; }),
       duplicateLogicalRows: duplicateLogicalRows.sort(),
-      duplicatePhysicalRows: duplicatePhysicalRows.filter(function (rowNumber) { return rowNumber > 1; }).sort(function (a, b) { return b - a; })
+      duplicatePhysicalRows: duplicatePhysicalRows.filter(function (rowNumber) { return rowNumber > 1; }).sort(function (a, b) { return b - a; }),
+      monthlyPeriodLabelLogicalRows: uniqueSorted_(monthlyPeriodLabelLogicalRows),
+      monthlyPeriodLabelPhysicalRows: monthlyPeriodLabelPhysicalRows.filter(function (rowNumber) { return rowNumber > 1; }).sort(function (a, b) { return b - a; })
     };
   }
 
@@ -985,7 +1008,11 @@ AKORT.AggregateIntegration = (function () {
       replacementRowCount: replacement.length,
       cellCount: replacement.length * headers.length,
       requestCount: deleteBlocks_(deletePhysicalRows).length + (replacement.length ? 1 : 0),
-      requiresPhysicalRepair: index.duplicateLogicalRows.length > 0,
+      requiresPhysicalRepair: index.duplicateLogicalRows.length > 0 || index.monthlyPeriodLabelLogicalRows.length > 0,
+      requiresMonthlyPeriodLabelRepair: index.monthlyPeriodLabelLogicalRows.length > 0,
+      monthlyPeriodLabelLogicalRows: index.monthlyPeriodLabelLogicalRows.slice(),
+      monthlyPeriodLabelPhysicalRows: index.monthlyPeriodLabelPhysicalRows.slice(),
+      monthlyPeriodLabelMismatchCount: index.monthlyPeriodLabelPhysicalRows.length,
       requiresStagePeriodIdentityRepair: stagePeriodIdentityMismatches.length > 0,
       stagePeriodIdentityMismatches: stagePeriodIdentityMismatches,
       stagePeriodIdentityMismatchCount: stagePeriodIdentityMismatches.length,
@@ -2713,7 +2740,7 @@ AKORT.AggregateIntegration = (function () {
     return intent;
   }
 
-  function readPublishIntent_(identity, batchKey) {
+  function readPublishIntentRecord_(identity, batchKey) {
     var intentKey = publishIntentKey_(batchKey);
     var rows = stageRowsFor_(identity, true).filter(function (row) {
       return text_(row.action) === 'PUBLISH_INTENT' && text_(row.aggregate_row_key) === intentKey;
@@ -2724,7 +2751,183 @@ AKORT.AggregateIntegration = (function () {
     if (hash_(intent) !== text_(rows[0].row_fingerprint)) {
       throw error_('AGGREGATE_PUBLISH_INTENT_CHANGED', 'Publish intent fingerprint mismatch.', { retryable: false });
     }
-    return intent;
+    return { row: rows[0], intent: intent };
+  }
+
+  function readPublishIntent_(identity, batchKey) {
+    var record = readPublishIntentRecord_(identity, batchKey);
+    return record ? record.intent : null;
+  }
+
+  /**
+   * One-shot recovery for the exact .24 Gate 6 read-back incident.
+   *
+   * The first bounded monthly batch was fully written, but its display label
+   * used the UTC month from a serialized Date. The routine is deliberately
+   * fail-closed: it accepts only the first 32-series intent, validates all 392
+   * immutable stage rows, proves that the target differs solely by one bad
+   * monthly label per staged series, and then upgrades only that durable
+   * intent. The next normal operation step performs the physical repair.
+   */
+  function recoverMonthlyPeriodLabelIntent(options) {
+    options = options || {};
+    if (AKORT.EnvironmentGuard && typeof AKORT.EnvironmentGuard.assertDev === 'function') {
+      AKORT.EnvironmentGuard.assertDev();
+    }
+    var identity = {
+      operationId: text_(options.operationId),
+      loadId: text_(options.loadId),
+      planId: text_(options.planId),
+      planFingerprint: text_(options.planFingerprint)
+    };
+    Object.keys(identity).forEach(function (key) {
+      if (!identity[key]) {
+        throw error_('AGGREGATE_MONTHLY_LABEL_RECOVERY_IDENTITY_INVALID', 'Monthly period-label recovery requires the exact operation identity.', {
+          retryable: false,
+          missing: key
+        });
+      }
+    });
+    var expectedRows = Number(options.expectedStageRows || 0);
+    var expectedStageFingerprint = text_(options.stageFingerprint);
+    var batchKey = text_(options.batchKey || 'SERIES_000001_000032');
+    if (expectedRows !== 392 || batchKey !== 'SERIES_000001_000032') {
+      throw error_('AGGREGATE_MONTHLY_LABEL_RECOVERY_BOUNDARY_INVALID', 'Monthly period-label recovery is restricted to the verified first Gate 6 batch.', {
+        retryable: false,
+        expectedStageRows: expectedRows,
+        batchKey: batchKey
+      });
+    }
+    var staged = readCalculatedRows_(identity);
+    var validation = validateRecoveryStageSnapshot(staged, identity);
+    if (!validation.complete || validation.rowCount !== expectedRows ||
+        validation.stageFingerprint !== expectedStageFingerprint || validation.seriesCount !== 392) {
+      throw error_('AGGREGATE_MONTHLY_LABEL_RECOVERY_STAGE_CHANGED', 'The immutable Gate 6 aggregate stage no longer matches the verified incident.', {
+        retryable: false,
+        expectedRows: expectedRows,
+        actualRows: validation.rowCount,
+        expectedFingerprint: expectedStageFingerprint,
+        actualFingerprint: validation.stageFingerprint,
+        seriesCount: validation.seriesCount
+      });
+    }
+    var state = {
+      affectedSeriesKeys: validation.seriesKeys,
+      runtimeSettings: runtimeSettings_(DefaultAdapter)
+    };
+    var bounded = boundedReplacement_(DefaultAdapter, staged, state, 0, 32);
+    if (batchIntentKey_(bounded.slice.start, bounded.slice.end) !== batchKey ||
+        bounded.slice.start !== 0 || bounded.slice.end !== 32 || bounded.slice.total !== 392 ||
+        bounded.slice.stageRows.length !== 32 || bounded.slice.stageRows.some(function (record) {
+          var payload = parseJson_(record.row_payload_json, {}, 'AGGREGATE_STAGE_PAYLOAD_INVALID');
+          return text_(payload.frequency).toLowerCase() !== 'monthly' || text_(record.action) !== 'UPSERT';
+        })) {
+      throw error_('AGGREGATE_MONTHLY_LABEL_RECOVERY_SLICE_CHANGED', 'The first Gate 6 publication slice no longer matches the monthly 32-series incident.', {
+        retryable: false,
+        start: bounded.slice.start,
+        end: bounded.slice.end,
+        total: bounded.slice.total,
+        stageRows: bounded.slice.stageRows.length
+      });
+    }
+    var stored = readPublishIntentRecord_(identity, batchKey);
+    var legacyIntent = !!stored && text_(stored.row.release_version) === MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE &&
+      text_(stored.row.stage_status) === 'INTENT_PERSISTED';
+    var alreadyRecovered = !!stored && text_(stored.row.release_version) === RELEASE &&
+      text_(stored.row.stage_status) === 'INTENT_RECOVERED' &&
+      text_(stored.intent && stored.intent.recoveryMode) === 'MONTHLY_PERIOD_LABEL_CANONICAL_REPAIR';
+    if (!legacyIntent && !alreadyRecovered) {
+      throw error_('AGGREGATE_MONTHLY_LABEL_RECOVERY_INTENT_INVALID', 'The durable .24 first-batch publish intent is missing or has already changed.', {
+        retryable: false,
+        found: !!stored,
+        release: stored && stored.row.release_version || '',
+        status: stored && stored.row.stage_status || ''
+      });
+    }
+    var intent = stored.intent;
+    if (text_(intent.stageFingerprint) !== expectedStageFingerprint ||
+        Number(intent.seriesStart) !== 0 || Number(intent.seriesEnd) !== 32 || Number(intent.seriesTotal) !== 392 ||
+        text_(intent.publicationMode) !== 'DURABLE_BOUNDED_LOGICAL_SERIES' ||
+        text_(stored.row.expected_target_fingerprint) !== text_(intent.afterFingerprint) ||
+        legacyIntent && text_(options.failedExpectedFingerprint) && text_(options.failedExpectedFingerprint) !== text_(intent.afterFingerprint)) {
+      throw error_('AGGREGATE_MONTHLY_LABEL_RECOVERY_INTENT_CHANGED', 'The .24 first-batch intent does not match the failed read-back checkpoint.', {
+        retryable: false,
+        seriesStart: intent.seriesStart,
+        seriesEnd: intent.seriesEnd,
+        seriesTotal: intent.seriesTotal,
+        publicationMode: intent.publicationMode
+      });
+    }
+    var replacement = bounded.replacement;
+    if (!replacement.requiresMonthlyPeriodLabelRepair ||
+        replacement.monthlyPeriodLabelMismatchCount !== bounded.slice.stageRows.length ||
+        replacement.exactDuplicateRowCount !== 0 || replacement.requiresStagePeriodIdentityRepair ||
+        replacement.beforeFingerprint !== replacement.afterFingerprint ||
+        replacement.unrelatedFingerprint !== text_(intent.unrelatedFingerprint) ||
+        legacyIntent && replacement.afterFingerprint === text_(intent.afterFingerprint)) {
+      throw error_('AGGREGATE_MONTHLY_LABEL_RECOVERY_TARGET_INVALID', 'Current Publish is not the exact .24 monthly period-label after-state.', {
+        retryable: false,
+        monthlyLabelMismatches: replacement.monthlyPeriodLabelMismatchCount,
+        expectedMonthlyLabelMismatches: bounded.slice.stageRows.length,
+        exactDuplicateRows: replacement.exactDuplicateRowCount,
+        stagePeriodIdentityRepair: replacement.requiresStagePeriodIdentityRepair,
+        currentFingerprint: replacement.beforeFingerprint,
+        correctedFingerprint: replacement.afterFingerprint,
+        legacyExpectedFingerprint: intent.afterFingerprint
+      });
+    }
+    if (alreadyRecovered) {
+      if (replacement.afterFingerprint !== text_(intent.afterFingerprint) ||
+          text_(intent.recoveredFromRelease) !== MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE ||
+          Number(intent.monthlyPeriodLabelMismatchCount || 0) !== replacement.monthlyPeriodLabelMismatchCount) {
+        throw error_('AGGREGATE_MONTHLY_LABEL_RECOVERY_PREPARED_INTENT_CHANGED', 'The already prepared monthly label recovery intent no longer matches Publish.', {
+          retryable: false,
+          expected: intent.afterFingerprint,
+          actual: replacement.afterFingerprint
+        });
+      }
+      return {
+        recoveryMode: intent.recoveryMode,
+        batchKey: batchKey,
+        seriesCount: bounded.slice.seriesKeys.length,
+        stageRows: validation.rowCount,
+        monthlyPeriodLabelRowsToRepair: replacement.monthlyPeriodLabelMismatchCount,
+        legacyExpectedFingerprint: text_(intent.recoveredFromIntentFingerprint),
+        correctedExpectedFingerprint: intent.afterFingerprint,
+        intentRow: Number(stored.row.__row),
+        alreadyPrepared: true
+      };
+    }
+    var recoveredIntent = clone_(intent);
+    delete recoveredIntent.fingerprint;
+    recoveredIntent.afterFingerprint = replacement.afterFingerprint;
+    recoveredIntent.unrelatedFingerprint = replacement.unrelatedFingerprint;
+    recoveredIntent.requiresPhysicalRepair = true;
+    recoveredIntent.requiresMonthlyPeriodLabelRepair = true;
+    recoveredIntent.monthlyPeriodLabelMismatchCount = replacement.monthlyPeriodLabelMismatchCount;
+    recoveredIntent.recoveryMode = 'MONTHLY_PERIOD_LABEL_CANONICAL_REPAIR';
+    recoveredIntent.recoveredFromRelease = MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE;
+    recoveredIntent.recoveredFromIntentFingerprint = text_(intent.fingerprint);
+    recoveredIntent.recoveredAt = now_();
+    recoveredIntent.fingerprint = hash_(recoveredIntent);
+    var updated = clone_(stored.row);
+    updated.row_payload_json = JSON.stringify(recoveredIntent);
+    updated.row_fingerprint = hash_(recoveredIntent);
+    updated.expected_target_fingerprint = recoveredIntent.afterFingerprint;
+    updated.stage_status = 'INTENT_RECOVERED';
+    updated.release_version = RELEASE;
+    stageSheet_().getRange(Number(stored.row.__row), 1, 1, STAGE_HEADERS.length)
+      .setValues([rowValues_(updated, STAGE_HEADERS)]);
+    return {
+      recoveryMode: recoveredIntent.recoveryMode,
+      batchKey: batchKey,
+      seriesCount: bounded.slice.seriesKeys.length,
+      stageRows: validation.rowCount,
+      monthlyPeriodLabelRowsToRepair: replacement.monthlyPeriodLabelMismatchCount,
+      legacyExpectedFingerprint: intent.afterFingerprint,
+      correctedExpectedFingerprint: recoveredIntent.afterFingerprint,
+      intentRow: Number(stored.row.__row)
+    };
   }
 
   function a1Column_(column) {
@@ -2945,7 +3148,11 @@ AKORT.AggregateIntegration = (function () {
     if (header === 'period_label') {
       var frequency = String(row && row.frequency || '').toLowerCase();
       if (frequency === 'monthly') {
-        var month = periodKey_(frequency, value);
+        // period_start is the canonical calendar identity. A serialized Date
+        // can cross the UTC boundary (for example 2026-07-01 Moscow becomes
+        // 2026-06-30T21:00:00Z), so period_label must never derive its month
+        // from the serialized display value.
+        var month = periodKey_(frequency, row && row.period_start);
         var monthParts = month.split('-');
         if (monthParts.length >= 2) {
           return {
@@ -3386,6 +3593,7 @@ AKORT.AggregateIntegration = (function () {
     operationalRuntimeContextStatus: operationalRuntimeContextStatus,
     assertOperationalRuntimeContext: assertOperationalRuntimeContext_,
     validateRecoveryStageSnapshot: validateRecoveryStageSnapshot,
+    recoverMonthlyPeriodLabelIntent: recoverMonthlyPeriodLabelIntent,
     statusSummary: statusSummary,
     Gate4: Object.freeze({
       atomicReplaceIsolated: gate4AtomicReplaceIsolated_
@@ -3406,6 +3614,8 @@ AKORT.AggregateIntegration = (function () {
       validateStageRows: validateStageRows,
       validateStageRowsChunk: validateStageRowsChunk_,
       publicSignature: publicSignature_,
+      fingerprintRowValues: fingerprintRowValues_,
+      monthlyPeriodLabelMismatch: monthlyPeriodLabelMismatch_,
       buildSeriesReplacement: buildSeriesReplacement,
       atomicSeriesBatches: atomicSeriesBatches_,
       classifyRecovery: classifyRecovery,

@@ -186,6 +186,17 @@ Install, Validate или runtime-context recovery. Ожидаемый mode:
 `BOUNDED_STAGE_AFTER_STATE_RECOVERY`. Подробности:
 `GATE6_STAGED_AFTER_STATE_RECOVERY_HOTFIX.md`.
 
+Если `.24` после этого завершилась `FAILED / RUN_CANARY`, а canary operation
+имеет `FAILED_REQUIRES_REVIEW / UPDATING_AGGREGATES /
+AGGREGATE_PUBLISH_READBACK_MISMATCH`, не выполнять обычный Resume. Это
+проверенный first-batch incident: atomic write состоялся, но monthly
+`period_label` 1 июля был записан как 1 июня из-за UTC-сериализации. Установить
+`.25`, выполнить общий Install, оставить только aggregate execution flag,
+выполнить smoke test, contract scan и Status, затем один раз вызвать
+`AKORT_alpha74Gate6RecoverMonthlyPeriodLabel()`. Ожидаемый mode:
+`MONTHLY_PERIOD_LABEL_READBACK_RECOVERY`. После этого использовать только
+Status. Подробности: `GATE6_MONTHLY_PERIOD_LABEL_RECOVERY_HOTFIX.md`.
+
 Экстренная остановка: `AKORT_alpha74Gate6Stop()`. Она сохраняет исходную фазу,
 operation IDs, digest cursors и recovery-копии. После проверки причины тот же
 execution можно продолжить функцией `AKORT_alpha74Gate6Resume()`; новые копии и

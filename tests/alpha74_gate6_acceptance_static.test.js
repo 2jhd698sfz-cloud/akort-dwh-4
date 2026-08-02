@@ -91,8 +91,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-6');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.24');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-7');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.25');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -274,6 +274,70 @@ test('Gate 6 recognizes only exact uniform before/after stage-status recovery bo
   assert.equal(G.Test.stageRecoveryBoundary([{ ...row('STAGED'), release_version: '4.0.0-alpha.7.4.24' }]), '');
 });
 
+test('exact Alpha.7.4.24 monthly period-label readback incident is eligible only at the first publication boundary', () => {
+  const operationId = 'OP_SOURCE_FILE_LOAD_V4_CANARY';
+  const state = {
+    stateSchemaVersion: '4.0-alpha74-gate6-state-1',
+    release: '4.0.0-alpha.7.4.24',
+    status: 'FAILED',
+    phase: 'FAILED',
+    failedFromPhase: 'RUN_CANARY',
+    operations: { canary: operationId, reversal: '', restore: '' },
+    artifacts: {
+      dwhBackup: { id: 'DWH_BACKUP' },
+      publishBackup: { id: 'PUBLISH_BACKUP' }
+    },
+    recovery: {
+      mode: 'BOUNDED_STAGE_AFTER_STATE_RECOVERY',
+      validatedStageRows: 392,
+      validatedStageSeries: 392,
+      validatedStageFingerprint: 'STAGE_FP'
+    },
+    lastError: { code: 'AGGREGATE_PUBLISH_READBACK_MISMATCH' }
+  };
+  const operation = {
+    operation_id: operationId,
+    operation_type: 'SOURCE_FILE_LOAD_V4',
+    status: 'FAILED_REQUIRES_REVIEW',
+    current_phase: 'UPDATING_AGGREGATES',
+    error_code: 'AGGREGATE_PUBLISH_READBACK_MISMATCH',
+    checkpoint: {
+      nextPhase: 'UPDATING_AGGREGATES',
+      completedPhases: [
+        'COMMIT_RAW', 'UPDATE_PUBLISH', 'PREPARING_AGGREGATE_IMPACT',
+        'MATERIALIZING_AGGREGATE_INPUTS', 'CALCULATING_AGGREGATE_SLICES',
+        'STAGING_AGGREGATE_ROWS'
+      ],
+      handlerState: { loadId: 'LOAD_CANARY' },
+      aggregate: {
+        status: 'STAGED',
+        expectedStageRows: 392,
+        calculationGroupCount: 392,
+        calculationCursor: 392,
+        stagingCursor: 392,
+        stageStatusCursor: 392,
+        publishSeriesCursor: 0,
+        publishBatches: [],
+        stageFingerprint: 'STAGE_FP'
+      }
+    }
+  };
+  assert.equal(G.Test.monthlyPeriodLabelIncident(state, operation), true);
+  const afterCursor = JSON.parse(JSON.stringify(operation));
+  afterCursor.checkpoint.aggregate.publishSeriesCursor = 32;
+  assert.equal(G.Test.monthlyPeriodLabelIncident(state, afterCursor), false);
+  const wrongError = JSON.parse(JSON.stringify(operation));
+  wrongError.error_code = 'AGGREGATE_PUBLISH_THIRD_STATE';
+  assert.equal(G.Test.monthlyPeriodLabelIncident(state, wrongError), false);
+
+  const prepared = JSON.parse(JSON.stringify(operation));
+  prepared.status = 'PAUSED';
+  prepared.error_code = '';
+  assert.equal(G.Test.monthlyPeriodLabelOperationPrepared(state, prepared), true);
+  prepared.checkpoint.aggregate.publishSeriesCursor = 32;
+  assert.equal(G.Test.monthlyPeriodLabelOperationPrepared(state, prepared), false);
+});
+
 test('control sheet accepts a Drive file ID or URL and rejects arbitrary text', () => {
   const fileId = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
   assert.equal(G.Test.parseFileId(fileId), fileId);
@@ -342,6 +406,8 @@ test('operation acceptance requires all aggregate phases, RAW audit and SUCCESS'
 
 test('source contract contains source-file canary, recovery copies, standard rollback, restore and fail-closed flags', () => {
   const source = fs.readFileSync(path.join(root, 'src/28_Alpha74Gate6Acceptance.js'), 'utf8');
+  const entries = fs.readFileSync(path.join(root, 'src/08_EntryPoints.js'), 'utf8');
+  const engine = fs.readFileSync(path.join(root, 'src/03_OperationEngine.js'), 'utf8');
   const publish = fs.readFileSync(path.join(root, 'src/07_IncrementalPublish.js'), 'utf8');
   const aggregate = fs.readFileSync(path.join(root, 'src/21_Alpha74AggregateIntegration.js'), 'utf8');
   assert(source.includes("var CONTROL_SHEET = 'GATE6_CANARY_INPUT'"));
@@ -363,8 +429,12 @@ test('source contract contains source-file canary, recovery copies, standard rol
   assert(source.includes('BASELINE_HEADER_CONTRACT_RECOVERY'));
   assert(source.includes('OPERATIONAL_RUNTIME_CONTEXT_CHECKPOINT_RECOVERY'));
   assert(source.includes('BOUNDED_STAGE_AFTER_STATE_RECOVERY'));
+  assert(source.includes('MONTHLY_PERIOD_LABEL_READBACK_RECOVERY'));
   assert(source.includes('validateRecoveryStageSnapshot'));
+  assert(source.includes('recoverMonthlyPeriodLabelIntent'));
   assert(source.includes('AKORT.OperationEngine.recoverFailedPhase'));
+  assert(entries.includes('AKORT_alpha74Gate6RecoverMonthlyPeriodLabel'));
+  assert(engine.includes('expected.status || STATUSES.FAILED'));
   assert(aggregate.includes("text_(context.accepted_by) !== 'ALPHA74_GATE5_FULL_HISTORY_PARITY'"));
   assert(aggregate.includes("text_(context.mutation_boundary) !== 'ALPHA74_ATOMIC_LOGICAL_SERIES'"));
   assert(aggregate.includes('context.gate5_evidence_required !== true'));

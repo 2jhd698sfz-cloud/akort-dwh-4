@@ -113,7 +113,8 @@ function seriesTarget(seriesId, period, rowNumber) {
 }
 
 test('A74 metadata and schemas are exact', () => {
-  assert.equal(A.Version, '4.0-aggregate-integration-3');
+  assert.equal(A.Version, '4.0-aggregate-integration-4');
+  assert.equal(A.Release, '4.0.0-alpha.7.4.25');
   assert.equal(A.OperationSchemaVersion, '4.0-operation-2');
   assert.deepEqual(Array.from(A.Phases), [
     'PREPARING_AGGREGATE_IMPACT',
@@ -135,19 +136,48 @@ test('A74 metadata and schemas are exact', () => {
 });
 
 test('atomic aggregate publication preserves the canonical Publish date contract', () => {
-  const monthly = { frequency: 'monthly' };
+  const monthly = { frequency: 'monthly', period_start: '2023-04-01T09:00:00.000Z' };
   const weekly = { frequency: 'weekly' };
   assert.deepEqual(
     A.Test.userEnteredValue('2023-04-01', 'period_start', monthly),
     { numberValue: 45017.5 }
   );
   assert.deepEqual(
-    A.Test.userEnteredValue('2023-04-01T00:00:00.000Z', 'period_label', monthly),
+    A.Test.userEnteredValue('2023-03-31T21:00:00.000Z', 'period_label', monthly),
     { numberValue: 45017 }
   );
   assert.deepEqual(
     A.Test.userEnteredValue('2023-04-02', 'period_label', weekly),
     { stringValue: '2023-04-02' }
+  );
+});
+
+test('monthly period label is canonicalized from period_start and repairs the exact UTC month shift', () => {
+  const serialized = {
+    frequency: 'monthly',
+    period_start: '2026-07-01T09:00:00.000Z',
+    period_label: '2026-06-30T21:00:00.000Z'
+  };
+  const brokenPhysical = {
+    frequency: 'monthly',
+    period_start: 46204.5,
+    period_label: 46174,
+    __row: 60959
+  };
+  const correctedPhysical = { ...brokenPhysical, period_label: 46204 };
+  assert.deepEqual(
+    A.Test.userEnteredValue(serialized.period_label, 'period_label', serialized),
+    { numberValue: 46204 }
+  );
+  assert.equal(A.Test.monthlyPeriodLabelMismatch(brokenPhysical), true);
+  assert.equal(A.Test.monthlyPeriodLabelMismatch(correctedPhysical), false);
+  assert.deepEqual(
+    Array.from(A.Test.fingerprintRowValues(serialized, ['period_start', 'period_label'])),
+    ['2026-07-01', '2026-07']
+  );
+  assert.deepEqual(
+    Array.from(A.Test.fingerprintRowValues(brokenPhysical, ['period_start', 'period_label'])),
+    ['2026-07-01', '2026-07']
   );
 });
 
@@ -605,7 +635,7 @@ test('repository wiring removes deferred executor and hard-coded write probes', 
   assert(release.includes("'AGGREGATE_STAGE'"));
   assert(release.includes("'FINALIZING'"));
   assert(release.includes("'24_Alpha74Gate3Acceptance.js'"));
-  assert(release.includes("version: '4.0.0-alpha.7.4.24'"));
+  assert(release.includes("version: '4.0.0-alpha.7.4.25'"));
   assert(release.includes('durable bounded work'));
   const boundedSettings = [
     'PUBLISH_AGGREGATE_MATERIALIZATION_COMBOS_PER_STEP',

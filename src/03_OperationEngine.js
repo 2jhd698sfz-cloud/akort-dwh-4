@@ -844,7 +844,8 @@ AKORT.OperationEngine = (function () {
         var expectedType = String(expected.operationType || '');
         var expectedPhase = String(expected.phase || '');
         var expectedErrorCode = String(expected.errorCode || '');
-        if (operation.status !== STATUSES.FAILED ||
+        var expectedStatus = String(expected.status || STATUSES.FAILED);
+        if (operation.status !== expectedStatus ||
             expectedType && String(operation.operation_type) !== expectedType ||
             expectedPhase && String(operation.current_phase) !== expectedPhase ||
             expectedPhase && String(checkpoint.nextPhase) !== expectedPhase ||
@@ -855,7 +856,8 @@ AKORT.OperationEngine = (function () {
             expected: {
               operationType: expectedType,
               phase: expectedPhase,
-              errorCode: expectedErrorCode
+              errorCode: expectedErrorCode,
+              status: expectedStatus
             },
             actual: {
               status: operation.status,
@@ -881,7 +883,7 @@ AKORT.OperationEngine = (function () {
         operation.error_message = '';
         saveCheckpoint_(operation, checkpoint);
         appendStep_(spreadsheet, operation, checkpoint.nextPhase, 'RECOVERY_PREPARED', AKORT.Core.now(), checkpoint, {
-          recoveredFromStatus: STATUSES.FAILED,
+          recoveredFromStatus: expectedStatus,
           expectedOperationType: expectedType,
           expectedPhase: expectedPhase,
           expectedErrorCode: expectedErrorCode,

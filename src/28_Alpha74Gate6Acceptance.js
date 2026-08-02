@@ -12,13 +12,14 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * it has no aggregate impact under the frozen Alpha.7.4 contract.
  */
 AKORT.Alpha74Gate6Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate6-acceptance-6';
+  var VERSION = '4.0-alpha74-gate6-acceptance-7';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate6-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate6-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.24';
+  var RELEASE = '4.0.0-alpha.7.4.25';
   var BASELINE_HEADER_INCIDENT_RELEASE = '4.0.0-alpha.7.4.19';
   var RUNTIME_CONTEXT_INCIDENT_RELEASE = '4.0.0-alpha.7.4.20';
   var MONOLITHIC_STAGE_INCIDENT_RELEASE = '4.0.0-alpha.7.4.22';
+  var MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE = '4.0.0-alpha.7.4.24';
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE6_STATE_V1';
   var CONTROL_SHEET = 'GATE6_CANARY_INPUT';
   var TRIGGER_HANDLER = 'AKORT_alpha74Gate6Worker';
@@ -1317,6 +1318,45 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     return '';
   }
 
+  function monthlyPeriodLabelIncident_(state, operation) {
+    var checkpoint = operation && operation.checkpoint || {};
+    var completed = checkpoint.completedPhases || [];
+    var aggregate = checkpoint.aggregate || {};
+    var recovery = state && state.recovery || {};
+    return !!state && !!operation &&
+      state.stateSchemaVersion === STATE_SCHEMA && state.release === MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE &&
+      state.status === 'FAILED' && state.phase === 'FAILED' && state.failedFromPhase === 'RUN_CANARY' &&
+      state.lastError && state.lastError.code === 'AGGREGATE_PUBLISH_READBACK_MISMATCH' &&
+      text_(state.operations && state.operations.canary) === text_(operation.operation_id) &&
+      text_(operation.operation_type) === 'SOURCE_FILE_LOAD_V4' &&
+      text_(operation.status) === 'FAILED_REQUIRES_REVIEW' &&
+      text_(operation.current_phase) === 'UPDATING_AGGREGATES' &&
+      text_(operation.error_code) === 'AGGREGATE_PUBLISH_READBACK_MISMATCH' &&
+      text_(checkpoint.nextPhase) === 'UPDATING_AGGREGATES' &&
+      completed.indexOf('COMMIT_RAW') >= 0 && completed.indexOf('UPDATE_PUBLISH') >= 0 &&
+      completed.indexOf('PREPARING_AGGREGATE_IMPACT') >= 0 &&
+      completed.indexOf('MATERIALIZING_AGGREGATE_INPUTS') >= 0 &&
+      completed.indexOf('CALCULATING_AGGREGATE_SLICES') >= 0 &&
+      completed.indexOf('STAGING_AGGREGATE_ROWS') >= 0 &&
+      completed.indexOf('UPDATING_AGGREGATES') < 0 &&
+      text_(aggregate.status) === 'STAGED' &&
+      Number(aggregate.expectedStageRows || 0) === 392 &&
+      Number(aggregate.calculationGroupCount || 0) === 392 &&
+      Number(aggregate.calculationCursor || 0) === 392 &&
+      Number(aggregate.stagingCursor || 0) === 392 &&
+      Number(aggregate.stageStatusCursor || 0) === 392 &&
+      Number(aggregate.publishSeriesCursor || 0) === 0 &&
+      !(aggregate.publishBatches || []).length &&
+      !!text_(aggregate.stageFingerprint) &&
+      recovery.mode === 'BOUNDED_STAGE_AFTER_STATE_RECOVERY' &&
+      Number(recovery.validatedStageRows || 0) === 392 &&
+      Number(recovery.validatedStageSeries || 0) === 392 &&
+      text_(recovery.validatedStageFingerprint) === text_(aggregate.stageFingerprint) &&
+      !!operationLoadId_(operation) &&
+      !!text_(state.artifacts && state.artifacts.dwhBackup && state.artifacts.dwhBackup.id) &&
+      !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
+  }
+
   function recoverRuntimeContextIncident() {
     return AKORT.Core.safeRun('ALPHA74_GATE6_RECOVER_RUNTIME_CONTEXT', function () {
       AKORT.EnvironmentGuard.assertDev();
@@ -1437,6 +1477,140 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         throw activationError;
       }
       return AKORT.Result.success('Alpha.7.4 Gate 6 operational runtime context installed; the existing canary operation will continue from its aggregate checkpoint.', publicState_(state));
+    }, { lock: true, persistLogs: true, lockTimeoutMs: 60000 });
+  }
+
+  function monthlyPeriodLabelOperationPrepared_(state, operation) {
+    if (!state || !operation || state.stateSchemaVersion !== STATE_SCHEMA ||
+        state.release !== MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE ||
+        state.status !== 'FAILED' || state.phase !== 'FAILED' || state.failedFromPhase !== 'RUN_CANARY' ||
+        !state.lastError || state.lastError.code !== 'AGGREGATE_PUBLISH_READBACK_MISMATCH' ||
+        text_(operation.status) !== 'PAUSED' || text_(operation.current_phase) !== 'UPDATING_AGGREGATES' ||
+        text_(operation.error_code)) return false;
+    var checkpoint = operation.checkpoint || {};
+    var aggregate = checkpoint.aggregate || {};
+    return text_(checkpoint.nextPhase) === 'UPDATING_AGGREGATES' &&
+      text_(aggregate.status) === 'STAGED' && Number(aggregate.expectedStageRows || 0) === 392 &&
+      Number(aggregate.publishSeriesCursor || 0) === 0 && !(aggregate.publishBatches || []).length &&
+      !!text_(aggregate.stageFingerprint);
+  }
+
+  function recoverMonthlyPeriodLabelIncident() {
+    return AKORT.Core.safeRun('ALPHA74_GATE6_RECOVER_MONTHLY_PERIOD_LABEL', function () {
+      AKORT.EnvironmentGuard.assertDev();
+      var state = loadState_();
+      var operationId = text_(state && state.operations && state.operations.canary);
+      var operation = operationId ? operation_(operationId) : null;
+      var sourceIncident = monthlyPeriodLabelIncident_(state, operation);
+      var operationPrepared = monthlyPeriodLabelOperationPrepared_(state, operation);
+      assert_(sourceIncident || operationPrepared,
+        'ALPHA74_GATE6_MONTHLY_LABEL_RECOVERY_SOURCE_INVALID', 'Gate 6 monthly period-label recovery is restricted to the exact Alpha.7.4.24 first-batch incident.', {
+          stateRelease: state && state.release || '',
+          stateStatus: state && state.status || 'NOT_FOUND',
+          failedFromPhase: state && state.failedFromPhase || '',
+          operationId: operationId,
+          operationStatus: operation && operation.status || '',
+          operationPhase: operation && operation.current_phase || '',
+          operationErrorCode: operation && operation.error_code || ''
+        });
+      var flags = flagState_();
+      assert_(flags.publishEngineEnabled && flags.executionEnabled && !flags.regularPipelineEnabled && !flags.userPipelineEnabled,
+        'ALPHA74_GATE6_MONTHLY_LABEL_RECOVERY_FLAGS_INVALID', 'Monthly period-label recovery requires engine=TRUE, aggregate execution=TRUE, regular pipeline=FALSE and user pipeline=FALSE.', flags);
+      assert_(triggers_().length === 0, 'ALPHA74_GATE6_MONTHLY_LABEL_RECOVERY_TRIGGER_ACTIVE', 'Monthly period-label recovery requires no active Gate 6 worker trigger.', {
+        triggerCount: triggers_().length
+      });
+      assertNoForeignDataOperations_(state);
+      ['dwhBackup', 'publishBackup'].forEach(function (key) {
+        DriveApp.getFileById(state.artifacts[key].id).getName();
+      });
+      var aggregate = operation.checkpoint && operation.checkpoint.aggregate || {};
+      assert_(AKORT.AggregateIntegration && typeof AKORT.AggregateIntegration.recoverMonthlyPeriodLabelIntent === 'function',
+        'ALPHA74_GATE6_MONTHLY_LABEL_RECOVERY_UNAVAILABLE', 'Installed aggregate integration has no monthly period-label recovery adapter.', {});
+      var intentRecovery = AKORT.AggregateIntegration.recoverMonthlyPeriodLabelIntent({
+        operationId: operationId,
+        loadId: operationLoadId_(operation),
+        planId: text_(aggregate.planId),
+        planFingerprint: text_(aggregate.planFingerprint),
+        expectedStageRows: Number(aggregate.expectedStageRows || 0),
+        stageFingerprint: text_(aggregate.stageFingerprint),
+        batchKey: 'SERIES_000001_000032'
+      });
+      if (!operationPrepared) {
+        var prepared = AKORT.OperationEngine.recoverFailedPhase(operationId, {
+          status: 'FAILED_REQUIRES_REVIEW',
+          operationType: 'SOURCE_FILE_LOAD_V4',
+          phase: 'UPDATING_AGGREGATES',
+          errorCode: 'AGGREGATE_PUBLISH_READBACK_MISMATCH',
+          reason: 'Alpha.7.4.25 exact monthly period-label first-batch recovery'
+        });
+        assert_(prepared && prepared.ok, prepared && prepared.code || 'ALPHA74_GATE6_OPERATION_RECOVERY_FAILED',
+          prepared && prepared.message || 'The failed canary operation could not be prepared for monthly label recovery.', prepared && prepared.details || {});
+      }
+      var previousRecovery = clone_(state.recovery || null);
+      state.release = RELEASE;
+      state.status = 'RUNNING';
+      state.phase = 'RUN_CANARY';
+      state.finishedAt = '';
+      state.failedFromPhase = '';
+      state.stoppedFromPhase = '';
+      state.leaseUntil = '';
+      state.consecutiveErrors = 0;
+      state.lastError = null;
+      state.recovery = {
+        mode: 'MONTHLY_PERIOD_LABEL_READBACK_RECOVERY',
+        recoveredFromRelease: MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE,
+        recoveredFromExecutionId: state.executionId,
+        recoveredAt: now_(),
+        operationId: operationId,
+        loadId: operationLoadId_(operation),
+        resumeOperationPhase: 'UPDATING_AGGREGATES',
+        preservedRecoveryCopies: true,
+        preservedRawCommit: true,
+        preservedPricePublish: true,
+        preservedAggregateStageRows: Number(aggregate.expectedStageRows || 0),
+        repeatedRawCommit: false,
+        repeatedPricePublish: false,
+        repeatedAggregateCalculation: false,
+        repairedBatchKey: intentRecovery.batchKey,
+        repairedSeries: intentRecovery.seriesCount,
+        monthlyPeriodLabelRowsToRepair: intentRecovery.monthlyPeriodLabelRowsToRepair,
+        correctedExpectedFingerprint: intentRecovery.correctedExpectedFingerprint,
+        previousRecovery: previousRecovery
+      };
+      state.lastStep = {
+        phase: 'MONTHLY_PERIOD_LABEL_RECOVERY_PREPARED',
+        operationId: operationId,
+        batchKey: intentRecovery.batchKey,
+        series: intentRecovery.seriesCount,
+        rowsToRepair: intentRecovery.monthlyPeriodLabelRowsToRepair
+      };
+      try {
+        setRegularPipeline_(true);
+        state.regularPipelineEnabledAt = now_();
+        saveState_(state);
+        writeValidation_('GATE 6 ВОЗОБНОВЛЁН', {
+          executionId: state.executionId,
+          operationId: operationId,
+          phase: state.phase,
+          recoveryMode: state.recovery.mode
+        });
+        ensureTrigger_();
+      } catch (activationError) {
+        deleteTriggers_();
+        try { setRegularPipeline_(false); } catch (ignoredFlagCleanup) {}
+        state.status = 'STOPPED';
+        state.phase = 'STOPPED';
+        state.stoppedFromPhase = 'RUN_CANARY';
+        state.finishedAt = now_();
+        state.lastError = {
+          code: text_(activationError && activationError.code) || 'ALPHA74_GATE6_MONTHLY_LABEL_RECOVERY_ACTIVATION_FAILED',
+          message: text_(activationError && activationError.message) || String(activationError),
+          details: clone_(activationError && activationError.details || null)
+        };
+        try { saveState_(state); } catch (ignoredStateCleanup) {}
+        throw activationError;
+      }
+      return AKORT.Result.success('Alpha.7.4 Gate 6 monthly period-label incident repaired; the canary will continue from the first bounded aggregate publication checkpoint.', publicState_(state));
     }, { lock: true, persistLogs: true, lockTimeoutMs: 60000 });
   }
 
@@ -1752,6 +1926,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     start: start,
     resume: resume,
     recoverRuntimeContextIncident: recoverRuntimeContextIncident,
+    recoverMonthlyPeriodLabelIncident: recoverMonthlyPeriodLabelIncident,
     worker: worker,
     stop: stop,
     Test: Object.freeze({
@@ -1766,6 +1941,8 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       runtimeContextIncident: runtimeContextIncident_,
       monolithicStageIncident: monolithicStageIncident_,
       stageRecoveryBoundary: stageRecoveryBoundary_,
+      monthlyPeriodLabelIncident: monthlyPeriodLabelIncident_,
+      monthlyPeriodLabelOperationPrepared: monthlyPeriodLabelOperationPrepared_,
       normalizedJsonSetting: normalizedJsonSetting_,
       compareDigests: compareDigests_,
       changedTargets: changedTargets_,

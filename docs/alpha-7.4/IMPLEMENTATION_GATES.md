@@ -150,7 +150,7 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
-Release `4.0.0-alpha.7.4.24` готов к точному DEV-продолжению Gate 6. Harness
+Release `4.0.0-alpha.7.4.25` готов к точному DEV-продолжению Gate 6. Harness
 создаёт DWH/Publish recovery copies, выполняет canary из нового weekly/monthly
 файла через `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторную
 source-file загрузку для восстановления. Acceptance требует фактического
@@ -191,6 +191,16 @@ plan scope, 29-column payload, logical keys и row fingerprints. Физичес�
 aggregate publication ещё не началась; RAW, ordinary price Publish,
 materialization и calculation не повторяются. Нормативный runbook:
 `GATE6_STAGED_AFTER_STATE_RECOVERY_HOTFIX.md`.
+Первый bounded publication batch после `.24` физически записался, но
+read-back обнаружил календарное расхождение: при `period_start=2026-07-01`
+monthly `period_label` стал `2026-06-01`, потому что старый writer извлёк
+месяц из UTC-сериализации московской даты. `.25` канонизирует label и
+fingerprint по `period_start`, отдельно детектирует physical mismatch и
+разрешает только exact recovery текущего `.24 / FAILED_REQUIRES_REVIEW /
+UPDATING_AGGREGATES` checkpoint. Исправляется первая пачка из 32 серий;
+RAW, ordinary price Publish, materialization, calculation и staging не
+повторяются. Нормативный runbook:
+`GATE6_MONTHLY_PERIOD_LABEL_RECOVERY_HOTFIX.md`.
 
 ## Gate 7 — Acceptance
 
