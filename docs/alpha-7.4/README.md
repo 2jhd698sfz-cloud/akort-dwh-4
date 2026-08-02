@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 4 ACCEPTED / GATE 5 TERMINAL RECONCILIATION RECOVERY HOTFIX READY / REGULAR PIPELINE PROHIBITED`
+`GATE 5 ACCEPTED / GATE 6 AUTHORITATIVE DEV CANARY READY / USER PIPELINE PROHIBITED`
 
 Дата фиксации: 2 августа 2026 года.
 
@@ -45,6 +45,8 @@
 - `GATE3_ACCEPTANCE_HARNESS.md` — read-only acceptance harness, DEV entrypoints и evidence contract.
 - `GATE4_ACCEPTANCE_HARNESS.md` — isolated physical/fault harness, feature-flag order и evidence contract.
 - `GATE5_ACCEPTANCE_HARNESS.md` — full build, sequential replay, exact reconciliation, quota и automatic continuation contract.
+- `GATE6_AUTHORITATIVE_DEV_CANARY.md` — recovery copies, live canary,
+  standard reversal, deterministic restore, read-back и evidence contract.
 - `INDUSTRY_INPUT_FORM.md` — операторская форма для раздельного ввода периода
   и значения активных `RAW_INDUSTRY` серий через `RAW_LOAD_V4`.
 - `GATE5_FULL_BUILD_CHUNKING_HOTFIX.md` — разбор timeout-loop
@@ -105,7 +107,8 @@
 - полная замена затронутых логических серий без сохранения физических номеров строк;
 - один atomic Sheets API request для regular affected-set;
 - read-back, latest validation, lost-response recovery и third-state fail-closed;
-- два feature flags `FALSE` по умолчанию;
+- aggregate execution, regular pipeline и user pipeline flags `FALSE` по
+  умолчанию;
 - unit/static regression suite.
 
 Для Gate 4 реализована отдельная физическая граница, которая работает только
@@ -128,12 +131,11 @@ INSERT/UPDATE/DELETE/NOOP, lost-response recovery, latest, reversal, семь
 timeout phases и third-state fail-closed получили PASS. Рабочая Publish не
 изменилась, regular pipeline остался выключенным.
 
-Для Gate 5 подготовлен persistent trigger-driven harness. Он создаёт отдельные
+Для Gate 5 был подготовлен persistent trigger-driven harness. Он создаёт отдельные
 baseline snapshot, live snapshot, full build и sequential replay workbooks,
 воспроизводит accepted load/reversal order и сравнивает все четыре aggregate
 targets по exact canonical digest. Ручной `Continue` не используется; quota и
-transient retry выполняются автоматически. Gate 5 остаётся открытым до
-нормативного DEV `SUCCESS`.
+transient retry выполняются автоматически.
 
 Первый DEV execution `4.0.0-alpha.7.4.2` был остановлен после подтверждённого
 timeout-loop на монолитной стадии `FULL_BUILD / MONTHLY`. DEV-проверка
@@ -251,13 +253,27 @@ authoritative reference, строки full/replay сортируются по у
 durable-чанками по 1 000 строк. Затем повторяются только replay latest,
 row-multiset digest и final reconciliation.
 
+Gate 5 закрыт 2 августа 2026 года. Execution
+`A74_GATE5_020B82D95A2DCC39C17D` завершился `SUCCESS`; все четыре
+артефакта содержат 61 636 строк по 29 колонок и имеют одинаковый
+row-multiset digest. DEV Publish не изменялась.
+
+Release `4.0.0-alpha.7.4.18` подготавливает Gate 6: две recovery-копии,
+durable digest четырёх Publish-листов, новый weekly/monthly
+`SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторный
+`SOURCE_FILE_LOAD_V4` для восстановления целевого состояния. Gate 6 требует,
+чтобы canary изменил `PUBLISH_PRICE_AGGREGATES`. Gate 6 ещё не закрыт: нужен
+DEV `SUCCESS` и evidence. Обычный
+пользовательский Submit остаётся закрыт до Gate 7.
+
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию
 `DIM_INDUSTRY_SERIES`, два пользовательских поля (`Период`, `Значение`),
 fail-closed валидация, раздельные партии по мере публикации источников,
 `RAW_LOAD_V4`, incremental `PUBLISH_INDUSTRY` и append-only журнал. Код нельзя
-разворачивать во время текущего Gate 5; физический Submit дополнительно
-заблокирован до `SUCCESS` Gate 5 и завершения operational enablement Gate 6–7.
+разворачивать во время `RUNNING` Gate 5. Gate 6 не использует отраслевую форму;
+обычный физический Submit заблокирован до Gate 7 флагом
+`PUBLISH_USER_PIPELINE_ENABLED=FALSE`.
 
 ## Gate 1 migration cleanup
 

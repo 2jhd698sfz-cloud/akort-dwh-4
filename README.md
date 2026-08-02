@@ -6,7 +6,7 @@ Apps Script data pipeline for the AKORT analytical system.
 
 Active milestone: **Alpha.7.4 — Aggregate Integration into Existing Operation Engine**.
 
-Status: `GATE 4 ACCEPTED / GATE 5 PRE-EXPANSION DESCRIPTOR DEDUP HOTFIX READY / GROUP 2 CURSOR 4500 RESUME PENDING / REGULAR PIPELINE PROHIBITED`.
+Status: `GATE 5 ACCEPTED / GATE 6 AUTHORITATIVE DEV CANARY READY / USER PIPELINE PROHIBITED`.
 
 Accepted base:
 
@@ -33,6 +33,6 @@ Yandex DataLens is an external consumer of the Publish spreadsheet and manages i
 
 See [`docs/alpha-7.4/README.md`](docs/alpha-7.4/README.md).
 
-The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 4 adds an isolated physical/fault harness that forbids the DataLens-connected DEV Publish target. Gate 5 scans RAW inputs in durable 500-row chunks, deduplicates category-level rows into aggregate descriptors before production dependency expansion, builds a fingerprinted aggregate-item inventory, materializes each aggregate calculation batch once, scans only bounded target identity columns and adaptively publishes up to 128 logical series under unchanged atomic limits without repeating full build or earlier price replay.
+The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 5 is accepted with exact 61,636-row parity across baseline, live snapshot, full build and sequential replay. Gate 6 adds recovery copies and a fail-closed three-cycle authoritative DEV canary using one new weekly/monthly source file: source-file load, standard logical reversal and source-file restore. Acceptance requires a real change in `PUBLISH_PRICE_AGGREGATES`.
 
-Gate 4 requires `PUBLISH_AGGREGATE_EXECUTION_ENABLED=TRUE` while `PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED` remains `FALSE`. Regular aggregate operations and trigger changes remain prohibited until the later authoritative DEV gate.
+Gate 6 may enable the regular aggregate pipeline only inside its controlled harness. General operator submission remains prohibited until Gate 7 through `PUBLISH_USER_PIPELINE_ENABLED=FALSE`.

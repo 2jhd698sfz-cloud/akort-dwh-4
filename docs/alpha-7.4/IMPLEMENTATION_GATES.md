@@ -67,12 +67,12 @@ PASS; DataLens-connected Publish осталась неизменной.
 
 ## Gate 5 — Full reconciliation/performance
 
-- [ ] Full historical build.
-- [ ] Sequential replay.
-- [ ] Exact full-vs-incremental reconciliation.
-- [ ] Baseline parity.
-- [ ] Maximum-volume/quota acceptance.
-- [ ] No manual continuation.
+- [x] Full historical build.
+- [x] Sequential replay.
+- [x] Exact full-vs-incremental reconciliation.
+- [x] Baseline parity.
+- [x] Maximum-volume/quota acceptance.
+- [x] No manual continuation.
 
 Локальный Gate 5 trigger-driven harness и regression suite подготовлены.
 После DEV timeout-loop `FULL_BUILD / MONTHLY` в `4.0.0-alpha.7.4.2`
@@ -130,18 +130,34 @@ Recovery `.16` выровнял baseline/live/full, но replay сохранил
 `7.4.17` использует full build как authoritative reference через
 `AKORT_alpha74Gate5RecoverCanonicalPeriods()`, исправляет только сохранённый
 replay с durable cursor и повторяет replay latest/digest/final reconciliation.
-Чек-лист остаётся открытым до
-terminal `SUCCESS`, exact reconciliation и проверки JSON evidence.
-Regular pipeline остаётся выключенным.
+
+Gate 5 закрыт 2 августа 2026 года execution
+`A74_GATE5_020B82D95A2DCC39C17D`. Baseline, live snapshot, full build и
+sequential replay содержат по 61 636 строк и 29 колонок с одинаковым
+`ROW_MULTISET_V1` digest
+`0b65a3962571597c17506bdd13796da44a3597a61c2a9bf56085775251202dee`.
+Evidence: `ALPHA74_GATE5_ACCEPTANCE_A74_GATE5_020B82D95A2DCC39C17D.json`,
+SHA-256 `5a0ad8da2eb690f6289be2219c1f1e4a58d281d13ba866281d64363ec7023f41`.
+DEV Publish в Gate 5 не изменялась; regular pipeline остался выключенным.
 
 ## Gate 6 — Authoritative DEV
 
+- [x] Fail-closed Gate 6 harness и static regression suite реализованы.
 - [ ] Immutable backup.
 - [ ] Authoritative DEV canary.
 - [ ] Read-back and reconciliation PASS.
 - [ ] Regular aggregate pipeline enabled.
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
+
+Release `4.0.0-alpha.7.4.18` готов к DEV-запуску Gate 6. Harness
+создаёт DWH/Publish recovery copies, выполняет canary из нового weekly/monthly
+файла через `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторную
+source-file загрузку для восстановления. Acceptance требует фактического
+изменения `PUBLISH_PRICE_AGGREGATES` и сравнивает все четыре Publish-листа.
+`RAW_INDUSTRY` не используется как canary, потому что не входит в расчёт
+ценовых агрегатов. Обычные пользовательские загрузки до Gate 7 отдельно
+заблокированы. Нормативный runbook: `GATE6_AUTHORITATIVE_DEV_CANARY.md`.
 
 ## Gate 7 — Acceptance
 

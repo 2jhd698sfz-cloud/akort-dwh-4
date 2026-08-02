@@ -2103,6 +2103,7 @@ function v310HasValue_(v) { return v !== '' && v !== null && v !== undefined && 
     PUBLISH_ENGINE_ENABLED:{value:true,type:'BOOLEAN',description:'Enable real incremental writes to DEV Publish'},
     PUBLISH_AGGREGATE_EXECUTION_ENABLED:{value:false,type:'BOOLEAN',description:'Enable Alpha.7.4 aggregate calculation and staging after the live-write gate'},
     PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED:{value:false,type:'BOOLEAN',description:'Enable Alpha.7.4 aggregate execution in the regular Operation Engine pipeline after authoritative DEV canary'},
+    PUBLISH_USER_PIPELINE_ENABLED:{value:false,type:'BOOLEAN',description:'Enable operator-initiated user loads only after Gate 7 acceptance'},
     PUBLISH_AGGREGATE_RUNTIME_CONTEXT_JSON:{value:'{}',type:'JSON',preserveExisting:true,description:'Inline authoritative context or immutable external artifact_file_id + artifact_sha256 reference for Alpha.7.4'},
     PUBLISH_AGGREGATE_CALCULATION_GROUPS_PER_STEP:{value:8,type:'NUMBER',description:'Bounded Alpha.7.4 calculation groups processed per operation step'},
     PUBLISH_AGGREGATE_ATOMIC_MAX_ROWS:{value:5000,type:'NUMBER',description:'Maximum complete logical-series replacement rows in one atomic aggregate request'},

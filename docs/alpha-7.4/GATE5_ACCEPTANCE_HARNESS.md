@@ -340,11 +340,14 @@ livePublishPhysicalWrites = 0
 - все RAW replay validation rows имеют `PASS`;
 - `aggregateReplayAcceptance.accepted=true`;
 - evidence JSON имеет schema
-  `4.0-alpha74-gate5-evidence-14`;
+  `4.0-alpha74-gate5-evidence-15`;
 - evidence SHA-256 и ссылки на четыре isolated artifacts сохранены;
 - trigger автоматически удалён после terminal state.
 
-До получения этого результата Gate 5 остаётся открытым.
+Результат получен 2 августа 2026 года. Execution
+`A74_GATE5_020B82D95A2DCC39C17D` завершился `SUCCESS / SUCCESS`;
+все четыре артефакта имеют 61 636 строк, 29 колонок и одинаковый
+`ROW_MULTISET_V1` digest. Gate 5 закрыт.
 
 ## 10. Нормативная последовательность DEV
 
@@ -373,7 +376,8 @@ livePublishPhysicalWrites = 0
 10. периодически запускать только `AKORT_alpha74Gate5Status()`;
 11. после `SUCCESS` сохранить полный результат status и ссылку на evidence.
 
-Gate 6 начинается только после отдельного review Gate 5 evidence.
+Gate 5 evidence проверен; следующий этап — Gate 6 по
+`GATE6_AUTHORITATIVE_DEV_CANARY.md`.
 
 Первичный canonical-index incident восстанавливался по
 `GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md`. Текущий stopped aggregate replay
@@ -393,3 +397,5 @@ Content-dependent timeout внутри отдельного RAW chunk устра
 `.15` по `GATE5_PRE_EXPANSION_DESCRIPTOR_DEDUP_HOTFIX.md`.
 Terminal reconciliation incident `.15` восстанавливается release `.16` по
 `GATE5_TERMINAL_RECONCILIATION_RECOVERY_HOTFIX.md`.
+Canonical-period representation incident `.16` закрыт release `.17` по
+`GATE5_CANONICAL_PERIOD_RECOVERY_HOTFIX.md`.

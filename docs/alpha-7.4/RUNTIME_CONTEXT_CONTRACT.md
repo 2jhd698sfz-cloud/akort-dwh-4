@@ -78,4 +78,7 @@ ID и hash хранятся только во внутреннем `SYSTEM_SETTI
 2. Оставить оба feature flags `FALSE`.
 3. Выполнить plan/calculation/stage проверки без Publish mutation.
 4. Только после отдельного live-write gate включить `PUBLISH_AGGREGATE_EXECUTION_ENABLED`.
-5. После authoritative DEV canary отдельно включить `PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED`.
+5. Gate 6 harness сам включает
+   `PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED` только после recovery-копий и
+   baseline scan; при ошибке выключает его fail-closed. После PASS флаг
+   остаётся `TRUE`, а `PUBLISH_USER_PIPELINE_ENABLED` — `FALSE` до Gate 7.

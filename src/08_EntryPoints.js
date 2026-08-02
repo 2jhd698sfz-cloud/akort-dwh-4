@@ -24,6 +24,13 @@ function AKORT_alpha74Gate5RecoverReconciliation(){return AKORT_printResult_(AKO
 function AKORT_alpha74Gate5RecoverCanonicalPeriods(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.recoverCanonicalPeriods());}
 function AKORT_alpha74Gate5Worker(){return AKORT.Alpha74Gate5Acceptance.worker();}
 function AKORT_alpha74Gate5Stop(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.stop());}
+function AKORT_alpha74Gate6Install(){return AKORT_printResult_(AKORT.Alpha74Gate6Acceptance.install());}
+function AKORT_alpha74Gate6Validate(){return AKORT_printResult_(AKORT.Alpha74Gate6Acceptance.validate());}
+function AKORT_alpha74Gate6Status(){return AKORT_printResult_(AKORT.Alpha74Gate6Acceptance.status());}
+function AKORT_alpha74Gate6Start(){return AKORT_printResult_(AKORT.Alpha74Gate6Acceptance.start());}
+function AKORT_alpha74Gate6Resume(){return AKORT_printResult_(AKORT.Alpha74Gate6Acceptance.resume());}
+function AKORT_alpha74Gate6Worker(){return AKORT.Alpha74Gate6Acceptance.worker();}
+function AKORT_alpha74Gate6Stop(){return AKORT_printResult_(AKORT.Alpha74Gate6Acceptance.stop());}
 function AKORT_alpha74IndustryInputInstall(){return AKORT_printResult_(AKORT.IndustryInput.install());}
 function AKORT_alpha74IndustryInputValidate(){return AKORT_printResult_(AKORT.IndustryInput.validate());}
 function AKORT_alpha74IndustryInputSubmit(){return AKORT_printResult_(AKORT.IndustryInput.submit());}

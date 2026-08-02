@@ -1,4 +1,4 @@
-# Alpha.7.4.5 — форма загрузки RAW_INDUSTRY
+# Alpha.7.4 — форма загрузки RAW_INDUSTRY
 
 ## Назначение
 
@@ -73,6 +73,10 @@ Append-only журнал успешно подтверждённых строк.
 последнего периода и значения остаётся authoritative результат. Можно вводить
 следующий доступный период.
 
+До закрытия Gate 7 шаги 4–6 ещё не являются пользовательским режимом:
+физические `Submit` и `Continue` заблокированы. Gate 6 не использует эту
+форму, потому что `RAW_INDUSTRY` не влияет на `PUBLISH_PRICE_AGGREGATES`.
+
 ## Типы изменений
 
 - отсутствующий business key → `INSERTED`;
@@ -107,6 +111,8 @@ INDUSTRY_INPUT
 - запрещает физическую загрузку до терминального `SUCCESS` Gate 5;
 - перед Submit требует `PUBLISH_ENGINE_ENABLED=TRUE`;
 - перед Submit требует оба Alpha.7.4 aggregate feature flags `TRUE`;
+- перед обычным Submit требует
+  `PUBLISH_USER_PIPELINE_ENABLED=TRUE`;
 - отклоняет неизвестный или неактивный `series_id`;
 - отклоняет незавершённую строку, будущий период и недопустимое значение;
 - не допускает больше 100 серий в одной операции;
@@ -114,9 +120,6 @@ INDUSTRY_INPUT
 - сохраняет поля пользователя, если они были изменены во время операции.
 
 ## Установка
-
-Пока Gate 5 выполняется, код можно коммитить, но нельзя делать `clasp push` и
-нельзя запускать установку формы.
 
 После терминального `SUCCESS` Gate 5:
 
@@ -130,5 +133,6 @@ INDUSTRY_INPUT
    `INDUSTRY_INPUT` и `INDUSTRY_INPUT_LOG`.
 
 Установка формы не изменяет RAW или Publish. Функция Submit остаётся
-fail-closed заблокированной до завершения operational enablement Gate 6–7.
-
+fail-closed заблокированной до Gate 7. Gate 6 использует отдельный лист
+`GATE6_CANARY_INPUT` и новый weekly/monthly source file; нормативный процесс
+описан в `GATE6_AUTHORITATIVE_DEV_CANARY.md`.

@@ -204,9 +204,15 @@ https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheet
 PUBLISH_ENGINE_ENABLED = TRUE
 PUBLISH_AGGREGATE_EXECUTION_ENABLED = FALSE   # до live-write gate
 PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED = FALSE   # до authoritative DEV canary
+PUBLISH_USER_PIPELINE_ENABLED = FALSE   # до Gate 7 и разрешения Beta 2
 ```
 
 Flags включаются последовательно и фиксируются в release evidence.
+
+Gate 6 самостоятельно запускает только заранее проверенный weekly/monthly
+source-file canary и не открывает обычный `IndustryInputSubmit` или другие
+пользовательские загрузки. После Gate 6 regular aggregate pipeline может
+остаться включённым, но user pipeline остаётся `FALSE` до Gate 7.
 
 ## 11. Terminal acceptance
 

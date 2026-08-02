@@ -1,7 +1,7 @@
 var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
 /**
- * Alpha.7.4.5 operator form for controlled RAW_INDUSTRY updates.
+ * Alpha.7.4 operator form for controlled RAW_INDUSTRY updates.
  *
  * The form is intentionally narrow:
  * - one durable row per active DIM_INDUSTRY_SERIES entry;
@@ -12,7 +12,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  */
 AKORT.IndustryInput = (function () {
   var VERSION = '4.0-alpha74-industry-input-1';
-  var RELEASE = '4.0.0-alpha.7.4.17';
+  var RELEASE = '4.0.0-alpha.7.4.18';
   var INPUT_SHEET = 'INDUSTRY_INPUT';
   var LOG_SHEET = 'INDUSTRY_INPUT_LOG';
   var HEADER_ROW = 5;
@@ -621,6 +621,11 @@ AKORT.IndustryInput = (function () {
       });
     }
     var settings = AKORT.Config.readSystemSettings();
+    if (!truthy_(settings.PUBLISH_USER_PIPELINE_ENABLED)) {
+      throw error_('INDUSTRY_INPUT_USER_PIPELINE_DISABLED', 'User pipeline remains disabled until Gate 7 acceptance.', {
+        userPipelineEnabled: false
+      });
+    }
     if (!truthy_(settings.PUBLISH_ENGINE_ENABLED) ||
         !truthy_(settings.PUBLISH_AGGREGATE_EXECUTION_ENABLED) ||
         !truthy_(settings.PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED)) {
@@ -964,6 +969,12 @@ AKORT.IndustryInput = (function () {
         release_version: RELEASE
       });
       if (!form) return;
+      var formPeriodEmpty = text_(form['Период']) === '';
+      var formValueEmpty = !(form['Значение'] === 0 || text_(form['Значение']) !== '');
+      if (formPeriodEmpty && formValueEmpty && text_(form['Статус']) === STATUS.SUCCESS &&
+          text_(form.load_id) === loadId) {
+        return;
+      }
       var currentFingerprint = '';
       try {
         currentFingerprint = normalizedCandidate_(
@@ -1207,6 +1218,7 @@ AKORT.IndustryInput = (function () {
         }
       }
       var gate5 = gate5State_();
+      var settings = AKORT.Config.readSystemSettings();
       return AKORT.Result.success('Статус формы RAW_INDUSTRY загружен.', {
         release: RELEASE,
         version: VERSION,
@@ -1217,6 +1229,7 @@ AKORT.IndustryInput = (function () {
         statusCounts: counts,
         lastOperation: operation,
         gate5Status: gate5 ? gate5.status : 'NOT_FOUND',
+        userPipelineEnabled: truthy_(settings.PUBLISH_USER_PIPELINE_ENABLED),
         physicalWrites: false
       });
     }, { lock: false, persistLogs: false });

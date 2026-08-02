@@ -2,20 +2,22 @@
   "project": "AKORT DWH 4.0",
   "milestone": "Alpha.7.4",
   "architecture": "INTEGRATION_INTO_EXISTING_OPERATION_ENGINE",
-  "status": "GATE_5_CANONICAL_PERIOD_RECOVERY_HOTFIX_READY",
+  "status": "GATE_5_ACCEPTED_GATE_6_AUTHORITATIVE_DEV_CANARY_READY",
   "physical_writes_allowed": false,
   "isolated_gate_4_physical_writes_allowed": true,
   "isolated_gate_5_physical_writes_allowed": true,
   "regular_pipeline_allowed": false,
+  "gate_6_controlled_live_writes_allowed": true,
+  "user_pipeline_allowed": false,
   "operation_schema_version": "4.0-operation-2",
   "aggregate_stage_schema_version": "4.0-aggregate-stage-1",
-  "implementation_release": "4.0.0-alpha.7.4.17",
-  "completed_gates": [0, 1, 2, 3, 4],
+  "implementation_release": "4.0.0-alpha.7.4.18",
+  "completed_gates": [0, 1, 2, 3, 4, 5],
   "partially_completed_gates": [7],
-  "next_gate": 5,
+  "next_gate": 6,
   "industry_input_form": {
     "version": "4.0-alpha74-industry-input-1",
-    "deployment_status": "LOCAL_ONLY_UNTIL_GATE5_SUCCESS",
+    "deployment_status": "READY_USER_PIPELINE_DISABLED_UNTIL_GATE7",
     "input_sheet": "INDUSTRY_INPUT",
     "log_sheet": "INDUSTRY_INPUT_LOG",
     "editable_fields": ["Период", "Значение"],
@@ -26,6 +28,8 @@
     "operation_type": "RAW_LOAD_V4",
     "submit_requires_gate5_success": true,
     "submit_requires_regular_pipeline": true,
+    "ordinary_submit_requires_gate7_user_pipeline_flag": true,
+    "gate6_narrow_canary_permit": false,
     "physical_writes_now": false
   },
   "gate_1_cleanup_evidence": {
@@ -161,6 +165,7 @@
     ],
     "automation": "PERSISTENT_EVERY_MINUTE_TRIGGER",
     "manual_continuation_allowed": false,
+    "manual_stop_durable_resume_supported": true,
     "feature_flags_required": {
       "PUBLISH_AGGREGATE_EXECUTION_ENABLED": true,
       "PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED": false
@@ -506,6 +511,60 @@
       "reuse_for_acceptance": false
     },
     "local_regression_passed": true,
+    "dev_execution_passed": true,
+    "final_acceptance": {
+      "completed_at": "2026-08-02T08:07:19.703Z",
+      "execution_id": "A74_GATE5_020B82D95A2DCC39C17D",
+      "status": "SUCCESS",
+      "phase": "SUCCESS",
+      "rows": 61636,
+      "columns": 29,
+      "digest_mode": "ROW_MULTISET_V1",
+      "common_digest": "0b65a3962571597c17506bdd13796da44a3597a61c2a9bf56085775251202dee",
+      "exact_artifacts": ["BASELINE_CANONICAL", "LIVE_SNAPSHOT", "FULL_BUILD", "SEQUENTIAL_REPLAY"],
+      "canonical_period_rows_updated": 32886,
+      "canonical_aggregate_ids_updated": 693,
+      "live_publish_unchanged": true,
+      "evidence_file_name": "ALPHA74_GATE5_ACCEPTANCE_A74_GATE5_020B82D95A2DCC39C17D.json",
+      "evidence_sha256": "5a0ad8da2eb690f6289be2219c1f1e4a58d281d13ba866281d64363ec7023f41"
+    }
+  },
+  "gate_6_acceptance_harness": {
+    "version": "4.0-alpha74-gate6-acceptance-1",
+    "release": "4.0.0-alpha.7.4.18",
+    "state_schema": "4.0-alpha74-gate6-state-1",
+    "evidence_schema": "4.0-alpha74-gate6-evidence-1",
+    "status": "LOCAL_IMPLEMENTATION_READY_DEV_NOT_STARTED",
+    "automation": "PERSISTENT_EVERY_MINUTE_TRIGGER",
+    "manual_continuation_allowed": false,
+    "control_sheet": "GATE6_CANARY_INPUT",
+    "canary_input": "ONE_PREVIOUSLY_UNLOADED_WEEKLY_OR_MONTHLY_SOURCE_FILE",
+    "canary_operation_type": "SOURCE_FILE_LOAD_V4",
+    "allowed_raw_targets": ["RAW_PRICES_WEEKLY", "RAW_PRICES_MONTHLY"],
+    "industry_input_used": false,
+    "recovery_copies": ["DWH_BEFORE_CANARY", "PUBLISH_BEFORE_CANARY"],
+    "publish_targets": ["PUBLISH_PRICES_WEEKLY", "PUBLISH_PRICES_MONTHLY", "PUBLISH_INDUSTRY", "PUBLISH_PRICE_AGGREGATES"],
+    "digest_mode": "ROW_MULTISET_V1",
+    "digest_chunk_rows": 1000,
+    "cycles": ["SOURCE_FILE_LOAD_V4_CANARY", "RAW_REVERSAL_V4_ROLLBACK", "SOURCE_FILE_LOAD_V4_RESTORE"],
+    "aggregate_publish_change_required": true,
+    "rollback_requires_exact_baseline_digest": true,
+    "restore_requires_exact_post_canary_digest": true,
+    "final_aggregate_contract_scan_required": true,
+    "failure_mode": "DISABLE_REGULAR_AND_USER_PIPELINES_PRESERVE_RECOVERY_ARTIFACTS",
+    "feature_flags_before_start": {
+      "PUBLISH_ENGINE_ENABLED": true,
+      "PUBLISH_AGGREGATE_EXECUTION_ENABLED": true,
+      "PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED": false,
+      "PUBLISH_USER_PIPELINE_ENABLED": false
+    },
+    "feature_flags_after_success": {
+      "PUBLISH_ENGINE_ENABLED": true,
+      "PUBLISH_AGGREGATE_EXECUTION_ENABLED": true,
+      "PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED": true,
+      "PUBLISH_USER_PIPELINE_ENABLED": false
+    },
+    "local_regression_passed": true,
     "dev_execution_passed": false
   },
   "accepted_base_commit": "52590c8e036d49b9f76f87341b69881a916c851d",
@@ -522,12 +581,14 @@
     "docs/alpha-7.4/GATE3_ACCEPTANCE_HARNESS.md",
     "docs/alpha-7.4/GATE4_ACCEPTANCE_HARNESS.md",
     "docs/alpha-7.4/GATE5_ACCEPTANCE_HARNESS.md",
+    "docs/alpha-7.4/GATE6_AUTHORITATIVE_DEV_CANARY.md",
     "docs/alpha-7.4/GATE5_FULL_BUILD_CHUNKING_HOTFIX.md",
     "docs/alpha-7.4/GATE5_CANONICAL_REPLAY_RECOVERY_HOTFIX.md",
     "docs/alpha-7.4/GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md",
     "docs/alpha-7.4/GATE5_EXACT_DUPLICATE_RECOVERY_HOTFIX.md",
     "docs/alpha-7.4/GATE5_PERIOD_IDENTITY_RECOVERY_HOTFIX.md",
     "docs/alpha-7.4/GATE5_FAST_TARGET_SCAN_HOTFIX.md",
-    "docs/alpha-7.4/GATE5_TERMINAL_RECONCILIATION_RECOVERY_HOTFIX.md"
+    "docs/alpha-7.4/GATE5_TERMINAL_RECONCILIATION_RECOVERY_HOTFIX.md",
+    "docs/alpha-7.4/GATE5_CANONICAL_PERIOD_RECOVERY_HOTFIX.md"
   ]
 }
