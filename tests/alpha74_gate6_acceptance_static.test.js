@@ -91,8 +91,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-2');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.20');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-3');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.21');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -161,6 +161,43 @@ test('Gate 6 source parser treats terminal unit punctuation as equivalent', () =
   );
 });
 
+test('exact Alpha.7.4.20 runtime-context incident resumes only after RAW and price Publish and before aggregate staging', () => {
+  const operationId = 'OP_SOURCE_FILE_LOAD_V4_CANARY';
+  const state = {
+    stateSchemaVersion: '4.0-alpha74-gate6-state-1',
+    release: '4.0.0-alpha.7.4.20',
+    status: 'FAILED',
+    phase: 'FAILED',
+    failedFromPhase: 'RUN_CANARY',
+    operations: { canary: operationId, reversal: '', restore: '' },
+    artifacts: {
+      dwhBackup: { id: 'DWH_BACKUP' },
+      publishBackup: { id: 'PUBLISH_BACKUP' }
+    },
+    lastError: { code: 'AGGREGATE_RUNTIME_CONTEXT_MISSING' }
+  };
+  const operation = {
+    operation_id: operationId,
+    operation_type: 'SOURCE_FILE_LOAD_V4',
+    status: 'FAILED',
+    current_phase: 'MATERIALIZING_AGGREGATE_INPUTS',
+    error_code: 'AGGREGATE_RUNTIME_CONTEXT_MISSING',
+    checkpoint: {
+      nextPhase: 'MATERIALIZING_AGGREGATE_INPUTS',
+      completedPhases: ['DISCOVER', 'VALIDATE', 'PARSE', 'STAGE', 'COMMIT_RAW', 'UPDATE_PUBLISH', 'PREPARING_AGGREGATE_IMPACT'],
+      handlerState: { loadId: 'LOAD_CANARY' },
+      aggregate: { status: 'IMPACT_PREPARED' }
+    }
+  };
+  assert.equal(G.Test.runtimeContextIncident(state, operation), true);
+  const beforePublish = JSON.parse(JSON.stringify(operation));
+  beforePublish.checkpoint.completedPhases = beforePublish.checkpoint.completedPhases.filter(phase => phase !== 'UPDATE_PUBLISH');
+  assert.equal(G.Test.runtimeContextIncident(state, beforePublish), false);
+  const afterMaterialization = JSON.parse(JSON.stringify(operation));
+  afterMaterialization.checkpoint.completedPhases.push('MATERIALIZING_AGGREGATE_INPUTS');
+  assert.equal(G.Test.runtimeContextIncident(state, afterMaterialization), false);
+});
+
 test('control sheet accepts a Drive file ID or URL and rejects arbitrary text', () => {
   const fileId = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
   assert.equal(G.Test.parseFileId(fileId), fileId);
@@ -210,7 +247,7 @@ test('operation acceptance requires all aggregate phases, RAW audit and SUCCESS'
     operation_type: 'SOURCE_FILE_LOAD_V4',
     status: 'SUCCESS',
     current_phase: 'SUCCESS',
-    release_version: '4.0.0-alpha.7.4.20',
+    release_version: '4.0.0-alpha.7.4.21',
     checkpoint: {
       completedPhases: phases,
       aggregate: { status: 'SUCCESS', targetAfterFingerprint: 'AFTER' },
@@ -230,6 +267,7 @@ test('operation acceptance requires all aggregate phases, RAW audit and SUCCESS'
 test('source contract contains source-file canary, recovery copies, standard rollback, restore and fail-closed flags', () => {
   const source = fs.readFileSync(path.join(root, 'src/28_Alpha74Gate6Acceptance.js'), 'utf8');
   const publish = fs.readFileSync(path.join(root, 'src/07_IncrementalPublish.js'), 'utf8');
+  const aggregate = fs.readFileSync(path.join(root, 'src/21_Alpha74AggregateIntegration.js'), 'utf8');
   assert(source.includes("var CONTROL_SHEET = 'GATE6_CANARY_INPUT'"));
   assert(source.includes('AKORT.ExistingSourceParsers.previewFile'));
   assert(source.includes('AKORT.ExistingSourceParsers.enqueueFile'));
@@ -247,6 +285,12 @@ test('source contract contains source-file canary, recovery copies, standard rol
   assert(source.includes('regularCyclesWithoutManualContinuation: 3'));
   assert(source.includes('AKORT.IncrementalPublish.PublishHeaders'));
   assert(source.includes('BASELINE_HEADER_CONTRACT_RECOVERY'));
+  assert(source.includes('OPERATIONAL_RUNTIME_CONTEXT_CHECKPOINT_RECOVERY'));
+  assert(source.includes('AKORT.OperationEngine.recoverFailedPhase'));
+  assert(aggregate.includes("text_(context.accepted_by) !== 'ALPHA74_GATE5_FULL_HISTORY_PARITY'"));
+  assert(aggregate.includes("text_(context.mutation_boundary) !== 'ALPHA74_ATOMIC_LOGICAL_SERIES'"));
+  assert(aggregate.includes('context.gate5_evidence_required !== true'));
+  assert(aggregate.includes("publicationMode: 'BOUNDED_ATOMIC_LOGICAL_SERIES_BATCHES'"));
   assert(!source.includes('AKORT_V300.HEADERS'));
   assert(publish.includes('PublishHeaders:PUBLISH_HEADERS'));
   assert(!source.includes('AKORT.IndustryInput.submit'));

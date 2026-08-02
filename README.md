@@ -6,7 +6,7 @@ Apps Script data pipeline for the AKORT analytical system.
 
 Active milestone: **Alpha.7.4 — Aggregate Integration into Existing Operation Engine**.
 
-Status: `GATE 5 ACCEPTED / GATE 6 AUTHORITATIVE DEV CANARY READY / USER PIPELINE PROHIBITED`.
+Status: `GATE 5 ACCEPTED / GATE 6 RUNTIME-CONTEXT CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`.
 
 Accepted base:
 
@@ -36,3 +36,11 @@ See [`docs/alpha-7.4/README.md`](docs/alpha-7.4/README.md).
 The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 5 is accepted with exact 61,636-row parity across baseline, live snapshot, full build and sequential replay. Gate 6 adds recovery copies and a fail-closed three-cycle authoritative DEV canary using one new weekly/monthly source file: source-file load, standard logical reversal and source-file restore. Acceptance requires a real change in `PUBLISH_PRICE_AGGREGATES`.
 
 Gate 6 may enable the regular aggregate pipeline only inside its controlled harness. General operator submission remains prohibited until Gate 7 through `PUBLISH_USER_PIPELINE_ENABLED=FALSE`.
+
+Release `4.0.0-alpha.7.4.21` recovers the exact `.20` Gate 6 canary that
+completed RAW and ordinary price publication but failed before aggregate
+materialization because no operational runtime context had been persisted.
+The accepted Alpha.6 calculation is now exposed through a narrow parity
+adapter and published through durable bounded Alpha.7.4 complete-series
+batches. Recovery continues the existing operation checkpoint; it does not
+repeat RAW or ordinary price publication.

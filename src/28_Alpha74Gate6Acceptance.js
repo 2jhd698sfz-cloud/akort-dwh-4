@@ -12,11 +12,12 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * it has no aggregate impact under the frozen Alpha.7.4 contract.
  */
 AKORT.Alpha74Gate6Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate6-acceptance-2';
+  var VERSION = '4.0-alpha74-gate6-acceptance-3';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate6-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate6-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.20';
+  var RELEASE = '4.0.0-alpha.7.4.21';
   var BASELINE_HEADER_INCIDENT_RELEASE = '4.0.0-alpha.7.4.19';
+  var RUNTIME_CONTEXT_INCIDENT_RELEASE = '4.0.0-alpha.7.4.20';
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE6_STATE_V1';
   var CONTROL_SHEET = 'GATE6_CANARY_INPUT';
   var TRIGGER_HANDLER = 'AKORT_alpha74Gate6Worker';
@@ -337,6 +338,39 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     else table.sheet.getRange(table.sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
     SpreadsheetApp.flush();
     return value === true;
+  }
+
+  function setJsonSetting_(key, value, description) {
+    var table = settingSheet_();
+    var values = table.sheet.getLastRow() > 1
+      ? table.sheet.getRange(2, 1, table.sheet.getLastRow() - 1, table.headers.length).getValues()
+      : [];
+    var rowNumber = 0;
+    values.forEach(function (row, index) {
+      if (text_(row[0]) === key) rowNumber = index + 2;
+    });
+    var serialized = stableStringify_(value || {});
+    var row = [key, serialized, 'JSON', 'DEV', 0, 1, description || '', now_(), currentUser_()];
+    if (rowNumber) table.sheet.getRange(rowNumber, 1, 1, row.length).setValues([row]);
+    else table.sheet.getRange(table.sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+    SpreadsheetApp.flush();
+    return serialized;
+  }
+
+  function acceptedParityRuntimeContext_() {
+    return {
+      adapter_mode: 'ALPHA6_ACCEPTED_PARITY',
+      adapter_contract_version: '4.0-alpha74-accepted-parity-1',
+      accepted_by: 'ALPHA74_GATE5_FULL_HISTORY_PARITY',
+      gate5_evidence_required: true,
+      mutation_boundary: 'ALPHA74_ATOMIC_LOGICAL_SERIES'
+    };
+  }
+
+  function assertOperationalRuntimeContext_() {
+    assert_(AKORT.AggregateIntegration && typeof AKORT.AggregateIntegration.assertOperationalRuntimeContext === 'function',
+      'ALPHA74_GATE6_RUNTIME_CONTEXT_CHECK_UNAVAILABLE', 'Operational aggregate runtime-context check is unavailable.', {});
+    return AKORT.AggregateIntegration.assertOperationalRuntimeContext();
   }
 
   function setRegularPipeline_(enabled) {
@@ -1036,15 +1070,22 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       var flags = flagState_();
       var state = loadState_();
       var control = controlStatus_();
+      var runtimeContextResult = AKORT.AggregateIntegration.operationalRuntimeContextStatus();
+      var runtimeContext = {
+        ready: !!(runtimeContextResult && runtimeContextResult.ok),
+        code: runtimeContextResult && runtimeContextResult.code || '',
+        details: runtimeContextResult && (runtimeContextResult.data || runtimeContextResult.details) || null
+      };
       return AKORT.Result.success('Alpha.7.4 Gate 6 status loaded.', {
         release: RELEASE,
         version: VERSION,
         evidenceSchemaVersion: EVIDENCE_SCHEMA,
         stateSchemaVersion: STATE_SCHEMA,
-        readyToStart: flags.publishEngineEnabled && flags.executionEnabled && !flags.regularPipelineEnabled && !flags.userPipelineEnabled &&
+        readyToStart: runtimeContext.ready && flags.publishEngineEnabled && flags.executionEnabled && !flags.regularPipelineEnabled && !flags.userPipelineEnabled &&
           control.installed && control.fileConfigured && control.validationStatus === 'ГОТОВО К GATE 6',
         flags: flags,
         control: control,
+        runtimeContext: runtimeContext,
         targetSheets: TARGETS.slice(),
         cycleContract: ['SOURCE_FILE_LOAD_V4_CANARY', 'RAW_REVERSAL_V4_ROLLBACK', 'SOURCE_FILE_LOAD_V4_RESTORE'],
         worker: TRIGGER_HANDLER,
@@ -1101,6 +1142,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       var flags = flagState_();
       assert_(flags.publishEngineEnabled && flags.executionEnabled && !flags.regularPipelineEnabled && !flags.userPipelineEnabled,
         'ALPHA74_GATE6_START_FLAGS_INVALID', 'Gate 6 Start requires engine=TRUE, aggregate execution=TRUE, regular pipeline=FALSE and user pipeline=FALSE.', flags);
+      assertOperationalRuntimeContext_();
       var existing = loadState_();
       if (existing && existing.status === 'RUNNING') {
         ensureTrigger_();
@@ -1176,6 +1218,165 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       Number(metrics.digestChunks || 0) === 0 && Number(metrics.rowsScanned || 0) === 0 &&
       !!text_(artifacts.dwhBackup && artifacts.dwhBackup.id) &&
       !!text_(artifacts.publishBackup && artifacts.publishBackup.id);
+  }
+
+  function aggregateStageRowsForOperation_(operationId) {
+    var spreadsheet = SpreadsheetApp.openById(resources_().dwhSpreadsheetId);
+    var sheet = spreadsheet.getSheetByName('AGGREGATE_STAGE');
+    assert_(sheet, 'ALPHA74_GATE6_AGGREGATE_STAGE_MISSING', 'AGGREGATE_STAGE is missing.', {});
+    return AKORT.Core.Sheets.readObjects(sheet).filter(function (row) {
+      return text_(row.operation_id) === text_(operationId);
+    });
+  }
+
+  function runtimeContextIncident_(state, operation) {
+    var checkpoint = operation && operation.checkpoint || {};
+    var completed = checkpoint.completedPhases || [];
+    var aggregate = checkpoint.aggregate || {};
+    return !!state && !!operation &&
+      state.stateSchemaVersion === STATE_SCHEMA && state.release === RUNTIME_CONTEXT_INCIDENT_RELEASE &&
+      state.status === 'FAILED' && state.phase === 'FAILED' && state.failedFromPhase === 'RUN_CANARY' &&
+      state.lastError && state.lastError.code === 'AGGREGATE_RUNTIME_CONTEXT_MISSING' &&
+      text_(state.operations && state.operations.canary) === text_(operation.operation_id) &&
+      text_(operation.operation_type) === 'SOURCE_FILE_LOAD_V4' && text_(operation.status) === 'FAILED' &&
+      text_(operation.current_phase) === 'MATERIALIZING_AGGREGATE_INPUTS' &&
+      text_(operation.error_code) === 'AGGREGATE_RUNTIME_CONTEXT_MISSING' &&
+      text_(checkpoint.nextPhase) === 'MATERIALIZING_AGGREGATE_INPUTS' &&
+      completed.indexOf('COMMIT_RAW') >= 0 && completed.indexOf('UPDATE_PUBLISH') >= 0 &&
+      completed.indexOf('PREPARING_AGGREGATE_IMPACT') >= 0 &&
+      completed.indexOf('MATERIALIZING_AGGREGATE_INPUTS') < 0 &&
+      text_(aggregate.status) === 'IMPACT_PREPARED' && !!operationLoadId_(operation) &&
+      !!text_(state.artifacts && state.artifacts.dwhBackup && state.artifacts.dwhBackup.id) &&
+      !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
+  }
+
+  function recoverRuntimeContextIncident() {
+    return AKORT.Core.safeRun('ALPHA74_GATE6_RECOVER_RUNTIME_CONTEXT', function () {
+      AKORT.EnvironmentGuard.assertDev();
+      var state = loadState_();
+      var operationId = text_(state && state.operations && state.operations.canary);
+      var operation = operationId ? operation_(operationId) : null;
+      assert_(runtimeContextIncident_(state, operation),
+        'ALPHA74_GATE6_RUNTIME_CONTEXT_RECOVERY_SOURCE_INVALID', 'Gate 6 runtime-context recovery is restricted to the exact Alpha.7.4.20 canary incident.', {
+          stateRelease: state && state.release || '',
+          stateStatus: state && state.status || 'NOT_FOUND',
+          failedFromPhase: state && state.failedFromPhase || '',
+          operationId: operationId,
+          operationStatus: operation && operation.status || '',
+          operationPhase: operation && operation.current_phase || '',
+          operationErrorCode: operation && operation.error_code || ''
+        });
+      var flags = flagState_();
+      assert_(flags.publishEngineEnabled && flags.executionEnabled && !flags.regularPipelineEnabled && !flags.userPipelineEnabled,
+        'ALPHA74_GATE6_RUNTIME_CONTEXT_RECOVERY_FLAGS_INVALID', 'Runtime-context recovery requires engine=TRUE, aggregate execution=TRUE, regular pipeline=FALSE and user pipeline=FALSE.', flags);
+      assert_(triggers_().length === 0, 'ALPHA74_GATE6_RUNTIME_CONTEXT_RECOVERY_TRIGGER_ACTIVE', 'Gate 6 recovery requires no active Gate 6 worker trigger.', {
+        triggerCount: triggers_().length
+      });
+      assertNoForeignDataOperations_(state);
+      ['dwhBackup', 'publishBackup'].forEach(function (key) {
+        DriveApp.getFileById(state.artifacts[key].id).getName();
+      });
+      var inspected = AKORT.ExistingSourceParsers.inspectFile(state.canarySource.fileId, {
+        profileId: state.canarySource.profileId || '',
+        year: state.canarySource.year || '',
+        month: state.canarySource.month || '',
+        week: state.canarySource.week || '',
+        sourcePublishedAt: state.canarySource.sourcePublishedAt || ''
+      });
+      assert_(text_(inspected.sourceHash) === text_(state.canarySource.sourceHash),
+        'ALPHA74_GATE6_RUNTIME_CONTEXT_RECOVERY_SOURCE_CHANGED', 'The Gate 6 canary source changed after the failed checkpoint.', {
+          expectedSourceHash: state.canarySource.sourceHash,
+          actualSourceHash: inspected.sourceHash
+        });
+      var stageRows = aggregateStageRowsForOperation_(operationId);
+      assert_(stageRows.length === 0, 'ALPHA74_GATE6_RUNTIME_CONTEXT_RECOVERY_STAGE_NOT_EMPTY', 'The failed canary already has aggregate stage rows and cannot use this exact recovery.', {
+        operationId: operationId,
+        stageRows: stageRows.length
+      });
+      var configured = AKORT.Config.readSystemSettings().PUBLISH_AGGREGATE_RUNTIME_CONTEXT_JSON;
+      var expectedContext = acceptedParityRuntimeContext_();
+      var currentContext = {};
+      try { currentContext = configured ? JSON.parse(String(configured)) : {}; }
+      catch (caughtContext) {
+        throw error_('ALPHA74_GATE6_RUNTIME_CONTEXT_SETTING_INVALID', 'Existing operational aggregate runtime-context setting is invalid JSON.', {
+          cause: String(caughtContext && caughtContext.message || caughtContext)
+        });
+      }
+      assert_(Object.keys(currentContext).length === 0 || stableStringify_(currentContext) === stableStringify_(expectedContext),
+        'ALPHA74_GATE6_RUNTIME_CONTEXT_SETTING_CONFLICT', 'A different operational aggregate runtime context is already configured.', {
+          configuredFingerprint: hash_(currentContext),
+          expectedFingerprint: hash_(expectedContext)
+        });
+      if (!Object.keys(currentContext).length) {
+        setJsonSetting_(
+          'PUBLISH_AGGREGATE_RUNTIME_CONTEXT_JSON',
+          expectedContext,
+          'Gate 5 accepted Alpha.6 parity adapter behind the Alpha.7.4 atomic logical-series boundary'
+        );
+      }
+      var contextStatus = assertOperationalRuntimeContext_();
+      var prepared = AKORT.OperationEngine.recoverFailedPhase(operationId, {
+        operationType: 'SOURCE_FILE_LOAD_V4',
+        phase: 'MATERIALIZING_AGGREGATE_INPUTS',
+        errorCode: 'AGGREGATE_RUNTIME_CONTEXT_MISSING',
+        reason: 'Alpha.7.4.21 exact Gate 6 operational runtime-context recovery'
+      });
+      assert_(prepared && prepared.ok, prepared && prepared.code || 'ALPHA74_GATE6_OPERATION_RECOVERY_FAILED',
+        prepared && prepared.message || 'The failed canary operation could not be prepared for recovery.', prepared && prepared.details || {});
+      state.release = RELEASE;
+      state.status = 'RUNNING';
+      state.phase = 'RUN_CANARY';
+      state.finishedAt = '';
+      state.failedFromPhase = '';
+      state.stoppedFromPhase = '';
+      state.leaseUntil = '';
+      state.consecutiveErrors = 0;
+      state.lastError = null;
+      state.recovery = {
+        mode: 'OPERATIONAL_RUNTIME_CONTEXT_CHECKPOINT_RECOVERY',
+        recoveredFromRelease: RUNTIME_CONTEXT_INCIDENT_RELEASE,
+        recoveredAt: now_(),
+        operationId: operationId,
+        loadId: operationLoadId_(operation),
+        resumePhase: 'MATERIALIZING_AGGREGATE_INPUTS',
+        preservedRecoveryCopies: true,
+        repeatedRawCommit: false,
+        repeatedPricePublish: false,
+        runtimeAdapterMode: contextStatus.adapterMode
+      };
+      state.lastStep = {
+        phase: 'RUNTIME_CONTEXT_RECOVERY_PREPARED',
+        operationId: operationId,
+        resumePhase: 'MATERIALIZING_AGGREGATE_INPUTS'
+      };
+      try {
+        setRegularPipeline_(true);
+        state.regularPipelineEnabledAt = now_();
+        saveState_(state);
+        writeValidation_('GATE 6 ВОЗОБНОВЛЁН', {
+          executionId: state.executionId,
+          operationId: operationId,
+          phase: state.phase,
+          recoveryMode: state.recovery.mode
+        });
+        ensureTrigger_();
+      } catch (activationError) {
+        deleteTriggers_();
+        try { setRegularPipeline_(false); } catch (ignoredFlagCleanup) {}
+        state.status = 'STOPPED';
+        state.phase = 'STOPPED';
+        state.stoppedFromPhase = 'RUN_CANARY';
+        state.finishedAt = now_();
+        state.lastError = {
+          code: text_(activationError && activationError.code) || 'ALPHA74_GATE6_RUNTIME_CONTEXT_RECOVERY_ACTIVATION_FAILED',
+          message: text_(activationError && activationError.message) || String(activationError),
+          details: clone_(activationError && activationError.details || null)
+        };
+        try { saveState_(state); } catch (ignoredStateCleanup) {}
+        throw activationError;
+      }
+      return AKORT.Result.success('Alpha.7.4 Gate 6 operational runtime context installed; the existing canary operation will continue from its aggregate checkpoint.', publicState_(state));
+    }, { lock: true, persistLogs: true, lockTimeoutMs: 60000 });
   }
 
   function resume() {
@@ -1411,6 +1612,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     status: status,
     start: start,
     resume: resume,
+    recoverRuntimeContextIncident: recoverRuntimeContextIncident,
     worker: worker,
     stop: stop,
     Test: Object.freeze({
@@ -1422,6 +1624,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       digestValue: digestValue_,
       expectedHeaders: expectedHeaders_,
       baselineHeaderIncident: baselineHeaderIncident_,
+      runtimeContextIncident: runtimeContextIncident_,
       compareDigests: compareDigests_,
       changedTargets: changedTargets_,
       operationSummary: operationSummary_

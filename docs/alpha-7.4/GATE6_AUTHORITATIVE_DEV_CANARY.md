@@ -108,6 +108,16 @@ source hash не изменился и обе recovery-копии доступн
 execution ID и копии, переводит checkpoint обратно в `BASELINE_SCAN` и не
 включает regular pipeline до завершения baseline.
 
+Для следующего точного `.20` incident того же execution, когда baseline уже
+завершён, canary operation успела выполнить RAW commit, ordinary price Publish
+и aggregate impact, но остановилась на `MATERIALIZING_AGGREGATE_INPUTS` с
+`AGGREGATE_RUNTIME_CONTEXT_MISSING`, обычный Resume запрещён. Release `.21`
+использует отдельную функцию `AKORT_alpha74Gate6RecoverRuntimeContext()`:
+устанавливает принятый Alpha.6 parity adapter за Alpha.7.4 atomic boundary и
+продолжает существующую operation с сохранённой фазы. Подробный exact
+allowlist и runbook находятся в
+`GATE6_RUNTIME_CONTEXT_RECOVERY_HOTFIX.md`.
+
 ## Установка и запуск
 
 После публикации commit и `clasp push`:
@@ -143,6 +153,12 @@ Gate 6 ещё не была запущена и live-данные не изме�
 установки `.20` не выполнять `Install`, `Validate` или `Start` повторно.
 Запустить smoke test, contract scan, проверить terminal status и один раз
 выполнить `AKORT_alpha74Gate6Resume()`. Затем использовать только Status.
+
+Если `.20` завершился точным runtime-context incident после RAW/price Publish,
+после установки `.21` выполнить `AKORT_alpha74Install()`, smoke test, contract
+scan и Status. Не выполнять Gate6 Install, Validate, Start или обычный Resume.
+Один раз выполнить `AKORT_alpha74Gate6RecoverRuntimeContext()`, затем
+использовать только `AKORT_alpha74Gate6Status()`.
 
 Экстренная остановка: `AKORT_alpha74Gate6Stop()`. Она сохраняет исходную фазу,
 operation IDs, digest cursors и recovery-копии. После проверки причины тот же

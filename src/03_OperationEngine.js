@@ -831,6 +831,73 @@ AKORT.OperationEngine = (function () {
     }, { lock: false, persistLogs: true, operationId: operationId });
   }
 
+  function recoverFailedPhase(operationId, expected) {
+    expected = expected || {};
+    return AKORT.Core.safeRun('OPERATION_RECOVER_FAILED_PHASE', function (context) {
+      AKORT.EnvironmentGuard.assertDev();
+      var runtime = runtimeSettings_();
+      return AKORT.Core.Locks.withScriptLock('OPERATION_RECOVER_' + operationId, function () {
+        var spreadsheet = getDwh_();
+        var found = findOperation_(spreadsheet, operationId);
+        var operation = found.operation;
+        var checkpoint = checkpointFor_(operation);
+        var expectedType = String(expected.operationType || '');
+        var expectedPhase = String(expected.phase || '');
+        var expectedErrorCode = String(expected.errorCode || '');
+        if (operation.status !== STATUSES.FAILED ||
+            expectedType && String(operation.operation_type) !== expectedType ||
+            expectedPhase && String(operation.current_phase) !== expectedPhase ||
+            expectedPhase && String(checkpoint.nextPhase) !== expectedPhase ||
+            expectedErrorCode && String(operation.error_code) !== expectedErrorCode) {
+          throw AKORT.Core.error('OPERATION_FAILED_RECOVERY_SOURCE_INVALID', 'Failed-operation recovery source does not match the exact authorized checkpoint.', {
+            retryable: false,
+            operationId: operationId,
+            expected: {
+              operationType: expectedType,
+              phase: expectedPhase,
+              errorCode: expectedErrorCode
+            },
+            actual: {
+              status: operation.status,
+              operationType: operation.operation_type,
+              currentPhase: operation.current_phase,
+              checkpointPhase: checkpoint.nextPhase,
+              errorCode: operation.error_code
+            }
+          });
+        }
+        if (checkpoint.schemaVersion !== AKORT.Release.operationSchemaVersion) {
+          throw AKORT.Core.error('OPERATION_FAILED_RECOVERY_SCHEMA_MISMATCH', 'Failed-operation checkpoint schema is incompatible with the installed engine.', {
+            retryable: false,
+            expected: AKORT.Release.operationSchemaVersion,
+            actual: checkpoint.schemaVersion
+          });
+        }
+        checkpoint.control.stopRequested = false;
+        checkpoint.lease = null;
+        operation.status = STATUSES.PAUSED;
+        operation.finished_at = '';
+        operation.error_code = '';
+        operation.error_message = '';
+        saveCheckpoint_(operation, checkpoint);
+        appendStep_(spreadsheet, operation, checkpoint.nextPhase, 'RECOVERY_PREPARED', AKORT.Core.now(), checkpoint, {
+          recoveredFromStatus: STATUSES.FAILED,
+          expectedOperationType: expectedType,
+          expectedPhase: expectedPhase,
+          expectedErrorCode: expectedErrorCode,
+          reason: String(expected.reason || '')
+        }, null);
+        saveObject_(found.table, operation);
+        context.logger.info('Failed operation prepared for exact checkpoint recovery', {
+          phase: checkpoint.nextPhase,
+          operationType: operation.operation_type,
+          expectedErrorCode: expectedErrorCode
+        }, { operationId: operationId, eventCode: 'OPERATION_FAILED_PHASE_RECOVERED' });
+        return AKORT.Result.success('Failed operation prepared for continuation from its exact checkpoint.', resultData_(spreadsheet, operation));
+      }, runtime.lockTimeoutMs);
+    }, { lock: false, persistLogs: true, operationId: operationId });
+  }
+
   function resume(operationId, options) {
     options = options || {};
     var preparation = AKORT.Core.safeRun('OPERATION_RESUME_PREPARE', function () {
@@ -963,6 +1030,7 @@ AKORT.OperationEngine = (function () {
     enqueue: enqueue,
     run: run,
     resume: resume,
+    recoverFailedPhase: recoverFailedPhase,
     requestStop: requestStop,
     status: status,
     engineStatus: engineStatus,

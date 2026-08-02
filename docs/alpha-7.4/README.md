@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 5 ACCEPTED / GATE 6 AUTHORITATIVE DEV CANARY READY / USER PIPELINE PROHIBITED`
+`GATE 5 ACCEPTED / GATE 6 RUNTIME-CONTEXT CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`
 
 Дата фиксации: 2 августа 2026 года.
 
@@ -279,6 +279,20 @@ DEV `SUCCESS` и evidence. Обычный
 `AKORT.IncrementalPublish.PublishHeaders`. Точный incident
 `A74_GATE6_7F437567A3ABBFBE94F1` можно продолжить функцией Resume с тем же
 execution ID, source hash и recovery-копиями; новый Start запрещён.
+
+После baseline recovery canary operation завершила RAW commit, обычный weekly
+Publish и подготовку aggregate impact, но fail-closed остановилась до
+aggregate materialization: Gate 3 проверял runtime context только в памяти и
+не сохранил operational `PUBLISH_AGGREGATE_RUNTIME_CONTEXT_JSON`. В `.21`
+принятый Alpha.6 calculation path, доказанный Gate 5 exact parity, подключён
+через узкий `ALPHA6_ACCEPTED_PARITY` adapter. Результаты проходят канонический
+Alpha.7.4 stage и публикуются bounded atomic пакетами целых логических рядов с
+durable lost-response recovery. Функция
+`AKORT_alpha74Gate6RecoverRuntimeContext()` допускает только точный `.20`
+incident, переиспользует существующие recovery-копии и продолжает ту же
+operation с `MATERIALIZING_AGGREGATE_INPUTS`, не повторяя RAW и ordinary price
+Publish. Нормативная инструкция:
+`GATE6_RUNTIME_CONTEXT_RECOVERY_HOTFIX.md`.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

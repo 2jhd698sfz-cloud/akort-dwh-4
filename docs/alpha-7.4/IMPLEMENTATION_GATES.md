@@ -150,7 +150,7 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
-Release `4.0.0-alpha.7.4.20` готов к DEV-продолжению Gate 6. Harness
+Release `4.0.0-alpha.7.4.21` готов к точному DEV-продолжению Gate 6. Harness
 создаёт DWH/Publish recovery copies, выполняет canary из нового weekly/monthly
 файла через `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторную
 source-file загрузку для восстановления. Acceptance требует фактического
@@ -164,6 +164,13 @@ Hotfix `.20` заменяет недоступную межмодульную с
 явный `AKORT.IncrementalPublish.PublishHeaders` и разрешает Resume только для
 точного `.19 / BASELINE_SCAN` incident до любых scan chunks, operations и
 live writes. Существующие recovery-копии переиспользуются.
+После Resume canary operation завершила RAW и ordinary price Publish, но
+остановилась до aggregate materialization из-за отсутствующего operational
+runtime context. Hotfix `.21` подключает принятый Alpha.6 calculation path за
+Alpha.7.4 stage/atomic boundary, публикует большие affected sets durable
+пакетами целых logical series и разрешает только exact `.20` checkpoint
+recovery через `AKORT_alpha74Gate6RecoverRuntimeContext()`. Повторный Start,
+RAW commit и ordinary price Publish запрещены.
 
 ## Gate 7 — Acceptance
 

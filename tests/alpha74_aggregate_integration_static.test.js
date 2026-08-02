@@ -94,6 +94,24 @@ function unrelated(rowNumber) {
   return row;
 }
 
+function seriesStage(seriesId, period) {
+  const row = calcRow(period, true);
+  row.aggregate_subject_id = seriesId;
+  row.aggregate_name = `Group ${seriesId}`;
+  row.aggregate_series_key = row.aggregate_series_key.replace('|G|', `|${seriesId}|`);
+  row.aggregate_row_key = `${row.aggregate_series_key}|${period}`;
+  return A.Test.buildStageRecord(row, {
+    ...identity(),
+    calculationId: 'CALC',
+    weightSnapshotId: 'W_SNAPSHOT'
+  });
+}
+
+function seriesTarget(seriesId, period, rowNumber) {
+  const record = seriesStage(seriesId, period);
+  return { ...JSON.parse(record.row_payload_json), __row: rowNumber };
+}
+
 test('A74 metadata and schemas are exact', () => {
   assert.equal(A.Version, '4.0-aggregate-integration-1');
   assert.equal(A.OperationSchemaVersion, '4.0-operation-2');
@@ -154,6 +172,25 @@ test('PUBLISH_IMPACT is scoped, parsed and deduplicated', () => {
     () => A.Test.normalizeImpactRecords([{ ...record, load_id: 'OTHER' }], 'OP1', 'LOAD1'),
     error => error.code === 'AGGREGATE_IMPACT_SCOPE_MISMATCH'
   );
+});
+
+test('accepted Alpha.6 parity adapter deduplicates combos and creates exact publication identities', () => {
+  const prepared = {
+    records: [{
+      aggregate_combos: [
+        { frequency: 'weekly', datasetCode: 'D', period: '2026-01-08', valueType: 'price', indexType: 'wow' },
+        { frequency: 'weekly', dataset_code: 'D', period_start: '2026-01-08', value_type: 'price', index_type: 'wow' }
+      ]
+    }]
+  };
+  const combos = A.Test.preparedCombos(prepared);
+  assert.equal(combos.length, 1);
+  assert.equal(combos[0].period, '2026-01-08');
+  const projected = A.Test.projectPublishRow(calcRow('2026-01-08', true), { weightSnapshotId: 'W_SNAPSHOT' });
+  const record = A.Test.directStageRecord(projected, 'UPSERT', identity());
+  assert.equal(record.aggregate_row_key, `${record.aggregate_series_key}|2026-01-08`);
+  assert.equal(record.action, 'UPSERT');
+  assert.deepEqual(Object.keys(JSON.parse(record.row_payload_json)).sort(), Array.from(C.Headers).sort());
 });
 
 test('stage rows preserve logical identity and exact 29-column payload', () => {
@@ -260,6 +297,32 @@ test('non-publishable result deletes only its logical period and restores prior 
   assert.equal(replacement.replacementRows[0].is_latest_period, 1);
 });
 
+test('atomic batching keeps every logical series whole and respects row and cell limits', () => {
+  const staged = ['G1', 'G2', 'G3'].map(seriesId => seriesStage(seriesId, '2026-01-08'));
+  const targetRows = [];
+  let rowNumber = 2;
+  ['G1', 'G2', 'G3'].forEach(seriesId => {
+    targetRows.push(seriesTarget(seriesId, '2026-01-01', rowNumber++));
+    targetRows.push(seriesTarget(seriesId, '2026-01-08', rowNumber++));
+  });
+  const batches = A.Test.atomicSeriesBatches(targetRows, staged, {
+    atomicMaxRows: 3,
+    atomicMaxCells: 87,
+    atomicMaxRequests: 10
+  }).map(batch => Array.from(batch));
+  assert.equal(batches.length, 3);
+  assert.deepEqual(batches.map(batch => batch.length), [1, 1, 1]);
+  assert.deepEqual(batches.flat().sort(), staged.map(row => row.aggregate_series_key).sort());
+  assert.throws(
+    () => A.Test.atomicSeriesBatches(targetRows, staged, {
+      atomicMaxRows: 1,
+      atomicMaxCells: 29,
+      atomicMaxRequests: 10
+    }),
+    error => error.code === 'AGGREGATE_PUBLISH_SINGLE_SERIES_LIMIT_EXCEEDED'
+  );
+});
+
 test('lost-response recovery distinguishes before, after and third state', () => {
   assert.equal(A.Test.classifyRecovery('BEFORE', 'AFTER', 'BEFORE'), 'BEFORE');
   assert.equal(A.Test.classifyRecovery('BEFORE', 'AFTER', 'AFTER'), 'AFTER');
@@ -284,7 +347,7 @@ test('bounded phase execution checkpoints and recovers to SUCCESS', () => {
   let artifact = null;
   let artifactPersistenceCalls = 0;
   let stageRows = [];
-  let intent = null;
+  const intents = {};
   let targetRows = [target('2025-12-25', 2), unrelated(3)];
   let finalized = false;
   const plan = {
@@ -345,8 +408,13 @@ test('bounded phase execution checkpoints and recovers to SUCCESS', () => {
     readCalculatedRows() { return JSON.parse(JSON.stringify(stageRows)); },
     updateStageStatus() {},
     updateStageExpectedFingerprint() {},
-    persistPublishIntent(_identity, value) { intent = JSON.parse(JSON.stringify(value)); },
-    readPublishIntent() { return intent && JSON.parse(JSON.stringify(intent)); },
+    persistPublishIntent(_identity, value, batchKey) {
+      intents[batchKey || 'FINAL'] = JSON.parse(JSON.stringify(value));
+    },
+    readPublishIntent(_identity, batchKey) {
+      const value = intents[batchKey || 'FINAL'];
+      return value && JSON.parse(JSON.stringify(value));
+    },
     readTargetRows() { return JSON.parse(JSON.stringify(targetRows)); },
     atomicReplace(replacement) {
       const unaffected = targetRows.filter(row => A.Test.publicSignature(row) !== A.Test.publicSignature(replacement.replacementRows[0]));
@@ -370,7 +438,10 @@ test('bounded phase execution checkpoints and recovers to SUCCESS', () => {
   const second = A.execute('CALCULATING_AGGREGATE_SLICES', executionContext, options);
   assert.equal(second.repeatPhase, false);
   A.execute('STAGING_AGGREGATE_ROWS', executionContext, options);
-  A.execute('UPDATING_AGGREGATES', executionContext, options);
+  let publishing;
+  do {
+    publishing = A.execute('UPDATING_AGGREGATES', executionContext, options);
+  } while (publishing.repeatPhase);
   A.execute('UPDATING_AGGREGATE_LATEST', executionContext, options);
   A.execute('RECONCILING_AGGREGATES', executionContext, options);
   A.execute('FINALIZING', executionContext, options);
