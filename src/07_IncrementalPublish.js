@@ -3456,7 +3456,107 @@ function continueReconciliation(){return AKORT.Core.safeRun('PUBLISH_RECONCILIAT
     return{complete:complete,work:complete?null:work,rowsScanned:count,rowsUpdated:count,chunkStart:cursor,chunkEnd:cursor+count,total:total};
   }
 
+  var GATE5_REFERENCE_REPAIR_WORK_SCHEMA='4.0-alpha74-gate5-reference-repair-work-1';
+  var GATE5_REFERENCE_REPAIR_CHUNK_ROWS=1000;
+  var GATE5_REFERENCE_KEY_HEADERS=[
+    'dataset_code','source_name','frequency','aggregate_level','aggregate_name',
+    'category_id','product_group','product_name','value_type','index_type',
+    'year','quarter','month','period_label'
+  ];
+  function gate5ReferenceKeyCell_(value) {
+    if(value===null||value===undefined||value==='')return'N:';
+    if(Object.prototype.toString.call(value)==='[object Date]')return'D:'+v300DateKey_(value);
+    if(typeof value==='number'&&isFinite(value))return'F:'+String(value);
+    return'S:'+String(value);
+  }
+  function gate5ReferenceLogicalKey_(row) {
+    return GATE5_REFERENCE_KEY_HEADERS.map(function(header){return gate5ReferenceKeyCell_(row&&row[header]);}).join('\u001f');
+  }
+  function gate5ReferenceSortSpec_(headers) {
+    var index=v300HeaderIndex_(headers);
+    return GATE5_REFERENCE_KEY_HEADERS.map(function(header){
+      if(index[header]===undefined)throw AKORT.Core.error('ALPHA74_GATE5_REFERENCE_KEY_HEADER_MISSING','Gate 5 reference repair cannot find a logical-key column.',{header:header});
+      return{column:index[header]+1,ascending:true};
+    });
+  }
+  function gate5ReferenceSheet_(spreadsheet,role,headers) {
+    var sheet=spreadsheet.getSheetByName(AKORT_V300.SHEETS.PUBLISH_PRICE_AGGREGATES);
+    if(!sheet)throw AKORT.Core.error('ALPHA74_GATE5_REFERENCE_SHEET_MISSING','Gate 5 reference repair requires the aggregate sheet in both preserved artifacts.',{role:role,spreadsheetId:spreadsheet.getId()});
+    var actual=sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(String);
+    if(JSON.stringify(actual)!==JSON.stringify(headers))throw AKORT.Core.error('ALPHA74_GATE5_REFERENCE_SCHEMA_MISMATCH','Gate 5 reference repair found an unexpected aggregate schema.',{role:role,expected:headers,actual:actual});
+    return sheet;
+  }
+  function gate5ReferenceSameCell_(left,right) {
+    var leftDate=Object.prototype.toString.call(left)==='[object Date]',rightDate=Object.prototype.toString.call(right)==='[object Date]';
+    if(leftDate||rightDate)return leftDate&&rightDate&&left.getTime()===right.getTime();
+    if(left===null||left===undefined||left==='')left='';
+    if(right===null||right===undefined||right==='')right='';
+    return String(left)===String(right);
+  }
+  function gate5PrepareReferenceRepair_(fullSheet,replaySheet,headers) {
+    var fullRows=Math.max(0,fullSheet.getLastRow()-1),replayRows=Math.max(0,replaySheet.getLastRow()-1);
+    if(!fullRows||fullRows!==replayRows)throw AKORT.Core.error('ALPHA74_GATE5_REFERENCE_ROW_COUNT_MISMATCH','Gate 5 reference repair requires full-build and replay artifacts with the same non-zero row count.',{fullRows:fullRows,replayRows:replayRows});
+    return{
+      workSchemaVersion:GATE5_REFERENCE_REPAIR_WORK_SCHEMA,
+      phase:'SORT_FULL_BUILD',
+      cursor:0,
+      total:fullRows,
+      chunkRows:GATE5_REFERENCE_REPAIR_CHUNK_ROWS,
+      lastLogicalKey:''
+    };
+  }
+  function gate5RepairFromFullBuildChunk_(fullBuildSpreadsheetId,replaySpreadsheetId,work) {
+    var headers=AKORT_V300.HEADERS.PUBLISH_PRICE_AGGREGATES,fullSpreadsheet=gate5AssertIsolated_(fullBuildSpreadsheetId),replaySpreadsheet=gate5AssertIsolated_(replaySpreadsheetId);
+    if(String(fullBuildSpreadsheetId||'')===String(replaySpreadsheetId||''))throw AKORT.Core.error('ALPHA74_GATE5_REFERENCE_ARTIFACTS_IDENTICAL','Gate 5 reference repair requires distinct full-build and replay artifacts.');
+    var fullSheet=gate5ReferenceSheet_(fullSpreadsheet,'fullBuild',headers),replaySheet=gate5ReferenceSheet_(replaySpreadsheet,'sequentialReplay',headers);
+    if(!work){
+      var prepared=gate5PrepareReferenceRepair_(fullSheet,replaySheet,headers);
+      return{complete:false,prepared:true,work:prepared,rowsScanned:0,rowsUpdated:0,aggregateIdCellsUpdated:0,periodStartCellsUpdated:0,total:prepared.total};
+    }
+    if(work.workSchemaVersion!==GATE5_REFERENCE_REPAIR_WORK_SCHEMA||['SORT_FULL_BUILD','SORT_SEQUENTIAL_REPLAY','COPY_CANONICAL_COLUMNS'].indexOf(String(work.phase||''))<0)throw AKORT.Core.error('ALPHA74_GATE5_REFERENCE_REPAIR_WORK_INVALID','Gate 5 reference repair cursor has an incompatible schema or phase.',{work:work||null});
+    work=clone_(work);
+    var cursor=Math.max(0,Number(work.cursor||0)),total=Math.max(0,Number(work.total||0)),actualFull=Math.max(0,fullSheet.getLastRow()-1),actualReplay=Math.max(0,replaySheet.getLastRow()-1);
+    if(actualFull!==total||actualReplay!==total)throw AKORT.Core.error('ALPHA74_GATE5_REFERENCE_ARTIFACT_CHANGED','A preserved Gate 5 artifact changed after reference repair preparation.',{expectedRows:total,fullRows:actualFull,replayRows:actualReplay});
+    if(work.phase==='SORT_FULL_BUILD'||work.phase==='SORT_SEQUENTIAL_REPLAY'){
+      var sortSheet=work.phase==='SORT_FULL_BUILD'?fullSheet:replaySheet,sortPhase=work.phase;
+      sortSheet.getRange(2,1,total,headers.length).sort(gate5ReferenceSortSpec_(headers));
+      SpreadsheetApp.flush();
+      work.phase=sortPhase==='SORT_FULL_BUILD'?'SORT_SEQUENTIAL_REPLAY':'COPY_CANONICAL_COLUMNS';
+      work.cursor=0;
+      work.lastLogicalKey='';
+      return{complete:false,prepared:true,phase:sortPhase,work:work,rowsScanned:0,rowsUpdated:0,aggregateIdCellsUpdated:0,periodStartCellsUpdated:0,total:total};
+    }
+    var count=Math.min(Math.max(1,Number(work.chunkRows||GATE5_REFERENCE_REPAIR_CHUNK_ROWS)),Math.max(0,total-cursor));
+    if(!count)return{complete:true,work:null,rowsScanned:0,rowsUpdated:0,aggregateIdCellsUpdated:0,periodStartCellsUpdated:0,total:total};
+    var fullValues=fullSheet.getRange(cursor+2,1,count,headers.length).getValues(),replayValues=replaySheet.getRange(cursor+2,1,count,headers.length).getValues();
+    var fullRows=gate5RowsToObjects_(fullValues,headers),replayRows=gate5RowsToObjects_(replayValues,headers),index=v300HeaderIndex_(headers),aggregateIds=[],periodStarts=[];
+    var rowsUpdated=0,aggregateIdCellsUpdated=0,periodStartCellsUpdated=0,previousKey=String(work.lastLogicalKey||'');
+    for(var offset=0;offset<count;offset+=1){
+      var fullKey=gate5ReferenceLogicalKey_(fullRows[offset]),replayKey=gate5ReferenceLogicalKey_(replayRows[offset]);
+      if(!fullKey||fullKey!==replayKey)throw AKORT.Core.error('ALPHA74_GATE5_REFERENCE_LOGICAL_KEY_MISMATCH','Full-build and replay rows do not align at the durable reference-repair cursor.',{row:cursor+offset+2,fullKey:fullKey,replayKey:replayKey});
+      if(previousKey&&previousKey===fullKey)throw AKORT.Core.error('ALPHA74_GATE5_REFERENCE_LOGICAL_KEY_DUPLICATE','Gate 5 reference repair found a duplicate logical row key.',{row:cursor+offset+2,logicalKey:fullKey});
+      previousKey=fullKey;
+      var aggregateIdChanged=!gate5ReferenceSameCell_(fullRows[offset].aggregate_id,replayRows[offset].aggregate_id),periodStartChanged=!gate5ReferenceSameCell_(fullRows[offset].period_start,replayRows[offset].period_start);
+      if(aggregateIdChanged)aggregateIdCellsUpdated+=1;
+      if(periodStartChanged)periodStartCellsUpdated+=1;
+      if(aggregateIdChanged||periodStartChanged)rowsUpdated+=1;
+      aggregateIds.push([fullRows[offset].aggregate_id]);
+      periodStarts.push([fullRows[offset].period_start]);
+    }
+    replaySheet.getRange(cursor+2,index.aggregate_id+1,count,1).setValues(aggregateIds);
+    replaySheet.getRange(cursor+2,index.period_start+1,count,1).setValues(periodStarts).setNumberFormat('yyyy-mm-dd');
+    SpreadsheetApp.flush();
+    var verifiedIds=replaySheet.getRange(cursor+2,index.aggregate_id+1,count,1).getValues(),verifiedPeriods=replaySheet.getRange(cursor+2,index.period_start+1,count,1).getValues();
+    for(var verifyOffset=0;verifyOffset<count;verifyOffset+=1){
+      if(!gate5ReferenceSameCell_(aggregateIds[verifyOffset][0],verifiedIds[verifyOffset][0])||!gate5ReferenceSameCell_(periodStarts[verifyOffset][0],verifiedPeriods[verifyOffset][0]))throw AKORT.Core.error('ALPHA74_GATE5_REFERENCE_REPAIR_READBACK_MISMATCH','Gate 5 reference repair read-back differs from the authoritative full-build values.',{row:cursor+verifyOffset+2});
+    }
+    work.cursor=cursor+count;
+    work.lastLogicalKey=previousKey;
+    var complete=work.cursor>=total;
+    return{complete:complete,prepared:true,work:complete?null:work,rowsScanned:count,rowsUpdated:rowsUpdated,aggregateIdCellsUpdated:aggregateIdCellsUpdated,periodStartCellsUpdated:periodStartCellsUpdated,chunkStart:cursor,chunkEnd:cursor+count,total:total};
+  }
+
   function statusSummary(){var ss=getDwh_(),tables={};Object.keys(TABLES).forEach(function(n){var sh=ss.getSheetByName(n);tables[n]=sh?{rows:Math.max(0,sh.getLastRow()-1),columns:sh.getLastColumn()}:null;});return{release:AKORT.Release.manifest(),manifestHash:AKORT.Core.manifestHash(),publishSchemaVersion:AKORT.Release.publishSchemaVersion,dependencySchemaVersion:AKORT.Release.dependencySchemaVersion,dispatcherSchemaVersion:AKORT.Release.dispatcherSchemaVersion,scopeCorrection:clone_(ALPHA6_SCOPE),runtimeSettings:runtimeSettings_(),serviceTables:tables,reconciliation:publicRecon_(loadRecon_()),dispatcher:dispatcherPublic_(dispatcherLoad_())};}
 
-  return {Tables:clone_(TABLES),install:install,createPublishBackup:createPublishBackup,runtimeSettings:runtimeSettings_,planLoad:planLoad,planReversal:planReversal,planFromAffected:planFromAffected_,summarizePlan:summarizePlan_,appendImpact:appendImpact_,applyPublish:applyPublish,applyAggregates:applyAggregates,statusSummary:statusSummary,startReconciliation:startReconciliation,continueReconciliation:continueReconciliation,reconciliationStatus:reconciliationStatus,resetReconciliation:resetReconciliation,recoverFailedReconciliation:recoverFailedReconciliation,startReconciliationDispatcher:startReconciliationDispatcher,stopReconciliationDispatcher:stopReconciliationDispatcher,reconciliationDispatcherStatus:reconciliationDispatcherStatus,reconciliationDispatcherWorker:reconciliationDispatcherWorker,Gate5:Object.freeze({initializeBook:gate5InitializeBook_,fullBuildChunk:gate5FullBuildChunk_,replayGroups:gate5ReplayGroups_,validateReplayRaw:gate5ValidateReplayRaw_,replayItems:gate5ReplayItems_,prepareAggregateItemsChunk:gate5PrepareAggregateItemsChunk_,inspectAggregateItems:gate5InspectAggregateItems_,readAggregateItemsChunk:gate5ReadAggregateItemsChunk_,applyReplayChunk:gate5ApplyReplayChunk_,buildAggregateRows:gate5BuildAggregateRows_,finalizeAggregateLatest:gate5FinalizeLatest_,frontierKeys:gate5FrontierKeys_,canonicalSort:gate5CanonicalSort_,repairCanonicalChunk:gate5CanonicalRepairChunk_}),Test:{storageMutationProbe:v300StorageMutationProbe_,seriesReplacementRollbackProbe:v300SeriesReplacementRollbackProbe_,weeklyDependentPeriods:v310WeeklyDependentPeriods_,monthlyDependentPeriods:v310MonthlyDependentPeriods_,weeklyDynamics:v310CalculateWeeklyDynamics_,monthlyDynamics:v310CalculateMonthlyDynamics_,industryDynamics:v300CalculateIndustryDynamics_,setLatestPrices:v317SetLatestBySeriesRows_,setLatestAggregates:v317SetLatestAggregateRows_,expandAffected:v310ExpandAffectedTargets_,aggregateIndexTypes:v310AggregateIndexTypes_,frontierKey:v310AggregateFrontierKey_,seriesId:v300SeriesId_,aggregateSeriesKey:v317AggregateSeriesKey_,canonicalAggregateId:v317CanonicalAggregateId_,selectReplayLatest:v300SelectReplayLatest_,buildWeeklyRows:v310BuildWeeklyRowsForTargets_,buildMonthlyRows:v310BuildMonthlyRowsForTargets_,monthlyDescriptors:v310MonthlyDescriptors_,seriesIdsForTargets:seriesIdsForTargets_,buildDerivedMonthlyMarkupSeries:v310BuildDerivedMonthlyMarkupSeries_,parityProbe:alpha624ParityProbe_,markupParityProbe:alpha624ParityProbe_,buildImpactRecords:buildImpactRecords_,jsonArrayChunks:jsonArrayChunks_,dispatcherControlMatches:dispatcherControlMatches_,dispatcherStateKey:dispatcherStateKey_,impactPreviewComboKey:impactPreviewComboKey_,impactPreviewHeaders:impactPreviewHeaders_,impactPreviewSheet:impactPreviewSheet_,impactPreviewAggregateCombos:impactPreviewAggregateCombos_,replayImpactPreviewStep:replayImpactPreviewStep_,setImpactTestAdapter:impactPreviewSetTestAdapter_,replayTarget:replayTarget_,nextReplayStage:nextReplayStage_,reconciliationFingerprint:reconciliationFingerprint_,dispatcherProgressDecision:dispatcherProgressDecision_,dispatcherClassifyError:dispatcherClassifyError_,dispatcherRetryDelayMs:dispatcherRetryDelayMs_,dispatcherResultSummary:dispatcherResultSummary_,utf8Bytes:utf8Bytes_,replayStageItemsForGroup:replayStageItemsForGroup_,gate5AggregateDescriptors:gate5AggregateDescriptors_,gate5AggregateItemsForAffected:gate5AggregateItemsForAffected_}};
+  return {Tables:clone_(TABLES),install:install,createPublishBackup:createPublishBackup,runtimeSettings:runtimeSettings_,planLoad:planLoad,planReversal:planReversal,planFromAffected:planFromAffected_,summarizePlan:summarizePlan_,appendImpact:appendImpact_,applyPublish:applyPublish,applyAggregates:applyAggregates,statusSummary:statusSummary,startReconciliation:startReconciliation,continueReconciliation:continueReconciliation,reconciliationStatus:reconciliationStatus,resetReconciliation:resetReconciliation,recoverFailedReconciliation:recoverFailedReconciliation,startReconciliationDispatcher:startReconciliationDispatcher,stopReconciliationDispatcher:stopReconciliationDispatcher,reconciliationDispatcherStatus:reconciliationDispatcherStatus,reconciliationDispatcherWorker:reconciliationDispatcherWorker,Gate5:Object.freeze({initializeBook:gate5InitializeBook_,fullBuildChunk:gate5FullBuildChunk_,replayGroups:gate5ReplayGroups_,validateReplayRaw:gate5ValidateReplayRaw_,replayItems:gate5ReplayItems_,prepareAggregateItemsChunk:gate5PrepareAggregateItemsChunk_,inspectAggregateItems:gate5InspectAggregateItems_,readAggregateItemsChunk:gate5ReadAggregateItemsChunk_,applyReplayChunk:gate5ApplyReplayChunk_,buildAggregateRows:gate5BuildAggregateRows_,finalizeAggregateLatest:gate5FinalizeLatest_,frontierKeys:gate5FrontierKeys_,canonicalSort:gate5CanonicalSort_,repairCanonicalChunk:gate5CanonicalRepairChunk_,repairFromFullBuildChunk:gate5RepairFromFullBuildChunk_}),Test:{storageMutationProbe:v300StorageMutationProbe_,seriesReplacementRollbackProbe:v300SeriesReplacementRollbackProbe_,weeklyDependentPeriods:v310WeeklyDependentPeriods_,monthlyDependentPeriods:v310MonthlyDependentPeriods_,weeklyDynamics:v310CalculateWeeklyDynamics_,monthlyDynamics:v310CalculateMonthlyDynamics_,industryDynamics:v300CalculateIndustryDynamics_,setLatestPrices:v317SetLatestBySeriesRows_,setLatestAggregates:v317SetLatestAggregateRows_,expandAffected:v310ExpandAffectedTargets_,aggregateIndexTypes:v310AggregateIndexTypes_,frontierKey:v310AggregateFrontierKey_,seriesId:v300SeriesId_,aggregateSeriesKey:v317AggregateSeriesKey_,canonicalAggregateId:v317CanonicalAggregateId_,selectReplayLatest:v300SelectReplayLatest_,buildWeeklyRows:v310BuildWeeklyRowsForTargets_,buildMonthlyRows:v310BuildMonthlyRowsForTargets_,monthlyDescriptors:v310MonthlyDescriptors_,seriesIdsForTargets:seriesIdsForTargets_,buildDerivedMonthlyMarkupSeries:v310BuildDerivedMonthlyMarkupSeries_,parityProbe:alpha624ParityProbe_,markupParityProbe:alpha624ParityProbe_,buildImpactRecords:buildImpactRecords_,jsonArrayChunks:jsonArrayChunks_,dispatcherControlMatches:dispatcherControlMatches_,dispatcherStateKey:dispatcherStateKey_,impactPreviewComboKey:impactPreviewComboKey_,impactPreviewHeaders:impactPreviewHeaders_,impactPreviewSheet:impactPreviewSheet_,impactPreviewAggregateCombos:impactPreviewAggregateCombos_,replayImpactPreviewStep:replayImpactPreviewStep_,setImpactTestAdapter:impactPreviewSetTestAdapter_,replayTarget:replayTarget_,nextReplayStage:nextReplayStage_,reconciliationFingerprint:reconciliationFingerprint_,dispatcherProgressDecision:dispatcherProgressDecision_,dispatcherClassifyError:dispatcherClassifyError_,dispatcherRetryDelayMs:dispatcherRetryDelayMs_,dispatcherResultSummary:dispatcherResultSummary_,utf8Bytes:utf8Bytes_,replayStageItemsForGroup:replayStageItemsForGroup_,gate5AggregateDescriptors:gate5AggregateDescriptors_,gate5AggregateItemsForAffected:gate5AggregateItemsForAffected_,gate5ReferenceLogicalKey:gate5ReferenceLogicalKey_}};
 })();

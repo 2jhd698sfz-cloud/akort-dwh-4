@@ -245,6 +245,16 @@ Recovery чанками нормализует сохранённый replay, п
 `AKORT_alpha74Gate5RecoverReconciliation()` принимает только exact failure
 profile с неизменной live Publish и удалённым trigger.
 
+Release `4.0.0-alpha.7.4.17` принимает только terminal `.16 / state-14`, в
+котором baseline, live snapshot и full build уже имеют одинаковый
+`ROW_MULTISET_V1` digest, а replay имеет те же 61 636 строк и 29 колонок, но
+другой hash. Точка входа
+`AKORT_alpha74Gate5RecoverCanonicalPeriods()` сопоставляет full/replay без
+`aggregate_id` и `period_start`, требует уникальный logical key и копирует эти
+два поля только из authoritative full build. Durable cursor равен 1 000
+строкам. После ремонта выполняются replay latest, digest и final
+reconciliation; full build и 12 replay groups не повторяются.
+
 Контракт и runbook описаны в
 `GATE5_DURABLE_AGGREGATE_BATCH_HOTFIX.md` и
 `GATE5_FAST_TARGET_SCAN_HOTFIX.md`.

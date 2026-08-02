@@ -99,3 +99,8 @@ AKORT_alpha74Gate5Status()
 Gate 5 закрывается только при `status=SUCCESS`, `phase=SUCCESS`, новом evidence
 schema `4.0-alpha74-gate5-evidence-14`, точном row-multiset digest всех четырёх
 артефактов и неизменной DataLens-connected DEV Publish.
+
+Если `.16` завершился с одинаковым digest baseline/live/full и отличающимся
+replay digest, дальнейший нормативный путь — только
+`AKORT_alpha74Gate5RecoverCanonicalPeriods()` из release `.17`; повторный
+запуск этой recovery-функции запрещён.

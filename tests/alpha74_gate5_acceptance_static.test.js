@@ -127,10 +127,10 @@ const identity = {
 };
 
 test('Gate 5 metadata and stage inventories are exact', () => {
-  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-14');
-  assert.equal(H.Release, '4.0.0-alpha.7.4.16');
-  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-14');
-  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-14');
+  assert.equal(H.Version, '4.0-alpha74-gate5-acceptance-15');
+  assert.equal(H.Release, '4.0.0-alpha.7.4.17');
+  assert.equal(H.EvidenceSchemaVersion, '4.0-alpha74-gate5-evidence-15');
+  assert.equal(H.StateSchemaVersion, '4.0-alpha74-gate5-state-15');
   assert.deepEqual(Array.from(H.FullStages), [
     'WEEKLY', 'MONTHLY', 'INDUSTRY', 'AGGREGATES_WEEKLY',
     'AGGREGATES_MONTHLY', 'AGGREGATES_SPECIAL', 'AGGREGATES_LATEST'
@@ -222,7 +222,8 @@ test('incremental aggregate identifiers reuse the established full-build identit
     incrementalContext,
     { filename: 'src/07_IncrementalPublish.js' }
   );
-  const canonicalId = incrementalContext.AKORT.IncrementalPublish.Test.canonicalAggregateId;
+  const incrementalTest = incrementalContext.AKORT.IncrementalPublish.Test;
+  const canonicalId = incrementalTest.canonicalAggregateId;
   const suffix = value => sha(value).slice(0, 20).toUpperCase();
   assert.equal(canonicalId({
     dataset_code: 'AKORT_WEEKLY', frequency: 'weekly', aggregate_level: 'category',
@@ -237,6 +238,26 @@ test('incremental aggregate identifiers reuse the established full-build identit
     dataset_code: 'AKORT_MONTHLY', frequency: 'monthly', aggregate_level: 'custom_group',
     aggregate_id: 'AGG_BORSHCH_LEGACY', value_type: 'розница', index_type: 'mom', period_start: '2026-01-01'
   }), `AGG_BORSHCH_${suffix('AKORT_MONTHLY|monthly|розница|mom|2026-01-01')}`);
+  const logicalBase = {
+    dataset_code: 'ROSSTAT_WEEKLY', source_name: 'Росстат', frequency: 'weekly',
+    aggregate_level: 'basket', aggregate_name: 'Корзина дашборда', category_id: '',
+    product_group: '', product_name: '', value_type: 'розница', index_type: 'wow',
+    year: 2025, quarter: 1, month: 2, period_label: '2025-W06',
+    aggregate_id: 'AGG_OLD', period_start: new Date('2025-02-02T12:00:00.000Z')
+  };
+  const authoritative = {
+    ...logicalBase,
+    aggregate_id: 'AGG_CANONICAL',
+    period_start: new Date('2025-02-03T00:00:00.000Z')
+  };
+  assert.equal(
+    incrementalTest.gate5ReferenceLogicalKey(logicalBase),
+    incrementalTest.gate5ReferenceLogicalKey(authoritative)
+  );
+  assert.notEqual(
+    incrementalTest.gate5ReferenceLogicalKey(logicalBase),
+    incrementalTest.gate5ReferenceLogicalKey({ ...authoritative, period_label: '2025-W07' })
+  );
 });
 
 test('durable aggregate item inventory uses the production expansion and frontier', () => {
@@ -836,8 +857,8 @@ test('durable aggregate resume preserves the exact replay frontier and artifact'
     }
   };
   const resumed = H.Test.buildDurableResumeState(source, 'A74_GATE5_DURABLE_RESUME');
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-15');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.17');
   assert.equal(resumed.executionId, 'A74_GATE5_DURABLE_RESUME');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
@@ -906,8 +927,8 @@ test('exact triggerless legacy partial batch is adopted by replaying from combo 
     'A74_GATE5_PARTIAL_ADOPTED',
     { legacyPartialAdoption: adoption }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-15');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.17');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 150);
@@ -985,8 +1006,8 @@ test('failed exact-duplicate incident preserves the durable cache for physical r
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-15');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.17');
   assert.equal(resumed.status, 'RUNNING');
   assert.equal(resumed.phase, 'SEQUENTIAL_REPLAY');
   assert.equal(resumed.replayItemCursor, 175);
@@ -1069,8 +1090,8 @@ test('terminal .9 atomic-uncertain checkpoint preserves its cached batch for per
       }
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-15');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.17');
   assert.equal(resumed.replayItemCursor, 175);
   assert.equal(resumed.aggregateSeriesCursor, 0);
   assert.equal(resumed.aggregateBatchWork.recordCount, 875);
@@ -1145,8 +1166,8 @@ test('stopped .11 checkpoint adopts adaptive publication without losing a partia
       performanceResume: alpha7411Adoption
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-15');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.17');
   assert.equal(resumed.replayGroupIndex, 1);
   assert.equal(resumed.replayItemCursor, 25);
   assert.equal(resumed.aggregateSeriesCursor, 96);
@@ -1231,8 +1252,8 @@ test('stopped .13 timeout boundary resumes through durable item preparation', ()
       performanceResume: adoption
     }
   );
-  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
-  assert.equal(resumed.release, '4.0.0-alpha.7.4.16');
+  assert.equal(resumed.stateSchemaVersion, '4.0-alpha74-gate5-state-15');
+  assert.equal(resumed.release, '4.0.0-alpha.7.4.17');
   assert.equal(resumed.replayGroupIndex, 2);
   assert.equal(resumed.replayItemCursor, 0);
   assert.equal(resumed.aggregateItemsWork, null);
@@ -1379,8 +1400,8 @@ test('terminal .15 digest incident is the only state adopted by reconciliation r
   wrongReason.failureDetails.liveUnchanged = false;
   assert.equal(H.Test.reconciliationIncident(wrongReason, 0).eligible, false);
   const recovered = H.Test.buildReconciliationRecoveryState(source, 'A74_GATE5_RECONCILIATION_RECOVERY');
-  assert.equal(recovered.stateSchemaVersion, '4.0-alpha74-gate5-state-14');
-  assert.equal(recovered.release, '4.0.0-alpha.7.4.16');
+  assert.equal(recovered.stateSchemaVersion, '4.0-alpha74-gate5-state-15');
+  assert.equal(recovered.release, '4.0.0-alpha.7.4.17');
   assert.equal(recovered.phase, 'RECOVER_RECONCILIATION');
   assert.equal(recovered.reconciliationRecoveryStage, 'REPAIR_REPLAY');
   assert.equal(recovered.artifacts.fullBuild.id, 'FULL');
@@ -1433,6 +1454,127 @@ test('terminal reconciliation recovery advances through repair and both latest p
     ]);
   } finally {
     context.AKORT.IncrementalPublish.Gate5.repairCanonicalChunk = originalRepair;
+    context.AKORT.IncrementalPublish.Gate5.fullBuildChunk = originalFullBuild;
+  }
+});
+
+test('terminal .16 replay-only digest incident is adopted by canonical-period recovery', () => {
+  const exactDigest = { rows: 61636, columns: 29, hash: 'EXACT_HASH', mode: 'ROW_MULTISET_V1' };
+  const replayDigest = { rows: 61636, columns: 29, hash: 'REPLAY_HASH', mode: 'ROW_MULTISET_V1' };
+  const source = {
+    stateSchemaVersion: '4.0-alpha74-gate5-state-14',
+    release: '4.0.0-alpha.7.4.16',
+    executionId: 'A74_GATE5_RECONCILIATION_16',
+    status: 'FAILED',
+    phase: 'FAILED',
+    failureCode: 'ALPHA74_GATE5_RECONCILIATION_FAILED',
+    failureDetails: {
+      exact: false,
+      liveUnchanged: true,
+      quotaAccepted: true,
+      aggregateAccepted: true,
+      rawAccepted: true
+    },
+    reconciliationRecoveryStage: 'COMPLETE',
+    recovery: { mode: 'TERMINAL_RECONCILIATION_RECOVERY' },
+    artifacts: {
+      baselineCanonical: { id: 'BASELINE' },
+      liveSnapshot: { id: 'LIVE' },
+      fullBuild: { id: 'FULL' },
+      sequentialReplay: { id: 'REPLAY' }
+    },
+    digests: {
+      baselineCanonical: exactDigest,
+      liveSnapshot: exactDigest,
+      fullBuild: exactDigest,
+      sequentialReplay: replayDigest
+    },
+    evidence: { id: 'EVIDENCE_16', name: 'EVIDENCE_16.json', sha256: 'EVIDENCE_HASH' },
+    metrics: {
+      workerExecutions: 100,
+      replayAggregateRowsCalculated: 50000,
+      replayAggregateSeriesPublished: 1000,
+      manualContinuationCalls: 0
+    }
+  };
+  assert.equal(H.Test.canonicalPeriodIncident(source, 0).eligible, true);
+  assert.equal(H.Test.canonicalPeriodIncident(source, 1).eligible, false);
+  const changedFull = JSON.parse(JSON.stringify(source));
+  changedFull.digests.fullBuild.hash = 'CHANGED_FULL';
+  assert.equal(H.Test.canonicalPeriodIncident(changedFull, 0).eligible, false);
+  const recovered = H.Test.buildCanonicalPeriodRecoveryState(source, 'A74_GATE5_CANONICAL_PERIOD_RECOVERY');
+  assert.equal(recovered.stateSchemaVersion, '4.0-alpha74-gate5-state-15');
+  assert.equal(recovered.release, '4.0.0-alpha.7.4.17');
+  assert.equal(recovered.phase, 'RECOVER_CANONICAL_PERIODS');
+  assert.equal(recovered.canonicalPeriodRecoveryStage, 'REPAIR_REPLAY_FROM_FULL');
+  assert.equal(recovered.recovery.mode, 'TERMINAL_CANONICAL_PERIOD_RECOVERY');
+  assert.equal(recovered.recovery.authoritativeSource, 'FULL_BUILD_LOGICAL_ROW');
+  assert.deepEqual(Array.from(recovered.recovery.copiedColumns), ['aggregate_id', 'period_start']);
+  assert.equal(recovered.artifacts.fullBuild.id, 'FULL');
+  assert.equal(recovered.artifacts.sequentialReplay.id, 'REPLAY');
+  assert.equal(recovered.evidence, null);
+  assert.equal(recovered.metrics.canonicalPeriodRecoveryAdoptions, 1);
+  assert(Buffer.byteLength(JSON.stringify(recovered), 'utf8') < 8500);
+});
+
+test('canonical-period recovery advances from durable reference repair to replay latest and digest', () => {
+  const originalRepair = context.AKORT.IncrementalPublish.Gate5.repairFromFullBuildChunk;
+  const originalFullBuild = context.AKORT.IncrementalPublish.Gate5.fullBuildChunk;
+  const calls = [];
+  context.AKORT.IncrementalPublish.Gate5.repairFromFullBuildChunk = (fullId, replayId, work) => {
+    calls.push(['REFERENCE', fullId, replayId, work]);
+    if (!work) return {
+      complete: false,
+      prepared: true,
+      work: {
+        workSchemaVersion: '4.0-alpha74-gate5-reference-repair-work-1',
+        phase: 'COPY_CANONICAL_COLUMNS', cursor: 1000, total: 61636, chunkRows: 1000
+      },
+      rowsScanned: 1000, rowsUpdated: 600,
+      aggregateIdCellsUpdated: 12, periodStartCellsUpdated: 600, total: 61636
+    };
+    return {
+      complete: true, prepared: true, work: null, rowsScanned: 60636,
+      rowsUpdated: 32286, aggregateIdCellsUpdated: 681,
+      periodStartCellsUpdated: 32286, total: 61636
+    };
+  };
+  context.AKORT.IncrementalPublish.Gate5.fullBuildChunk = (id, stage, work) => {
+    calls.push(['LATEST', id, stage, work]);
+    return { complete: true, work: null, phase: 'APPLY_FLAGS', rowsScanned: 0, rowsProcessed: 61636, total: 61636 };
+  };
+  try {
+    const state = {
+      phase: 'RECOVER_CANONICAL_PERIODS',
+      canonicalPeriodRecoveryStage: 'REPAIR_REPLAY_FROM_FULL',
+      canonicalPeriodRepairWork: null,
+      replayLatestWork: null,
+      artifacts: {
+        fullBuild: { id: 'FULL' },
+        sequentialReplay: { id: 'REPLAY' }
+      },
+      metrics: {}
+    };
+    H.Test.canonicalPeriodRecoveryStep(state);
+    assert.equal(state.canonicalPeriodRecoveryStage, 'REPAIR_REPLAY_FROM_FULL');
+    assert.equal(state.canonicalPeriodRepairWork.cursor, 1000);
+    H.Test.canonicalPeriodRecoveryStep(state);
+    assert.equal(state.canonicalPeriodRecoveryStage, 'REPLAY_LATEST');
+    H.Test.canonicalPeriodRecoveryStep(state);
+    assert.equal(state.canonicalPeriodRecoveryStage, 'COMPLETE');
+    assert.equal(state.phase, 'DIGEST');
+    assert.equal(state.metrics.canonicalPeriodRowsScanned, 61636);
+    assert.equal(state.metrics.canonicalPeriodRowsUpdated, 32886);
+    assert.equal(state.metrics.canonicalPeriodAggregateIdCellsUpdated, 693);
+    assert.equal(state.metrics.canonicalPeriodStartCellsUpdated, 32886);
+    assert.equal(state.metrics.replayLatestRowsUpdated, 61636);
+    assert.deepEqual(calls.map(call => Array.from(call.slice(0, 3))), [
+      ['REFERENCE', 'FULL', 'REPLAY'],
+      ['REFERENCE', 'FULL', 'REPLAY'],
+      ['LATEST', 'REPLAY', 'AGGREGATES_LATEST']
+    ]);
+  } finally {
+    context.AKORT.IncrementalPublish.Gate5.repairFromFullBuildChunk = originalRepair;
     context.AKORT.IncrementalPublish.Gate5.fullBuildChunk = originalFullBuild;
   }
 });
@@ -1508,6 +1650,10 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(harness.includes("mode: 'TERMINAL_RECONCILIATION_RECOVERY'"));
   assert(harness.includes("mode: 'ROW_MULTISET_V1'"));
   assert(incremental.includes('repairCanonicalChunk:gate5CanonicalRepairChunk_'));
+  assert(incremental.includes('repairFromFullBuildChunk:gate5RepairFromFullBuildChunk_'));
+  assert(incremental.includes("GATE5_REFERENCE_REPAIR_WORK_SCHEMA='4.0-alpha74-gate5-reference-repair-work-1'"));
+  assert(incremental.includes("phase:'SORT_FULL_BUILD'"));
+  assert(incremental.includes("'SORT_SEQUENTIAL_REPLAY','COPY_CANONICAL_COLUMNS'"));
   assert(incremental.includes('period=v300DateKey_(row[1])'));
   assert(harness.includes('AGGREGATE_SERIES_WINDOW = 128'));
   assert(harness.includes('adaptivePublicationLimitReductions'));
@@ -1524,6 +1670,7 @@ test('repository wiring protects live Publish and exposes trigger-driven entrypo
   assert(entries.includes('AKORT_alpha74Gate5RestartReplay'));
   assert(entries.includes('AKORT_alpha74Gate5ResumeReplay'));
   assert(entries.includes('AKORT_alpha74Gate5RecoverReconciliation'));
+  assert(entries.includes('AKORT_alpha74Gate5RecoverCanonicalPeriods'));
   assert(entries.includes('AKORT_alpha74Gate5Worker'));
   assert(entries.includes('AKORT_alpha74Gate5Stop'));
   assert(release.includes("'26_Alpha74Gate5Acceptance.js'"));

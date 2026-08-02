@@ -240,6 +240,17 @@ latest-index и physical-order representation differences. Release
 пересчитывает latest для full/replay и повторяет только normalization, digest
 и final reconciliation. Новый full build и повтор 12 загрузок запрещены.
 
+Финальная сверка `.16` подтвердила одинаковый digest baseline, live snapshot и
+full build, но сохранила replay-only расхождение. Read-only сопоставление всех
+61 636 logical rows показало 32 886 отличий `period_start` и 693 производных
+от даты отличий `aggregate_id`; аналитические поля совпали полностью. Release
+`4.0.0-alpha.7.4.17` добавляет
+`AKORT_alpha74Gate5RecoverCanonicalPeriods()`: full build становится
+authoritative reference, строки full/replay сортируются по уникальному
+логическому ключу, а `period_start` и `aggregate_id` копируются в replay
+durable-чанками по 1 000 строк. Затем повторяются только replay latest,
+row-multiset digest и final reconciliation.
+
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию
 `DIM_INDUSTRY_SERIES`, два пользовательских поля (`Период`, `Значение`),

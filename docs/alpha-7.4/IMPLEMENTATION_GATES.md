@@ -125,6 +125,11 @@ digest из-за legacy aggregate IDs, Sheets date cells, latest-index coercion 
 повторно использует готовые full/replay artifacts через
 `AKORT_alpha74Gate5RecoverReconciliation()`. Новый full build и replay groups
 не запускаются.
+Recovery `.16` выровнял baseline/live/full, но replay сохранил 32 886
+представлений `period_start` и 693 date-derived `aggregate_id`. Release
+`7.4.17` использует full build как authoritative reference через
+`AKORT_alpha74Gate5RecoverCanonicalPeriods()`, исправляет только сохранённый
+replay с durable cursor и повторяет replay latest/digest/final reconciliation.
 Чек-лист остаётся открытым до
 terminal `SUCCESS`, exact reconciliation и проверки JSON evidence.
 Regular pipeline остаётся выключенным.

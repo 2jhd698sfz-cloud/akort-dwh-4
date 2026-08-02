@@ -10,10 +10,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * - a persistent one-minute trigger continues from a compact checkpoint.
  */
 AKORT.Alpha74Gate5Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate5-acceptance-14';
-  var RELEASE = '4.0.0-alpha.7.4.16';
-  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-14';
-  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-14';
+  var VERSION = '4.0-alpha74-gate5-acceptance-15';
+  var RELEASE = '4.0.0-alpha.7.4.17';
+  var EVIDENCE_SCHEMA_VERSION = '4.0-alpha74-gate5-evidence-15';
+  var STATE_SCHEMA_VERSION = '4.0-alpha74-gate5-state-15';
   var STATE_KEY = 'AKORT_ALPHA74_GATE5_STATE_V1';
   var STOP_REQUEST_KEY = 'AKORT_ALPHA74_GATE5_STOP_REQUEST_V1';
   var AGGREGATE_WORK_SCHEMA_VERSION = '4.0-alpha74-gate5-aggregate-work-1';
@@ -84,6 +84,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     '4.0-alpha74-gate5-state-11',
     '4.0-alpha74-gate5-state-12',
     '4.0-alpha74-gate5-state-13',
+    '4.0-alpha74-gate5-state-14',
     STATE_SCHEMA_VERSION
   ]);
   var DURABLE_RESUME_RELEASES = Object.freeze([
@@ -97,6 +98,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     '4.0.0-alpha.7.4.13',
     '4.0.0-alpha.7.4.14',
     '4.0.0-alpha.7.4.15',
+    '4.0.0-alpha.7.4.16',
     RELEASE
   ]);
 
@@ -899,6 +901,11 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       reconciliationRecoveryAdoptions: 0,
       reconciliationRepairRowsScanned: 0,
       reconciliationRepairRowsUpdated: 0,
+      canonicalPeriodRecoveryAdoptions: 0,
+      canonicalPeriodRowsScanned: 0,
+      canonicalPeriodRowsUpdated: 0,
+      canonicalPeriodAggregateIdCellsUpdated: 0,
+      canonicalPeriodStartCellsUpdated: 0,
       orderIndependentDigestChunks: 0,
       legacyPartialBatchAdoptions: 0,
       legacyPartialSeriesCursorReplayed: 0,
@@ -2376,6 +2383,199 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     throw error_('ALPHA74_GATE5_RECONCILIATION_RECOVERY_STAGE_INVALID', 'Gate 5 terminal reconciliation recovery has an unsupported stage.', { stage: stage });
   }
 
+  function sameDigest_(left, right) {
+    return !!left && !!right &&
+      Number(left.rows || 0) === Number(right.rows || 0) &&
+      Number(left.columns || 0) === Number(right.columns || 0) &&
+      text_(left.hash) === text_(right.hash);
+  }
+
+  function canonicalPeriodIncident_(state, triggerCount) {
+    var details = state && state.failureDetails || {};
+    var digests = state && state.digests || {};
+    var baseline = digests.baselineCanonical, live = digests.liveSnapshot;
+    var full = digests.fullBuild, replay = digests.sequentialReplay;
+    var authoritativeExact = sameDigest_(baseline, live) && sameDigest_(baseline, full);
+    var replayShapeMatches = !!baseline && !!replay &&
+      Number(replay.rows || 0) === Number(baseline.rows || 0) &&
+      Number(replay.columns || 0) === Number(baseline.columns || 0);
+    var replayDiffers = replayShapeMatches && text_(replay.hash) !== text_(baseline.hash);
+    var eligible = !!state &&
+      state.status === 'FAILED' &&
+      state.phase === 'FAILED' &&
+      text_(state.failureCode) === 'ALPHA74_GATE5_RECONCILIATION_FAILED' &&
+      text_(state.stateSchemaVersion) === '4.0-alpha74-gate5-state-14' &&
+      text_(state.release) === '4.0.0-alpha.7.4.16' &&
+      Number(triggerCount || 0) === 0 &&
+      text_(state.reconciliationRecoveryStage) === 'COMPLETE' &&
+      text_(state.recovery && state.recovery.mode) === 'TERMINAL_RECONCILIATION_RECOVERY' &&
+      !!(state.evidence && text_(state.evidence.id)) &&
+      details.exact === false &&
+      details.liveUnchanged === true &&
+      details.quotaAccepted === true &&
+      details.aggregateAccepted === true &&
+      details.rawAccepted === true &&
+      authoritativeExact && replayDiffers;
+    return {
+      eligible: eligible,
+      mode: eligible ? 'ALPHA7416_CANONICAL_PERIOD_RECOVERY' : '',
+      triggerCount: Number(triggerCount || 0),
+      stateSchemaVersion: text_(state && state.stateSchemaVersion),
+      release: text_(state && state.release),
+      reconciliationRecoveryStage: text_(state && state.reconciliationRecoveryStage),
+      authoritativeExact: authoritativeExact,
+      replayShapeMatches: replayShapeMatches,
+      replayDiffers: replayDiffers,
+      baselineDigest: text_(baseline && baseline.hash),
+      replayDigest: text_(replay && replay.hash),
+      failureDetails: clone_(details)
+    };
+  }
+
+  function assertCanonicalPeriodRecoverySource_(state, resources) {
+    assert_(state, 'ALPHA74_GATE5_CANONICAL_PERIOD_RECOVERY_STATE_MISSING', 'Gate 5 canonical-period recovery requires the preserved terminal checkpoint.');
+    var incident = canonicalPeriodIncident_(state, triggers_().length);
+    assert_(incident.eligible, 'ALPHA74_GATE5_CANONICAL_PERIOD_RECOVERY_SOURCE_INVALID', 'Gate 5 canonical-period recovery is restricted to the verified terminal Alpha.7.4.16 replay-only digest incident.', incident);
+    var inventories = {
+      baselineCanonical: assertArtifactInTestFiles_(state.artifacts && state.artifacts.baselineCanonical, resources.testFilesFolderId, 'baselineCanonical'),
+      liveSnapshot: assertArtifactInTestFiles_(state.artifacts && state.artifacts.liveSnapshot, resources.testFilesFolderId, 'liveSnapshot'),
+      fullBuild: assertArtifactInTestFiles_(state.artifacts && state.artifacts.fullBuild, resources.testFilesFolderId, 'fullBuild'),
+      sequentialReplay: assertArtifactInTestFiles_(state.artifacts && state.artifacts.sequentialReplay, resources.testFilesFolderId, 'sequentialReplay')
+    };
+    var expectedRows = inventories.fullBuild.aggregateRows;
+    assert_(expectedRows > 0 && Object.keys(inventories).every(function (key) {
+      return inventories[key].aggregateRows === expectedRows;
+    }), 'ALPHA74_GATE5_CANONICAL_PERIOD_RECOVERY_INVENTORY_MISMATCH', 'Gate 5 canonical-period recovery requires four complete aggregate artifacts with the same row count.', inventories);
+    var live = AKORT.AggregateContract.inventory();
+    assert_(
+      Number(live.rows) === Number(state.liveBefore && state.liveBefore.rows || 0) &&
+        text_(live.data_hash) === text_(state.liveBefore && state.liveBefore.dataHash),
+      'ALPHA74_GATE5_CANONICAL_PERIOD_RECOVERY_LIVE_CHANGED',
+      'DEV Publish changed after the preserved Gate 5 snapshot, so canonical-period recovery cannot reuse it.',
+      {
+        expectedRows: Number(state.liveBefore && state.liveBefore.rows || 0),
+        actualRows: Number(live.rows || 0),
+        expectedDataHash: text_(state.liveBefore && state.liveBefore.dataHash),
+        actualDataHash: text_(live.data_hash)
+      }
+    );
+    return { incident: incident, inventories: inventories };
+  }
+
+  function buildCanonicalPeriodRecoveryState_(sourceState, executionId) {
+    var state = clone_(sourceState || {}), recoveredAt = now_();
+    var sourceRecovery = state.recovery || {}, sourceEvidence = state.evidence || {};
+    state.stateSchemaVersion = STATE_SCHEMA_VERSION;
+    state.release = RELEASE;
+    state.executionId = executionId;
+    state.status = 'RUNNING';
+    state.phase = 'RECOVER_CANONICAL_PERIODS';
+    state.startedAt = recoveredAt;
+    state.updatedAt = recoveredAt;
+    state.finishedAt = '';
+    state.nextRetryAt = '';
+    state.consecutiveErrors = 0;
+    state.lastError = null;
+    state.lastStep = null;
+    state.failureCode = '';
+    state.failureDetails = null;
+    state.evidence = null;
+    state.evidenceCompletedAt = '';
+    state.fullBuildWork = null;
+    state.aggregateItemsWork = null;
+    state.aggregateBatchWork = null;
+    state.reconciliationRecoveryStage = '';
+    state.reconciliationRepairWork = null;
+    state.canonicalPeriodRecoveryStage = 'REPAIR_REPLAY_FROM_FULL';
+    state.canonicalPeriodRepairWork = null;
+    state.replayLatestWork = null;
+    state.normalizeIndex = 0;
+    state.digestIndex = 0;
+    state.digestWork = null;
+    state.digests = {};
+    state.recovery = {
+      mode: 'TERMINAL_CANONICAL_PERIOD_RECOVERY',
+      recoveredFromExecutionId: text_(sourceState && sourceState.executionId),
+      recoveredFromRelease: text_(sourceState && sourceState.release),
+      recoveredFromStateSchemaVersion: text_(sourceState && sourceState.stateSchemaVersion),
+      recoveredFromEvidence: {
+        id: text_(sourceEvidence.id),
+        name: text_(sourceEvidence.name),
+        sha256: text_(sourceEvidence.sha256)
+      },
+      recoveredAt: recoveredAt,
+      preservedArtifacts: true,
+      preservedFullBuild: true,
+      preservedSequentialReplay: true,
+      authoritativeSource: 'FULL_BUILD_LOGICAL_ROW',
+      copiedColumns: ['aggregate_id', 'period_start'],
+      sourceRecoveryMode: text_(sourceRecovery.mode)
+    };
+    metrics_(state).canonicalPeriodRecoveryAdoptions += 1;
+    return state;
+  }
+
+  function canonicalPeriodRecoveryStep_(state) {
+    var stage = text_(state.canonicalPeriodRecoveryStage || 'REPAIR_REPLAY_FROM_FULL');
+    var result, metrics = metrics_(state);
+    if (stage === 'REPAIR_REPLAY_FROM_FULL') {
+      result = AKORT.IncrementalPublish.Gate5.repairFromFullBuildChunk(
+        state.artifacts.fullBuild.id,
+        state.artifacts.sequentialReplay.id,
+        state.canonicalPeriodRepairWork
+      );
+      metrics.canonicalPeriodRowsScanned += Number(result.rowsScanned || 0);
+      metrics.canonicalPeriodRowsUpdated += Number(result.rowsUpdated || 0);
+      metrics.canonicalPeriodAggregateIdCellsUpdated += Number(result.aggregateIdCellsUpdated || 0);
+      metrics.canonicalPeriodStartCellsUpdated += Number(result.periodStartCellsUpdated || 0);
+      state.canonicalPeriodRepairWork = result.work || null;
+      if (result.complete) state.canonicalPeriodRecoveryStage = 'REPLAY_LATEST';
+      return {
+        stage: stage,
+        prepared: result.prepared === true,
+        cursor: result.work ? Number(result.work.cursor || 0) : Number(result.total || 0),
+        total: Number(result.total || 0),
+        rowsScanned: Number(result.rowsScanned || 0),
+        rowsUpdated: Number(result.rowsUpdated || 0),
+        aggregateIdCellsUpdated: Number(result.aggregateIdCellsUpdated || 0),
+        periodStartCellsUpdated: Number(result.periodStartCellsUpdated || 0),
+        complete: result.complete === true,
+        nextStage: state.canonicalPeriodRecoveryStage
+      };
+    }
+    if (stage === 'REPLAY_LATEST') {
+      result = AKORT.IncrementalPublish.Gate5.fullBuildChunk(
+        state.artifacts.sequentialReplay.id,
+        'AGGREGATES_LATEST',
+        state.replayLatestWork
+      );
+      metrics.replayLatestRowsScanned += Number(result.rowsScanned || 0);
+      metrics.replayLatestRowsUpdated += Number(result.rowsProcessed || 0);
+      metrics.replayLatestChunks += result.phase === 'PREPARE' ? 0 : 1;
+      state.replayLatestWork = result.work || null;
+      if (result.complete) {
+        state.replayLatestWork = null;
+        state.canonicalPeriodRecoveryStage = 'COMPLETE';
+        state.phase = 'DIGEST';
+        state.digestIndex = 0;
+        state.digestWork = null;
+        state.digests = {};
+      }
+      return {
+        stage: stage,
+        latestPhase: result.phase || '',
+        cursor: result.work ? Number(result.work.cursor || 0) : Number(result.total || 0),
+        total: Number(result.total || 0),
+        rowsScanned: Number(result.rowsScanned || 0),
+        rowsUpdated: Number(result.rowsProcessed || 0),
+        complete: result.complete === true,
+        nextStage: state.canonicalPeriodRecoveryStage,
+        nextPhase: state.phase
+      };
+    }
+    throw error_('ALPHA74_GATE5_CANONICAL_PERIOD_RECOVERY_STAGE_INVALID', 'Gate 5 canonical-period recovery has an unsupported stage.', { stage: stage });
+  }
+
   function persistEvidenceIntent_(state, evidence) {
     var spreadsheet = SpreadsheetApp.openById(state.artifacts.sequentialReplay.id);
     var sheet = ensureAuxiliarySheet_(spreadsheet, EVIDENCE_INTENT_SHEET, ['sha256', 'payload_json']);
@@ -2512,6 +2712,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
   }
 
   function step_(state) {
+    if (state.phase === 'RECOVER_CANONICAL_PERIODS') return canonicalPeriodRecoveryStep_(state);
     if (state.phase === 'RECOVER_RECONCILIATION') return reconciliationRecoveryStep_(state);
     if (state.phase === 'FULL_BUILD') return fullBuildStep_(state);
     if (state.phase === 'PREPARE_REPLAY') return prepareReplayStep_(state);
@@ -2605,6 +2806,16 @@ AKORT.Alpha74Gate5Acceptance = (function () {
           cursor: Number(state.reconciliationRepairWork.cursor || 0),
           total: Number(state.reconciliationRepairWork.total || 0),
           chunkRows: Number(state.reconciliationRepairWork.chunkRows || 0)
+        } : null
+      } : null,
+      canonicalPeriodRecovery: state.phase === 'RECOVER_CANONICAL_PERIODS' || state.canonicalPeriodRecoveryStage ? {
+        stage: state.canonicalPeriodRecoveryStage || '',
+        repairWork: state.canonicalPeriodRepairWork ? {
+          workSchemaVersion: state.canonicalPeriodRepairWork.workSchemaVersion || '',
+          phase: state.canonicalPeriodRepairWork.phase || '',
+          cursor: Number(state.canonicalPeriodRepairWork.cursor || 0),
+          total: Number(state.canonicalPeriodRepairWork.total || 0),
+          chunkRows: Number(state.canonicalPeriodRepairWork.chunkRows || 0)
         } : null
       } : null,
       metrics: clone_(metrics_(state)),
@@ -2827,6 +3038,37 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     }, { lock: true, persistLogs: true });
   }
 
+  function recoverCanonicalPeriods() {
+    return AKORT.Core.safeRun('ALPHA74_GATE5_RECOVER_CANONICAL_PERIODS', function () {
+      AKORT.EnvironmentGuard.assertDev();
+      assertFlags_();
+      var sourceState = loadState_(), resources = resources_();
+      var source = assertCanonicalPeriodRecoverySource_(sourceState, resources);
+      deleteTriggers_();
+      clearStopRequest_();
+      var stamp = timestamp_();
+      var executionId = 'A74_GATE5_' + hash_(['CANONICAL_PERIOD_RECOVERY', stamp, Utilities.getUuid()]).slice(0, 20).toUpperCase();
+      var state = buildCanonicalPeriodRecoveryState_(sourceState, executionId);
+      state.recovery.clearedEvidenceIntentRows = 0;
+      state.recovery.clearedLegacyDigestRows = 0;
+      state.recovery.verifiedInventories = source.inventories;
+      assert_(stateBytes_(state) <= PROPERTY_MAX_BYTES, 'ALPHA74_GATE5_CANONICAL_PERIOD_RECOVERY_STATE_TOO_LARGE', 'Gate 5 canonical-period recovery checkpoint is too large to persist safely.', {
+        bytes: stateBytes_(state),
+        maxBytes: PROPERTY_MAX_BYTES
+      });
+      var replayId = sourceState.artifacts.sequentialReplay.id;
+      state.recovery.clearedEvidenceIntentRows = clearAuxiliaryRows_(replayId, EVIDENCE_INTENT_SHEET);
+      state.recovery.clearedLegacyDigestRows = clearAuxiliaryRows_(replayId, DIGEST_SHEET);
+      saveState_(state);
+      state.triggerCount = ensureTrigger_();
+      saveState_(state);
+      return AKORT.Result.success(
+        'Alpha.7.4 Gate 5 canonical-period recovery started. Only preserved full-build and replay artifacts will be used.',
+        publicState_(state)
+      );
+    }, { lock: true, persistLogs: true });
+  }
+
   function worker() {
     var lock = LockService.getUserLock();
     if (!lock.tryLock(1000)) {
@@ -2982,6 +3224,7 @@ AKORT.Alpha74Gate5Acceptance = (function () {
     restartReplay: restartReplay,
     resumeReplay: resumeReplay,
     recoverReconciliation: recoverReconciliation,
+    recoverCanonicalPeriods: recoverCanonicalPeriods,
     worker: worker,
     stop: stop,
     Test: Object.freeze({
@@ -3009,11 +3252,14 @@ AKORT.Alpha74Gate5Acceptance = (function () {
       buildDurableResumeState: buildDurableResumeState_,
       buildReconciliationRecoveryState: buildReconciliationRecoveryState_,
       reconciliationRecoveryStep: reconciliationRecoveryStep_,
+      buildCanonicalPeriodRecoveryState: buildCanonicalPeriodRecoveryState_,
+      canonicalPeriodRecoveryStep: canonicalPeriodRecoveryStep_,
       legacyPartialAdoption: legacyPartialAdoption_,
       exactDuplicateIncident: exactDuplicateIncident_,
       periodIdentityIncident: periodIdentityIncident_,
       performanceResume: performanceResume_,
       reconciliationIncident: reconciliationIncident_,
+      canonicalPeriodIncident: canonicalPeriodIncident_,
       durableResumeStateSchemaCompatible: durableResumeStateSchemaCompatible_,
       durableResumeReleaseCompatible: durableResumeReleaseCompatible_
     })

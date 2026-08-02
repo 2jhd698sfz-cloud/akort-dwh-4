@@ -21,6 +21,7 @@ function AKORT_alpha74Gate5Start(){return AKORT_printResult_(AKORT.Alpha74Gate5A
 function AKORT_alpha74Gate5RestartReplay(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.restartReplay());}
 function AKORT_alpha74Gate5ResumeReplay(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.resumeReplay());}
 function AKORT_alpha74Gate5RecoverReconciliation(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.recoverReconciliation());}
+function AKORT_alpha74Gate5RecoverCanonicalPeriods(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.recoverCanonicalPeriods());}
 function AKORT_alpha74Gate5Worker(){return AKORT.Alpha74Gate5Acceptance.worker();}
 function AKORT_alpha74Gate5Stop(){return AKORT_printResult_(AKORT.Alpha74Gate5Acceptance.stop());}
 function AKORT_alpha74IndustryInputInstall(){return AKORT_printResult_(AKORT.IndustryInput.install());}
