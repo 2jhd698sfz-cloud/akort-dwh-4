@@ -6,7 +6,7 @@ Apps Script data pipeline for the AKORT analytical system.
 
 Active milestone: **Alpha.7.4 — Aggregate Integration into Existing Operation Engine**.
 
-Status: `GATE 5 ACCEPTED / GATE 6 ALPHA74.30 ROLLBACK-SCAN RECOVERY READY / USER PIPELINE PROHIBITED`.
+Status: `GATE 5 ACCEPTED / GATE 6 ALPHA74.31 WEEKLY-ROLLBACK RECOVERY READY / USER PIPELINE PROHIBITED`.
 
 Accepted base:
 
@@ -36,6 +36,15 @@ See [`docs/alpha-7.4/README.md`](docs/alpha-7.4/README.md).
 The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 5 is accepted with exact 61,636-row parity across baseline, live snapshot, full build and sequential replay. Gate 6 adds recovery copies and a fail-closed three-cycle authoritative DEV canary using one new weekly/monthly source file: source-file load, standard logical reversal and source-file restore. Acceptance requires a real change in `PUBLISH_PRICE_AGGREGATES`.
 
 Gate 6 may enable the regular aggregate pipeline only inside its controlled harness. General operator submission remains prohibited until Gate 7 through `PUBLISH_USER_PIPELINE_ENABLED=FALSE`.
+
+Release `4.0.0-alpha.7.4.31` fixes the exact `.30` Gate 6 rollback mismatch:
+196 weekly aggregate rows were keyed as Saturday `2026-07-04` although
+`period_label=2026-W27` identifies Sunday `2026-07-05`. Recovery removes only
+those rows in bounded atomic logical-series batches, verifies every read-back,
+then restarts a clean three-cycle Gate so post-canary and restore use the same
+canonical Sunday identity. Weekly, Monthly, Industry and Aggregates remain in
+the exact digest contract. Runbook:
+[`ALPHA74_31_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`](docs/alpha-7.4/ALPHA74_31_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md).
 
 Release `4.0.0-alpha.7.4.30` compacts the accumulated Gate 6 recovery history
 below the Script Properties value limit, persists terminal fail-closed state

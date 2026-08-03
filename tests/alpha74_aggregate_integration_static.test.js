@@ -113,8 +113,8 @@ function seriesTarget(seriesId, period, rowNumber) {
 }
 
 test('A74 metadata and schemas are exact', () => {
-  assert.equal(A.Version, '4.0-aggregate-integration-6');
-  assert.equal(A.Release, '4.0.0-alpha.7.4.30');
+  assert.equal(A.Version, '4.0-aggregate-integration-7');
+  assert.equal(A.Release, '4.0.0-alpha.7.4.31');
   assert.equal(A.OperationSchemaVersion, '4.0-operation-2');
   assert.deepEqual(Array.from(A.Phases), [
     'PREPARING_AGGREGATE_IMPACT',
@@ -150,6 +150,25 @@ test('atomic aggregate publication preserves the canonical Publish date contract
     A.Test.userEnteredValue('2023-04-02', 'period_label', weekly),
     { stringValue: '2023-04-02' }
   );
+});
+
+test('weekly publication derives the canonical Sunday from the ISO period label', () => {
+  assert.equal(A.Test.isoWeekSundayPeriod('2026-W27'), '2026-07-05');
+  assert.equal(A.Test.isoWeekSundayPeriod('2026-W01'), '2026-01-04');
+  assert.equal(A.Test.isoWeekSundayPeriod('not-a-week'), '');
+  const canonical = A.Test.canonicalPublishPayload({
+    dataset_code: 'AKORT_WEEKLY',
+    frequency: 'weekly',
+    period_start: '2026-07-04T21:00:00.000Z',
+    period_label: '2026-W27',
+    year: 2026,
+    quarter: 'Q3',
+    month: 7
+  });
+  assert.equal(canonical.period_start, '2026-07-05');
+  assert.equal(canonical.year, 2026);
+  assert.equal(canonical.quarter, 'Q3');
+  assert.equal(canonical.month, 7);
 });
 
 test('monthly period label is canonicalized from period_start and repairs the exact UTC month shift', () => {
@@ -641,7 +660,7 @@ test('repository wiring removes deferred executor and hard-coded write probes', 
   assert(release.includes("'AGGREGATE_STAGE'"));
   assert(release.includes("'FINALIZING'"));
   assert(release.includes("'24_Alpha74Gate3Acceptance.js'"));
-  assert(release.includes("version: '4.0.0-alpha.7.4.30'"));
+  assert(release.includes("version: '4.0.0-alpha.7.4.31'"));
   assert(release.includes('durable bounded work'));
   const boundedSettings = [
     'PUBLISH_AGGREGATE_MATERIALIZATION_COMBOS_PER_STEP',

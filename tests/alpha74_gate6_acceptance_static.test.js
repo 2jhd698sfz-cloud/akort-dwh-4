@@ -91,8 +91,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-12');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.30');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-13');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.31');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -432,6 +432,83 @@ test('exact stopped Alpha.7.4.29 rollback scan capacity incident resumes only af
   assert.equal(G.Test.rollbackScanStateCapacityIncident(reversalNotAccepted, operation), false);
 });
 
+test('exact Alpha.7.4.30 weekly rollback period incident is eligible only at the +196 aggregate boundary', () => {
+  const canaryOperationId = 'OP_SOURCE_FILE_LOAD_V_20260802T123451298Z_64F56FCB57D9';
+  const reversalOperationId = 'OP_RAW_REVERSAL_V4_20260802T191111384Z_3683C13EE282';
+  const canaryLoadId = 'LOAD_20260802T123559854Z_EFB27B040FBC';
+  const exact = (rows, hash) => ({ rows, columns: 29, headersHash: 'AGGREGATE_HEADERS', hash, mode: 'ROW_MULTISET_V1' });
+  const weekly = digest([['WEEKLY', 1]]);
+  const monthly = digest([['MONTHLY', 1]]);
+  const industry = digest([['INDUSTRY', 1]]);
+  const state = {
+    stateSchemaVersion: '4.0-alpha74-gate6-state-1',
+    release: '4.0.0-alpha.7.4.30',
+    executionId: 'A74_GATE6_7F437567A3ABBFBE94F1',
+    status: 'FAILED',
+    phase: 'FAILED',
+    failedFromPhase: 'VERIFY_ROLLBACK',
+    lastError: { code: 'ALPHA74_GATE6_ROLLBACK_MISMATCH' },
+    operations: { canary: canaryOperationId, reversal: reversalOperationId, restore: '' },
+    loads: { canary: canaryLoadId, reversal: 'LOAD_REV_20260802T193440542Z_9D4AB8FFFF24', restore: '' },
+    acceptance: { canaryOperationAccepted: true, reversalOperationAccepted: true },
+    scan: null,
+    digests: {
+      baseline: {
+        PUBLISH_PRICES_WEEKLY: weekly,
+        PUBLISH_PRICES_MONTHLY: monthly,
+        PUBLISH_INDUSTRY: industry,
+        PUBLISH_PRICE_AGGREGATES: exact(61636, 'BASELINE')
+      },
+      postCanary: { PUBLISH_PRICE_AGGREGATES: exact(62028, 'POST_CANARY') },
+      rollback: {
+        PUBLISH_PRICES_WEEKLY: weekly,
+        PUBLISH_PRICES_MONTHLY: monthly,
+        PUBLISH_INDUSTRY: industry,
+        PUBLISH_PRICE_AGGREGATES: exact(61832, 'ROLLBACK')
+      }
+    },
+    artifacts: { dwhBackup: { id: 'DWH_BACKUP' }, publishBackup: { id: 'PUBLISH_BACKUP' } }
+  };
+  const canaryOperation = {
+    operation_id: canaryOperationId,
+    operation_type: 'SOURCE_FILE_LOAD_V4',
+    status: 'SUCCESS',
+    current_phase: 'SUCCESS',
+    checkpoint: {
+      handlerState: { loadId: canaryLoadId },
+      aggregate: {
+        status: 'SUCCESS',
+        expectedStageRows: 392,
+        calculationGroupCount: 392,
+        affectedSeriesKeys: new Array(392).fill(0).map((_, index) => `CANARY_${index}`),
+        stageFingerprint: 'STAGE'
+      }
+    }
+  };
+  const reversalOperation = {
+    operation_id: reversalOperationId,
+    operation_type: 'RAW_REVERSAL_V4',
+    status: 'SUCCESS',
+    current_phase: 'SUCCESS',
+    checkpoint: {
+      rawStore: { loadId: 'LOAD_REV_20260802T193440542Z_9D4AB8FFFF24' },
+      aggregate: {
+        status: 'SUCCESS',
+        expectedStageRows: 196,
+        calculationGroupCount: 196,
+        affectedSeriesKeys: new Array(196).fill(0).map((_, index) => `AKORT_MONTHLY_DERIVED|monthly|SERIES_${index}`)
+      }
+    }
+  };
+  assert.equal(G.Test.weeklyRollbackPeriodIncident(state, canaryOperation, reversalOperation), true);
+  const wrongBoundary = JSON.parse(JSON.stringify(state));
+  wrongBoundary.digests.rollback.PUBLISH_PRICE_AGGREGATES.rows = 61831;
+  assert.equal(G.Test.weeklyRollbackPeriodIncident(wrongBoundary, canaryOperation, reversalOperation), false);
+  const restoreStarted = JSON.parse(JSON.stringify(state));
+  restoreStarted.operations.restore = 'OP_RESTORE';
+  assert.equal(G.Test.weeklyRollbackPeriodIncident(restoreStarted, canaryOperation, reversalOperation), false);
+});
+
 test('Gate 6 compacts nested recovery history into bounded audit lineage', () => {
   const recovery = {
     mode: 'DURABLE_RAW_REVERSAL_CHUNK_RECOVERY',
@@ -661,12 +738,17 @@ test('source contract contains source-file canary, recovery copies, standard rol
   assert(source.includes('MONTHLY_PERIOD_LABEL_READBACK_RECOVERY'));
   assert(source.includes('DURABLE_RAW_REVERSAL_CHUNK_RECOVERY'));
   assert(source.includes('ROLLBACK_SCAN_STATE_CAPACITY_RECOVERY'));
+  assert(source.includes('WEEKLY_ROLLBACK_PERIOD_CANONICAL_REPAIR'));
+  assert(source.includes('WEEKLY_ROLLBACK_PERIOD_CANONICAL_RESTART'));
+  assert(source.includes('maxSeries: 16'));
+  assert(aggregate.includes('Math.min(16, Number(options.maxSeries || 16))'));
   assert(source.includes('previousRecoveryLineage'));
   assert(source.indexOf('saveTerminalState_(state);') < source.indexOf('try { deleteTriggers_(); } catch (ignoredTriggerCleanup) {}'));
   assert(source.includes('validateRecoveryStageSnapshot'));
   assert(source.includes('recoverMonthlyPeriodLabelIntent'));
   assert(source.includes('AKORT.OperationEngine.recoverFailedPhase'));
   assert(entries.includes('AKORT_alpha74Gate6RecoverMonthlyPeriodLabel'));
+  assert(entries.includes('AKORT_alpha74Gate6RecoverWeeklyRollbackPeriod'));
   assert(engine.includes('expected.status || STATUSES.FAILED'));
   assert(aggregate.includes("text_(context.accepted_by) !== 'ALPHA74_GATE5_FULL_HISTORY_PARITY'"));
   assert(aggregate.includes("text_(context.mutation_boundary) !== 'ALPHA74_ATOMIC_LOGICAL_SERIES'"));

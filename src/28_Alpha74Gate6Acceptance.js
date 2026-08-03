@@ -12,16 +12,22 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * it has no aggregate impact under the frozen Alpha.7.4 contract.
  */
 AKORT.Alpha74Gate6Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate6-acceptance-12';
+  var VERSION = '4.0-alpha74-gate6-acceptance-13';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate6-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate6-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.30';
+  var RELEASE = '4.0.0-alpha.7.4.31';
   var BASELINE_HEADER_INCIDENT_RELEASE = '4.0.0-alpha.7.4.19';
   var RUNTIME_CONTEXT_INCIDENT_RELEASE = '4.0.0-alpha.7.4.20';
   var MONOLITHIC_STAGE_INCIDENT_RELEASE = '4.0.0-alpha.7.4.22';
   var MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE = '4.0.0-alpha.7.4.24';
   var RAW_REVERSAL_CHUNK_INCIDENT_RELEASE = '4.0.0-alpha.7.4.26';
   var ROLLBACK_SCAN_STATE_CAPACITY_INCIDENT_RELEASE = '4.0.0-alpha.7.4.29';
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_RELEASE = '4.0.0-alpha.7.4.30';
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_CANARY_OPERATION_ID = 'OP_SOURCE_FILE_LOAD_V_20260802T123451298Z_64F56FCB57D9';
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_BASELINE_ROWS = 61636;
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_POST_CANARY_ROWS = 62028;
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROLLBACK_ROWS = 61832;
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS = 196;
   var RAW_REVERSAL_CHUNK_INCIDENT_EXECUTION_ID = 'A74_GATE6_7F437567A3ABBFBE94F1';
   var RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID = 'OP_RAW_REVERSAL_V4_20260802T191111384Z_3683C13EE282';
   var RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID = 'LOAD_20260802T123559854Z_EFB27B040FBC';
@@ -1072,6 +1078,107 @@ AKORT.Alpha74Gate6Acceptance = (function () {
   }
 
   function processStep_(state) {
+    if (state.phase === 'RECOVER_WEEKLY_ROLLBACK_PERIOD') {
+      var recovery = state.recovery || {};
+      assert_(state.release === WEEKLY_ROLLBACK_PERIOD_INCIDENT_RELEASE &&
+        text_(recovery.mode) === 'WEEKLY_ROLLBACK_PERIOD_CANONICAL_REPAIR' &&
+        text_(recovery.recoveredFromExecutionId) === RAW_REVERSAL_CHUNK_INCIDENT_EXECUTION_ID &&
+        text_(state.operations && state.operations.canary) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_CANARY_OPERATION_ID &&
+        text_(state.operations && state.operations.reversal) === RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID &&
+        !text_(state.operations && state.operations.restore),
+        'ALPHA74_GATE6_WEEKLY_ROLLBACK_RECOVERY_CHECKPOINT_INVALID', 'Weekly rollback recovery checkpoint no longer matches the exact .30 incident.', {
+          release: state.release,
+          executionId: state.executionId,
+          recoveryMode: recovery.mode
+        });
+      var recoveryFlags = flagState_();
+      assert_(recoveryFlags.publishEngineEnabled && recoveryFlags.executionEnabled &&
+        !recoveryFlags.regularPipelineEnabled && !recoveryFlags.userPipelineEnabled,
+        'ALPHA74_GATE6_WEEKLY_ROLLBACK_RECOVERY_FLAGS_INVALID', 'Weekly rollback recovery must remain isolated from regular and user pipelines.', recoveryFlags);
+      assertNoForeignDataOperations_(state);
+      var incidentCanary = operation_(state.operations.canary);
+      var incidentCanaryAggregate = incidentCanary.checkpoint && incidentCanary.checkpoint.aggregate || {};
+      assert_(AKORT.AggregateIntegration && typeof AKORT.AggregateIntegration.recoverWeeklyRollbackPeriodBatch === 'function',
+        'ALPHA74_GATE6_WEEKLY_ROLLBACK_RECOVERY_UNAVAILABLE', 'Installed aggregate integration has no bounded weekly rollback recovery adapter.', {});
+      var repaired = AKORT.AggregateIntegration.recoverWeeklyRollbackPeriodBatch({
+        operationId: state.operations.canary,
+        loadId: state.loads.canary,
+        planId: text_(incidentCanaryAggregate.planId),
+        planFingerprint: text_(incidentCanaryAggregate.planFingerprint),
+        stageFingerprint: text_(incidentCanaryAggregate.stageFingerprint),
+        cursor: Number(recovery.repairSeriesCursor || 0),
+        maxSeries: 16
+      });
+      recovery.repairSeriesCursor = Number(repaired.cursor || 0);
+      recovery.repairSeriesTotal = Number(repaired.total || 0);
+      recovery.weeklyRowsRemoved = Number(recovery.weeklyRowsRemoved || 0) + Number(repaired.logicalRowsRemoved || 0);
+      recovery.weeklyRowsVerifiedAbsent = Number(recovery.weeklyRowsVerifiedAbsent || 0) + Number(repaired.verifiedRowsAbsent || 0);
+      recovery.atomicApiCalls = Number(recovery.atomicApiCalls || 0) + Number(repaired.atomicApiCalls || 0);
+      recovery.atomicRequests = Number(recovery.atomicRequests || 0) + Number(repaired.atomicRequests || 0);
+      recovery.repairBatches = Number(recovery.repairBatches || 0) + 1;
+      if (repaired.complete !== true) {
+        return {
+          phase: 'RECOVER_WEEKLY_ROLLBACK_PERIOD',
+          seriesCursor: recovery.repairSeriesCursor,
+          seriesTotal: recovery.repairSeriesTotal,
+          weeklyRowsRemoved: recovery.weeklyRowsRemoved,
+          repeatPhase: true
+        };
+      }
+      assert_(Number(recovery.weeklyRowsVerifiedAbsent || 0) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS,
+        'ALPHA74_GATE6_WEEKLY_ROLLBACK_RECOVERY_COUNT_MISMATCH', 'Weekly rollback recovery did not verify all 196 legacy rows absent.', {
+          removedInObservedWrites: Number(recovery.weeklyRowsRemoved || 0),
+          verifiedAbsent: Number(recovery.weeklyRowsVerifiedAbsent || 0),
+          expected: WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS
+        });
+      var recoveredExecutionId = state.executionId;
+      var restartedExecutionId = 'A74_GATE6_' + hash_([timestamp_(), Utilities.getUuid(), 'WEEKLY_CANONICAL_RESTART']).slice(0, 20).toUpperCase();
+      recovery.mode = 'WEEKLY_ROLLBACK_PERIOD_CANONICAL_RESTART';
+      recovery.repairedAt = now_();
+      recovery.restartedExecutionId = restartedExecutionId;
+      recovery.preservedRecoveryCopies = true;
+      recovery.repeatedCanaryRequired = true;
+      recovery.reason = 'The .30 post-canary digest contains legacy Saturday aggregate identities and is not eligible as a .31 restore reference.';
+      state.release = RELEASE;
+      state.executionId = restartedExecutionId;
+      state.status = 'RUNNING';
+      state.phase = 'BASELINE_SCAN';
+      state.startedAt = now_();
+      state.finishedAt = '';
+      state.acceptanceCompletedAt = '';
+      state.stoppedFromPhase = '';
+      state.failedFromPhase = '';
+      state.leaseUntil = '';
+      state.regularPipelineEnabledAt = '';
+      state.operations = { canary: '', reversal: '', restore: '' };
+      state.loads = { canary: '', reversal: '', restore: '' };
+      state.digests = {};
+      state.scan = null;
+      state.acceptance = {};
+      state.evidence = null;
+      state.consecutiveErrors = 0;
+      state.lastError = null;
+      state.metrics = state.metrics || {};
+      state.metrics.gate6CanonicalRestarts = Number(state.metrics.gate6CanonicalRestarts || 0) + 1;
+      // The execution identity changes at this boundary. Persist it before
+      // checkpointWorker_ compares the in-memory execution with durable state.
+      saveState_(state);
+      try {
+        writeValidation_('GATE 6 WEEKLY-ПЕРИОД ИСПРАВЛЕН', {
+          recoveredExecutionId: recoveredExecutionId,
+          restartedExecutionId: restartedExecutionId,
+          weeklyRowsVerifiedAbsent: recovery.weeklyRowsVerifiedAbsent
+        });
+      } catch (ignoredRecoveryValidation) {}
+      return {
+        phase: 'WEEKLY_ROLLBACK_PERIOD_REPAIRED',
+        recoveredExecutionId: recoveredExecutionId,
+        restartedExecutionId: restartedExecutionId,
+        weeklyRowsVerifiedAbsent: recovery.weeklyRowsVerifiedAbsent,
+        nextPhase: state.phase
+      };
+    }
+
     if (state.phase === 'BASELINE_SCAN') return scanStep_(state, 'baseline', 'ARM_CANARY');
 
     if (state.phase === 'ARM_CANARY') {
@@ -1614,6 +1721,69 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
   }
 
+  function weeklyRollbackPeriodIncident_(state, canaryOperation, reversalOperation) {
+    var digests = state && state.digests || {};
+    var baseline = digests.baseline || {};
+    var postCanary = digests.postCanary || {};
+    var rollback = digests.rollback || {};
+    var baselineAggregate = baseline.PUBLISH_PRICE_AGGREGATES || {};
+    var postCanaryAggregate = postCanary.PUBLISH_PRICE_AGGREGATES || {};
+    var rollbackAggregate = rollback.PUBLISH_PRICE_AGGREGATES || {};
+    var canaryCheckpoint = canaryOperation && canaryOperation.checkpoint || {};
+    var canaryAggregate = canaryCheckpoint.aggregate || {};
+    var reversalCheckpoint = reversalOperation && reversalOperation.checkpoint || {};
+    var reversalAggregate = reversalCheckpoint.aggregate || {};
+    return !!state && !!canaryOperation && !!reversalOperation &&
+      state.stateSchemaVersion === STATE_SCHEMA && state.release === WEEKLY_ROLLBACK_PERIOD_INCIDENT_RELEASE &&
+      state.executionId === RAW_REVERSAL_CHUNK_INCIDENT_EXECUTION_ID &&
+      state.status === 'FAILED' && state.phase === 'FAILED' && state.failedFromPhase === 'VERIFY_ROLLBACK' &&
+      state.lastError && state.lastError.code === 'ALPHA74_GATE6_ROLLBACK_MISMATCH' &&
+      text_(state.operations && state.operations.canary) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_CANARY_OPERATION_ID &&
+      text_(state.operations && state.operations.reversal) === RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID &&
+      !text_(state.operations && state.operations.restore) &&
+      text_(state.loads && state.loads.canary) === RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID &&
+      !!text_(state.loads && state.loads.reversal) && !text_(state.loads && state.loads.restore) &&
+      state.acceptance && state.acceptance.canaryOperationAccepted === true &&
+      state.acceptance.reversalOperationAccepted === true && state.acceptance.rollbackExact !== true &&
+      !state.scan &&
+      sameDigest_(baseline.PUBLISH_PRICES_WEEKLY, rollback.PUBLISH_PRICES_WEEKLY) &&
+      sameDigest_(baseline.PUBLISH_PRICES_MONTHLY, rollback.PUBLISH_PRICES_MONTHLY) &&
+      sameDigest_(baseline.PUBLISH_INDUSTRY, rollback.PUBLISH_INDUSTRY) &&
+      Number(baselineAggregate.rows || 0) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_BASELINE_ROWS &&
+      Number(postCanaryAggregate.rows || 0) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_POST_CANARY_ROWS &&
+      Number(rollbackAggregate.rows || 0) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROLLBACK_ROWS &&
+      Number(rollbackAggregate.rows || 0) - Number(baselineAggregate.rows || 0) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS &&
+      Number(postCanaryAggregate.rows || 0) - Number(rollbackAggregate.rows || 0) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS &&
+      Number(baselineAggregate.columns || 0) === 29 &&
+      Number(postCanaryAggregate.columns || 0) === 29 && Number(rollbackAggregate.columns || 0) === 29 &&
+      text_(baselineAggregate.headersHash) === text_(postCanaryAggregate.headersHash) &&
+      text_(baselineAggregate.headersHash) === text_(rollbackAggregate.headersHash) &&
+      text_(baselineAggregate.hash) !== text_(postCanaryAggregate.hash) &&
+      text_(baselineAggregate.hash) !== text_(rollbackAggregate.hash) &&
+      text_(canaryOperation.operation_id) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_CANARY_OPERATION_ID &&
+      text_(canaryOperation.operation_type) === 'SOURCE_FILE_LOAD_V4' &&
+      text_(canaryOperation.status) === 'SUCCESS' && text_(canaryOperation.current_phase) === 'SUCCESS' &&
+      operationLoadId_(canaryOperation) === RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID &&
+      text_(canaryCheckpoint.handlerState && canaryCheckpoint.handlerState.loadId) === RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID &&
+      text_(canaryAggregate.status) === 'SUCCESS' &&
+      Number(canaryAggregate.expectedStageRows || 0) === 392 &&
+      Number(canaryAggregate.calculationGroupCount || 0) === 392 &&
+      (canaryAggregate.affectedSeriesKeys || []).length === 392 && !!text_(canaryAggregate.stageFingerprint) &&
+      text_(reversalOperation.operation_id) === RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID &&
+      text_(reversalOperation.operation_type) === 'RAW_REVERSAL_V4' &&
+      text_(reversalOperation.status) === 'SUCCESS' && text_(reversalOperation.current_phase) === 'SUCCESS' &&
+      operationLoadId_(reversalOperation) === text_(state.loads && state.loads.reversal) &&
+      text_(reversalAggregate.status) === 'SUCCESS' &&
+      Number(reversalAggregate.expectedStageRows || 0) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS &&
+      Number(reversalAggregate.calculationGroupCount || 0) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS &&
+      (reversalAggregate.affectedSeriesKeys || []).length === WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS &&
+      (reversalAggregate.affectedSeriesKeys || []).every(function (series) {
+        return text_(series).indexOf('AKORT_MONTHLY_DERIVED|monthly|') === 0;
+      }) &&
+      !!text_(state.artifacts && state.artifacts.dwhBackup && state.artifacts.dwhBackup.id) &&
+      !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
+  }
+
   function recoverRuntimeContextIncident() {
     return AKORT.Core.safeRun('ALPHA74_GATE6_RECOVER_RUNTIME_CONTEXT', function () {
       AKORT.EnvironmentGuard.assertDev();
@@ -1868,6 +2038,114 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         throw activationError;
       }
       return AKORT.Result.success('Alpha.7.4 Gate 6 monthly period-label incident repaired; the canary will continue from the first bounded aggregate publication checkpoint.', publicState_(state));
+    }, { lock: true, persistLogs: true, lockTimeoutMs: 60000 });
+  }
+
+  function recoverWeeklyRollbackPeriodIncident() {
+    return AKORT.Core.safeRun('ALPHA74_GATE6_RECOVER_WEEKLY_ROLLBACK_PERIOD', function () {
+      AKORT.EnvironmentGuard.assertDev();
+      var state = loadState_();
+      var alreadyPrepared = !!state && state.status === 'RUNNING' &&
+        state.phase === 'RECOVER_WEEKLY_ROLLBACK_PERIOD' &&
+        state.release === WEEKLY_ROLLBACK_PERIOD_INCIDENT_RELEASE &&
+        state.recovery && state.recovery.mode === 'WEEKLY_ROLLBACK_PERIOD_CANONICAL_REPAIR';
+      if (alreadyPrepared) {
+        ensureTrigger_();
+        return AKORT.Result.success('Alpha.7.4 Gate 6 weekly rollback recovery is already running.', publicState_(state));
+      }
+      var canaryOperationId = text_(state && state.operations && state.operations.canary);
+      var reversalOperationId = text_(state && state.operations && state.operations.reversal);
+      var canaryOperation = canaryOperationId ? operation_(canaryOperationId) : null;
+      var reversalOperation = reversalOperationId ? operation_(reversalOperationId) : null;
+      assert_(weeklyRollbackPeriodIncident_(state, canaryOperation, reversalOperation),
+        'ALPHA74_GATE6_WEEKLY_ROLLBACK_RECOVERY_SOURCE_INVALID', 'Weekly rollback recovery is restricted to the exact .30 Gate 6 +196-row incident.', {
+          stateRelease: state && state.release || '',
+          stateStatus: state && state.status || 'NOT_FOUND',
+          failedFromPhase: state && state.failedFromPhase || '',
+          lastErrorCode: state && state.lastError && state.lastError.code || '',
+          canaryOperationId: canaryOperationId,
+          reversalOperationId: reversalOperationId
+        });
+      var flags = flagState_();
+      assert_(flags.publishEngineEnabled && flags.executionEnabled && !flags.regularPipelineEnabled && !flags.userPipelineEnabled,
+        'ALPHA74_GATE6_WEEKLY_ROLLBACK_RECOVERY_FLAGS_INVALID', 'Weekly rollback recovery requires engine=TRUE, execution=TRUE, regular=FALSE and user=FALSE.', flags);
+      assert_(triggers_().length === 0, 'ALPHA74_GATE6_WEEKLY_ROLLBACK_RECOVERY_TRIGGER_ACTIVE', 'Weekly rollback recovery requires no active Gate 6 worker trigger.', {
+        triggerCount: triggers_().length
+      });
+      assertNoForeignDataOperations_(state);
+      ['dwhBackup', 'publishBackup'].forEach(function (key) {
+        DriveApp.getFileById(state.artifacts[key].id).getName();
+      });
+      var inspected = AKORT.ExistingSourceParsers.inspectFile(state.canarySource.fileId, {
+        profileId: state.canarySource.profileId || '',
+        year: state.canarySource.year || '',
+        month: state.canarySource.month || '',
+        week: state.canarySource.week || '',
+        sourcePublishedAt: state.canarySource.sourcePublishedAt || ''
+      });
+      assert_(text_(inspected.sourceHash) === text_(state.canarySource.sourceHash),
+        'ALPHA74_GATE6_WEEKLY_ROLLBACK_RECOVERY_SOURCE_CHANGED', 'The authoritative canary source changed after the .30 incident.', {
+          expectedSourceHash: state.canarySource.sourceHash,
+          actualSourceHash: inspected.sourceHash
+        });
+      var previousRecovery = clone_(state.recovery || null);
+      state.status = 'RUNNING';
+      state.phase = 'RECOVER_WEEKLY_ROLLBACK_PERIOD';
+      state.finishedAt = '';
+      state.failedFromPhase = '';
+      state.stoppedFromPhase = '';
+      state.leaseUntil = '';
+      state.consecutiveErrors = 0;
+      state.lastError = null;
+      state.recovery = {
+        mode: 'WEEKLY_ROLLBACK_PERIOD_CANONICAL_REPAIR',
+        recoveredFromRelease: WEEKLY_ROLLBACK_PERIOD_INCIDENT_RELEASE,
+        recoveredFromExecutionId: state.executionId,
+        recoveredAt: now_(),
+        operationId: canaryOperationId,
+        loadId: text_(state.loads && state.loads.canary),
+        reversalOperationId: reversalOperationId,
+        repairSeriesCursor: 0,
+        repairSeriesTotal: WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS,
+        weeklyRowsRemoved: 0,
+        weeklyRowsVerifiedAbsent: 0,
+        atomicApiCalls: 0,
+        atomicRequests: 0,
+        repairBatches: 0,
+        preservedRecoveryCopies: true,
+        preservedRawRollback: true,
+        regularPipelineKeptDisabledDuringRepair: true,
+        previousRecovery: previousRecovery
+      };
+      state.lastStep = {
+        phase: 'WEEKLY_ROLLBACK_PERIOD_RECOVERY_PREPARED',
+        operationId: canaryOperationId,
+        rowsToRepair: WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS
+      };
+      try {
+        saveState_(state);
+        writeValidation_('GATE 6 WEEKLY-ОТКАТ: ВОССТАНОВЛЕНИЕ', {
+          executionId: state.executionId,
+          operationId: canaryOperationId,
+          rowsToRepair: WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS
+        });
+        ensureTrigger_();
+      } catch (activationError) {
+        deleteTriggers_();
+        try { setRegularPipeline_(false); } catch (ignoredRegularCleanup) {}
+        state.status = 'FAILED';
+        state.phase = 'FAILED';
+        state.failedFromPhase = 'RECOVER_WEEKLY_ROLLBACK_PERIOD';
+        state.finishedAt = now_();
+        state.lastError = {
+          code: text_(activationError && activationError.code) || 'ALPHA74_GATE6_WEEKLY_ROLLBACK_RECOVERY_ACTIVATION_FAILED',
+          message: text_(activationError && activationError.message) || String(activationError),
+          details: clone_(activationError && activationError.details || null)
+        };
+        try { saveTerminalState_(state); } catch (ignoredStateCleanup) {}
+        throw activationError;
+      }
+      return AKORT.Result.success('Alpha.7.4 Gate 6 weekly rollback repair prepared; the worker will remove 196 legacy rows in bounded atomic batches and restart a clean cycle.', publicState_(state));
     }, { lock: true, persistLogs: true, lockTimeoutMs: 60000 });
   }
 
@@ -2278,6 +2556,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     resume: resume,
     recoverRuntimeContextIncident: recoverRuntimeContextIncident,
     recoverMonthlyPeriodLabelIncident: recoverMonthlyPeriodLabelIncident,
+    recoverWeeklyRollbackPeriodIncident: recoverWeeklyRollbackPeriodIncident,
     worker: worker,
     stop: stop,
     Test: Object.freeze({
@@ -2295,6 +2574,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       monthlyPeriodLabelIncident: monthlyPeriodLabelIncident_,
       rawReversalChunkIncident: rawReversalChunkIncident_,
       rollbackScanStateCapacityIncident: rollbackScanStateCapacityIncident_,
+      weeklyRollbackPeriodIncident: weeklyRollbackPeriodIncident_,
       monthlyPeriodLabelOperationPrepared: monthlyPeriodLabelOperationPrepared_,
       normalizedJsonSetting: normalizedJsonSetting_,
       compactRecovery: compactRecovery_,

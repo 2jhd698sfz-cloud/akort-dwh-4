@@ -8,13 +8,21 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * reconciliation. The default adapter is the only physical-write boundary.
  */
 AKORT.AggregateIntegration = (function () {
-  var VERSION = '4.0-aggregate-integration-6';
-  var RELEASE = '4.0.0-alpha.7.4.30';
+  var VERSION = '4.0-aggregate-integration-7';
+  var RELEASE = '4.0.0-alpha.7.4.31';
   // Invocation-local cache only. Durable truth remains in AGGREGATE_STAGE and
   // publish intents; this cache merely prevents the same 61k-row projection
   // from being downloaded once per bounded batch in a single worker run.
   var ALPHA74_TARGET_READ_CACHE = null;
   var MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE = '4.0.0-alpha.7.4.24';
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_RELEASE = '4.0.0-alpha.7.4.30';
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_OPERATION_ID = 'OP_SOURCE_FILE_LOAD_V_20260802T123451298Z_64F56FCB57D9';
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_LOAD_ID = 'LOAD_20260802T123559854Z_EFB27B040FBC';
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_STAGE_ROWS = 392;
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS = 196;
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_LABEL = '2026-W27';
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_LEGACY_PERIOD = '2026-07-04';
+  var WEEKLY_ROLLBACK_PERIOD_INCIDENT_CANONICAL_PERIOD = '2026-07-05';
   var OPERATION_SCHEMA_VERSION = '4.0-operation-2';
   var STAGE_SCHEMA_VERSION = '4.0-aggregate-stage-1';
   var TARGET_SHEET = 'PUBLISH_PRICE_AGGREGATES';
@@ -169,6 +177,37 @@ AKORT.AggregateIntegration = (function () {
     return String(frequency).toLowerCase() === 'monthly'
       ? date.getFullYear() + '-' + month
       : date.getFullYear() + '-' + month + '-' + day;
+  }
+
+  function isoWeekSundayPeriod_(value) {
+    var match = /^(\d{4})-W(\d{2})$/.exec(text_(value));
+    if (!match) return '';
+    var isoYear = Number(match[1]), isoWeek = Number(match[2]);
+    if (!isFinite(isoYear) || isoWeek < 1 || isoWeek > 53) return '';
+    var januaryFourth = new Date(Date.UTC(isoYear, 0, 4));
+    var januaryFourthDay = januaryFourth.getUTCDay() || 7;
+    var sunday = new Date(Date.UTC(
+      isoYear,
+      0,
+      4 - januaryFourthDay + 1 + (isoWeek - 1) * 7 + 6
+    ));
+    var sundayYear = sunday.getUTCFullYear();
+    var sundayMonth = ('0' + (sunday.getUTCMonth() + 1)).slice(-2);
+    var sundayDay = ('0' + sunday.getUTCDate()).slice(-2);
+    return sundayYear + '-' + sundayMonth + '-' + sundayDay;
+  }
+
+  function canonicalPublishPayload_(row) {
+    var payload = clone_(row || {});
+    if (text_(payload.frequency).toLowerCase() !== 'weekly') return payload;
+    var canonicalPeriod = isoWeekSundayPeriod_(payload.period_label);
+    if (!canonicalPeriod) return payload;
+    var parts = canonicalPeriod.split('-');
+    payload.period_start = canonicalPeriod;
+    payload.year = Number(parts[0]);
+    payload.month = Number(parts[1]);
+    payload.quarter = 'Q' + Math.ceil(Number(parts[1]) / 3);
+    return payload;
   }
 
   function publicSignature_(row) {
@@ -358,7 +397,7 @@ AKORT.AggregateIntegration = (function () {
       var value = row && row[header];
       payload[header] = value === undefined || value === null ? '' : value;
     });
-    return payload;
+    return canonicalPublishPayload_(payload);
   }
 
   function directStageRecord_(payload, action, identity) {
@@ -707,7 +746,7 @@ AKORT.AggregateIntegration = (function () {
     AKORT.AggregateContract.Headers.forEach(function (header) {
       if (projected[header] === undefined || projected[header] === null) projected[header] = '';
     });
-    return projected;
+    return canonicalPublishPayload_(projected);
   }
 
   function buildStageRecord(calculatedRow, identity) {
@@ -721,6 +760,7 @@ AKORT.AggregateIntegration = (function () {
       periodLabel: meta.periodLabel
     });
     var action = calculatedRow.publication_allowed === true ? 'UPSERT' : 'DELETE';
+    var publicationPeriod = periodKey_(publishRow.frequency, publishRow.period_start);
     var record = {
       operation_id: text_(meta.operationId),
       load_id: text_(meta.loadId),
@@ -728,8 +768,8 @@ AKORT.AggregateIntegration = (function () {
       plan_fingerprint: text_(meta.planFingerprint),
       calculation_id: text_(calculatedRow.calculation_id || meta.calculationId),
       aggregate_series_key: text_(calculatedRow.aggregate_series_key),
-      aggregate_row_key: text_(calculatedRow.aggregate_row_key),
-      period_start: periodKey_(calculatedRow.frequency, calculatedRow.period_start),
+      aggregate_row_key: text_(calculatedRow.aggregate_series_key) + '|' + publicationPeriod,
+      period_start: publicationPeriod,
       action: action,
       row_payload_json: JSON.stringify(publishRow),
       row_fingerprint: '',
@@ -2936,6 +2976,214 @@ AKORT.AggregateIntegration = (function () {
     };
   }
 
+  function weeklyRollbackIncidentStage_(options) {
+    options = options || {};
+    var identity = {
+      operationId: text_(options.operationId),
+      loadId: text_(options.loadId),
+      planId: text_(options.planId),
+      planFingerprint: text_(options.planFingerprint)
+    };
+    if (identity.operationId !== WEEKLY_ROLLBACK_PERIOD_INCIDENT_OPERATION_ID ||
+        identity.loadId !== WEEKLY_ROLLBACK_PERIOD_INCIDENT_LOAD_ID ||
+        !identity.planId || !identity.planFingerprint) {
+      throw error_('AGGREGATE_WEEKLY_ROLLBACK_RECOVERY_IDENTITY_INVALID', 'Weekly rollback recovery is restricted to the exact Gate 6 canary operation.', {
+        retryable: false,
+        operationId: identity.operationId,
+        loadId: identity.loadId
+      });
+    }
+    var staged = DefaultAdapter.readCalculatedRows(identity);
+    var validation = validateRecoveryStageSnapshot(staged, identity);
+    if (!validation.complete || validation.rowCount !== WEEKLY_ROLLBACK_PERIOD_INCIDENT_STAGE_ROWS ||
+        validation.seriesCount !== WEEKLY_ROLLBACK_PERIOD_INCIDENT_STAGE_ROWS ||
+        text_(options.stageFingerprint) !== validation.stageFingerprint) {
+      throw error_('AGGREGATE_WEEKLY_ROLLBACK_RECOVERY_STAGE_CHANGED', 'The immutable Gate 6 canary stage no longer matches the verified weekly rollback incident.', {
+        retryable: false,
+        expectedRows: WEEKLY_ROLLBACK_PERIOD_INCIDENT_STAGE_ROWS,
+        actualRows: validation.rowCount,
+        expectedFingerprint: text_(options.stageFingerprint),
+        actualFingerprint: validation.stageFingerprint,
+        seriesCount: validation.seriesCount
+      });
+    }
+    var weekly = staged.filter(function (record) {
+      var payload = parseJson_(record.row_payload_json, {}, 'AGGREGATE_STAGE_PAYLOAD_INVALID');
+      return text_(record.action) === 'UPSERT' &&
+        text_(payload.dataset_code) === 'AKORT_WEEKLY' &&
+        text_(payload.frequency).toLowerCase() === 'weekly' &&
+        text_(payload.period_label) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_LABEL &&
+        periodKey_('weekly', payload.period_start) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_LEGACY_PERIOD &&
+        isoWeekSundayPeriod_(payload.period_label) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_CANONICAL_PERIOD &&
+        text_(record.aggregate_row_key) === text_(record.aggregate_series_key) + '|' + WEEKLY_ROLLBACK_PERIOD_INCIDENT_LEGACY_PERIOD;
+    }).sort(function (left, right) {
+      return text_(left.aggregate_series_key) < text_(right.aggregate_series_key) ? -1 : 1;
+    });
+    var weeklySeries = uniqueSorted_(weekly.map(function (record) { return record.aggregate_series_key; }));
+    if (weekly.length !== WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS ||
+        weeklySeries.length !== WEEKLY_ROLLBACK_PERIOD_INCIDENT_ROWS) {
+      throw error_('AGGREGATE_WEEKLY_ROLLBACK_RECOVERY_SLICE_CHANGED', 'The canary stage does not contain the exact 196 legacy weekly publication identities.', {
+        retryable: false,
+        rows: weekly.length,
+        series: weeklySeries.length
+      });
+    }
+    return { identity: identity, staged: staged, validation: validation, weekly: weekly };
+  }
+
+  function weeklyRollbackDeleteRecord_(record) {
+    var copy = clone_(record);
+    var payload = parseJson_(copy.row_payload_json, {}, 'AGGREGATE_STAGE_PAYLOAD_INVALID');
+    payload.period_start = WEEKLY_ROLLBACK_PERIOD_INCIDENT_LEGACY_PERIOD;
+    copy.period_start = WEEKLY_ROLLBACK_PERIOD_INCIDENT_LEGACY_PERIOD;
+    copy.aggregate_row_key = text_(copy.aggregate_series_key) + '|' + WEEKLY_ROLLBACK_PERIOD_INCIDENT_LEGACY_PERIOD;
+    copy.action = 'DELETE';
+    copy.row_payload_json = JSON.stringify(payload);
+    return copy;
+  }
+
+  function weeklyRollbackTargetState_(targetRows, stageRows) {
+    var signatures = stageSeriesMap_(stageRows), legacy = {}, canonical = {};
+    (stageRows || []).forEach(function (record) {
+      legacy[text_(record.aggregate_series_key)] = 0;
+      canonical[text_(record.aggregate_series_key)] = 0;
+    });
+    (targetRows || []).forEach(function (row) {
+      var series = signatures[publicSignature_(row)] || '';
+      if (!series) return;
+      var period = periodKey_('weekly', row.period_start);
+      if (period === WEEKLY_ROLLBACK_PERIOD_INCIDENT_LEGACY_PERIOD &&
+          text_(row.period_label) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_LABEL) legacy[series] += 1;
+      if (period === WEEKLY_ROLLBACK_PERIOD_INCIDENT_CANONICAL_PERIOD &&
+          text_(row.period_label) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_LABEL) canonical[series] += 1;
+    });
+    return {
+      legacyRows: Object.keys(legacy).reduce(function (sum, key) { return sum + legacy[key]; }, 0),
+      canonicalRows: Object.keys(canonical).reduce(function (sum, key) { return sum + canonical[key]; }, 0),
+      invalidLegacySeries: Object.keys(legacy).filter(function (key) { return legacy[key] > 1; }).sort(),
+      canonicalSeries: Object.keys(canonical).filter(function (key) { return canonical[key] > 0; }).sort()
+    };
+  }
+
+  /**
+   * Bounded one-shot data repair for the exact .30 Gate 6 rollback incident.
+   *
+   * The .30 canary serialized a Moscow Sunday as the preceding UTC Saturday.
+   * Reversal correctly removed 196 monthly-derived rows but could not address
+   * these 196 weekly aggregate identities. Each call replaces at most 16
+   * complete logical series and verifies the physical read-back before moving
+   * the durable cursor.
+   */
+  function recoverWeeklyRollbackPeriodBatch(options) {
+    options = options || {};
+    if (AKORT.EnvironmentGuard && typeof AKORT.EnvironmentGuard.assertDev === 'function') {
+      AKORT.EnvironmentGuard.assertDev();
+    }
+    var settings = systemSettings_();
+    if (!truthy_(settings.PUBLISH_AGGREGATE_EXECUTION_ENABLED) ||
+        truthy_(settings.PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED) ||
+        truthy_(settings.PUBLISH_USER_PIPELINE_ENABLED)) {
+      throw error_('AGGREGATE_WEEKLY_ROLLBACK_RECOVERY_FLAGS_INVALID', 'Weekly rollback recovery requires execution=TRUE, regular=FALSE and user=FALSE.', {
+        retryable: false,
+        executionEnabled: truthy_(settings.PUBLISH_AGGREGATE_EXECUTION_ENABLED),
+        regularPipelineEnabled: truthy_(settings.PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED),
+        userPipelineEnabled: truthy_(settings.PUBLISH_USER_PIPELINE_ENABLED)
+      });
+    }
+    var incident = weeklyRollbackIncidentStage_(options);
+    var cursor = Math.max(0, Number(options.cursor || 0));
+    // Keep a deterministic batch boundary across uncertain Sheets responses.
+    // A retry must select the same complete series set even when the prior
+    // atomic request was applied but its response was lost.
+    var maximum = Math.max(1, Math.min(16, Number(options.maxSeries || 16)));
+    if (cursor > incident.weekly.length) {
+      throw error_('AGGREGATE_WEEKLY_ROLLBACK_RECOVERY_CURSOR_INVALID', 'Weekly rollback recovery cursor exceeds the immutable incident boundary.', {
+        retryable: false,
+        cursor: cursor,
+        total: incident.weekly.length
+      });
+    }
+    var selected = incident.weekly.slice(cursor, Math.min(incident.weekly.length, cursor + maximum));
+    if (!selected.length) {
+      return {
+        recoveryMode: 'WEEKLY_ROLLBACK_PERIOD_CANONICAL_REPAIR',
+        cursor: cursor,
+        total: incident.weekly.length,
+        complete: true,
+        logicalRowsRemoved: 0,
+        physicalWrite: false
+      };
+    }
+    var limits = runtimeSettings_(DefaultAdapter);
+    var deleteStage = selected.map(weeklyRollbackDeleteRecord_);
+    var targetRows = DefaultAdapter.readTargetRowsForStage(deleteStage);
+    var replacement = buildSeriesReplacement(targetRows, deleteStage);
+    if (replacement.replacementRowCount > limits.atomicMaxRows ||
+        replacement.cellCount > limits.atomicMaxCells ||
+        replacement.requestCount > limits.atomicMaxRequests) {
+      throw error_('AGGREGATE_WEEKLY_ROLLBACK_RECOVERY_LIMIT_EXCEEDED', 'The deterministic 16-series weekly rollback batch exceeds the configured atomic boundary.', {
+        retryable: false,
+        selectedSeries: selected.length,
+        replacementRows: replacement.replacementRowCount,
+        cells: replacement.cellCount,
+        requests: replacement.requestCount
+      });
+    }
+    var before = weeklyRollbackTargetState_(targetRows, deleteStage);
+    if (before.invalidLegacySeries.length || before.canonicalRows ||
+        (before.legacyRows !== selected.length && before.legacyRows !== 0)) {
+      throw error_('AGGREGATE_WEEKLY_ROLLBACK_RECOVERY_TARGET_INVALID', 'Publish is not an atomic before-state or after-state for the selected weekly recovery batch.', {
+        retryable: false,
+        requiresReview: true,
+        cursor: cursor,
+        selectedSeries: selected.length,
+        legacyRows: before.legacyRows,
+        canonicalRows: before.canonicalRows,
+        invalidLegacySeries: before.invalidLegacySeries,
+        canonicalSeries: before.canonicalSeries
+      });
+    }
+    var write = { apiCalls: 0, requests: 0, deletedRows: 0, appendedRows: 0, noOp: true };
+    if (before.legacyRows === selected.length) {
+      write = batchUpdateReplacement_(publish_(), replacement);
+      invalidateTargetReadCache_();
+    }
+    var readbackRows = DefaultAdapter.readTargetRowsForStage(deleteStage);
+    var readbackState = weeklyRollbackTargetState_(readbackRows, deleteStage);
+    var readbackReplacement = buildSeriesReplacement(readbackRows, deleteStage);
+    var latest = validateLatest(readbackRows, deleteStage);
+    if (readbackState.legacyRows || readbackState.canonicalRows ||
+        readbackReplacement.requiresPhysicalRepair ||
+        readbackReplacement.beforeFingerprint !== replacement.afterFingerprint || !latest.ok) {
+      throw error_('AGGREGATE_WEEKLY_ROLLBACK_RECOVERY_READBACK_MISMATCH', 'Weekly rollback repair did not produce the exact verified after-state.', {
+        retryable: false,
+        requiresReview: true,
+        cursor: cursor,
+        legacyRows: readbackState.legacyRows,
+        canonicalRows: readbackState.canonicalRows,
+        expectedFingerprint: replacement.afterFingerprint,
+        actualFingerprint: readbackReplacement.beforeFingerprint,
+        latestFailures: latest.failures
+      });
+    }
+    var nextCursor = cursor + selected.length;
+    return {
+      recoveryMode: 'WEEKLY_ROLLBACK_PERIOD_CANONICAL_REPAIR',
+      cursor: nextCursor,
+      total: incident.weekly.length,
+      complete: nextCursor >= incident.weekly.length,
+      seriesProcessed: selected.length,
+      verifiedRowsAbsent: selected.length,
+      logicalRowsRemoved: before.legacyRows,
+      recoveredAfterLostResponse: before.legacyRows === 0,
+      physicalWrite: Number(write.apiCalls || 0) > 0,
+      atomicApiCalls: Number(write.apiCalls || 0),
+      atomicRequests: Number(write.requests || 0),
+      physicalRowsReplaced: Number(write.deletedRows || 0),
+      physicalRowsAppended: Number(write.appendedRows || 0)
+    };
+  }
+
   function a1Column_(column) {
     var value = Math.max(1, Number(column || 1)), out = '';
     while (value > 0) {
@@ -3632,6 +3880,7 @@ AKORT.AggregateIntegration = (function () {
     assertOperationalRuntimeContext: assertOperationalRuntimeContext_,
     validateRecoveryStageSnapshot: validateRecoveryStageSnapshot,
     recoverMonthlyPeriodLabelIntent: recoverMonthlyPeriodLabelIntent,
+    recoverWeeklyRollbackPeriodBatch: recoverWeeklyRollbackPeriodBatch,
     statusSummary: statusSummary,
     Gate4: Object.freeze({
       atomicReplaceIsolated: gate4AtomicReplaceIsolated_
@@ -3654,6 +3903,9 @@ AKORT.AggregateIntegration = (function () {
       publicSignature: publicSignature_,
       fingerprintRowValues: fingerprintRowValues_,
       monthlyPeriodLabelMismatch: monthlyPeriodLabelMismatch_,
+      isoWeekSundayPeriod: isoWeekSundayPeriod_,
+      canonicalPublishPayload: canonicalPublishPayload_,
+      weeklyRollbackTargetState: weeklyRollbackTargetState_,
       buildSeriesReplacement: buildSeriesReplacement,
       atomicSeriesBatches: atomicSeriesBatches_,
       classifyRecovery: classifyRecovery,

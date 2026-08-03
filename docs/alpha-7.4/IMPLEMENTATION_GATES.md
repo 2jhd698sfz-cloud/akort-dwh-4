@@ -150,7 +150,15 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
-Release `4.0.0-alpha.7.4.30` готов к точному DEV-продолжению Gate 6. Harness
+Release `4.0.0-alpha.7.4.31` готов к точному восстановлению Gate 6 после
+fail-closed `.30 / VERIFY_ROLLBACK`: три обычных Publish-листа уже совпали с
+baseline, а Aggregates содержит ровно 196 weekly rows с legacy Saturday
+identity. `.31` удаляет только этот доказанный набор bounded atomic batches,
+проверяет read-back и автоматически перезапускает полный цикл с canonical
+Sunday identity. Нормативный операторский документ:
+`ALPHA74_31_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
+
+Release `4.0.0-alpha.7.4.30` подготовил точное DEV-продолжение Gate 6. Harness
 создаёт DWH/Publish recovery copies, выполняет canary из нового weekly/monthly
 файла через `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторную
 source-file загрузку для восстановления. Acceptance требует фактического

@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 5 ACCEPTED / GATE 6 ALPHA74.30 ROLLBACK-SCAN RECOVERY READY / USER PIPELINE PROHIBITED`
+`GATE 5 ACCEPTED / GATE 6 ALPHA74.31 WEEKLY-ROLLBACK RECOVERY READY / USER PIPELINE PROHIBITED`
 
 Дата фиксации: 3 августа 2026 года.
 
@@ -61,6 +61,12 @@
 - `GATE6_STATE_CAPACITY_RECOVERY_HOTFIX.md` — compaction вложенной recovery
   history, надёжное terminal fail-closed сохранение и exact продолжение
   остановленного `.29 / ROLLBACK_SCAN` без повторения canary и reversal.
+- `GATE6_WEEKLY_ROLLBACK_PERIOD_RECOVERY_HOTFIX.md` — exact `.30` recovery
+  196 weekly aggregate rows, ошибочно записанных на UTC-субботу вместо
+  ISO-воскресенья, с bounded atomic repair и чистым перезапуском Gate 6.
+- `ALPHA74_31_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md` — commit, `clasp push` и
+  единственная разрешённая Apps Script последовательность для текущего
+  `+196` rollback incident.
 - `ALPHA74_30_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md` — commit, `clasp push` и
   обязательная последовательность Apps Script для текущего incident.
 - `INDUSTRY_INPUT_FORM.md` — операторская форма для раздельного ввода периода
