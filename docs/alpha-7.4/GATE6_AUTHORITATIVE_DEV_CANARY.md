@@ -36,7 +36,7 @@ Canary может быть новым периодом или уточнение
 чтобы это был реальный файл, который должен остаться в DEV после успешного
 завершения Gate 6.
 
-Текущий release `.29` сохраняет канонизацию завершающей пунктуации единиц
+Текущий release `.30` сохраняет канонизацию завершающей пунктуации единиц
 из `.19`.
 Например, `10 шт` в источнике и `10 шт.` в `DIM_PRODUCTS` считаются одной
 единицей. Это parser normalization: справочник и исходный файл вручную менять
@@ -218,6 +218,18 @@ steps вместо примерно 96 малых проходов с повто
 выполнить `.29` `AKORT_alpha74Gate6Stop()` и убедиться, что ответ
 содержит `operationStopRequested=true`. Полная последовательность:
 `ALPHA74_29_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
+
+Если после terminal `SUCCESS` reversal `.29` rollback scan сохранил точные
+Weekly/Monthly digest, но остался `RUNNING / ROLLBACK_SCAN / targetIndex=2`
+при выключенном regular pipeline и без trigger/Restore, не повторять обычный
+Stop/Resume цикл. Это exact state-capacity incident: вложенная recovery history
+не оставила места для следующего digest accumulator. Один раз остановить `.29`,
+установить `.30`, выполнить общий Install, smoke test, contract scan и Status,
+затем один раз обычный `AKORT_alpha74Gate6Resume()`. Ожидаемый recovery mode:
+`ROLLBACK_SCAN_STATE_CAPACITY_RECOVERY`. Canary, reversal и завершённые
+Weekly/Monthly rollback digest не повторяются. Подробности:
+`GATE6_STATE_CAPACITY_RECOVERY_HOTFIX.md` и
+`ALPHA74_30_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
 
 Экстренная остановка: `AKORT_alpha74Gate6Stop()`. Она сохраняет исходную фазу,
 operation IDs, digest cursors и recovery-копии. После проверки причины тот же

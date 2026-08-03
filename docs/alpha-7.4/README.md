@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 5 ACCEPTED / GATE 6 MONTHLY LABEL RECOVERY READY / USER PIPELINE PROHIBITED`
+`GATE 5 ACCEPTED / GATE 6 ALPHA74.30 ROLLBACK-SCAN RECOVERY READY / USER PIPELINE PROHIBITED`
 
 Дата фиксации: 3 августа 2026 года.
 
@@ -58,6 +58,11 @@
   `period_label` на предыдущий месяц; исправление только этой пачки с
   продолжением того же operation checkpoint; `.26` исправляет runtime-ссылку
   `.25`, не дошедшую до мутаций.
+- `GATE6_STATE_CAPACITY_RECOVERY_HOTFIX.md` — compaction вложенной recovery
+  history, надёжное terminal fail-closed сохранение и exact продолжение
+  остановленного `.29 / ROLLBACK_SCAN` без повторения canary и reversal.
+- `ALPHA74_30_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md` — commit, `clasp push` и
+  обязательная последовательность Apps Script для текущего incident.
 - `INDUSTRY_INPUT_FORM.md` — операторская форма для раздельного ввода периода
   и значения активных `RAW_INDUSTRY` серий через `RAW_LOAD_V4`.
 - `GATE5_FULL_BUILD_CHUNKING_HOTFIX.md` — разбор timeout-loop
@@ -367,6 +372,16 @@ RAW reversal, Weekly/Monthly/Industry Publish, input-artifact persistence,
 calculation, staging, publication, latest, reconciliation и finalization cursors.
 Инструкция коммита, `clasp push` и Apps Script:
 `ALPHA74_29_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
+
+`.30` устраняет следующий подтверждённый operational incident. После terminal
+`SUCCESS` reversal и точных rollback digest Weekly/Monthly вложенный
+`previousRecovery` вместе с accumulator следующего read-only target превысил
+лимит 8 500 байт Script Properties. Fail-closed успел выключить regular
+pipeline, но прежний большой state остался `RUNNING`. `.30` хранит прошлые
+recovery как bounded audit-lineage, сохраняет terminal state до cleanup
+trigger и разрешает Resume только для точного остановленного
+`.29 / ROLLBACK_SCAN` checkpoint. Canary, reversal и два завершённых digest не
+повторяются. Инструкция: `GATE6_STATE_CAPACITY_RECOVERY_HOTFIX.md`.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

@@ -12,15 +12,16 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * it has no aggregate impact under the frozen Alpha.7.4 contract.
  */
 AKORT.Alpha74Gate6Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate6-acceptance-11';
+  var VERSION = '4.0-alpha74-gate6-acceptance-12';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate6-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate6-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.29';
+  var RELEASE = '4.0.0-alpha.7.4.30';
   var BASELINE_HEADER_INCIDENT_RELEASE = '4.0.0-alpha.7.4.19';
   var RUNTIME_CONTEXT_INCIDENT_RELEASE = '4.0.0-alpha.7.4.20';
   var MONOLITHIC_STAGE_INCIDENT_RELEASE = '4.0.0-alpha.7.4.22';
   var MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE = '4.0.0-alpha.7.4.24';
   var RAW_REVERSAL_CHUNK_INCIDENT_RELEASE = '4.0.0-alpha.7.4.26';
+  var ROLLBACK_SCAN_STATE_CAPACITY_INCIDENT_RELEASE = '4.0.0-alpha.7.4.29';
   var RAW_REVERSAL_CHUNK_INCIDENT_EXECUTION_ID = 'A74_GATE6_7F437567A3ABBFBE94F1';
   var RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID = 'OP_RAW_REVERSAL_V4_20260802T191111384Z_3683C13EE282';
   var RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID = 'LOAD_20260802T123559854Z_EFB27B040FBC';
@@ -35,6 +36,8 @@ AKORT.Alpha74Gate6Acceptance = (function () {
   var DIGEST_CHUNK_ROWS = 1000;
   var MAX_WORKER_STEPS = 120;
   var MAX_CONSECUTIVE_ERRORS = 3;
+  var STATE_PROPERTY_MAX_BYTES = 8500;
+  var RECOVERY_LINEAGE_MAX_ENTRIES = 8;
   var TARGETS = Object.freeze([
     'PUBLISH_PRICES_WEEKLY',
     'PUBLISH_PRICES_MONTHLY',
@@ -429,17 +432,107 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     }
   }
 
+  function recoveryLineageEntry_(recovery) {
+    recovery = recovery || {};
+    var entry = {};
+    function add_(key, value) {
+      value = text_(value);
+      if (value) entry[key] = value;
+    }
+    add_('mode', recovery.mode);
+    add_('recoveredFromRelease', recovery.recoveredFromRelease);
+    add_('recoveredFromExecutionId', recovery.recoveredFromExecutionId);
+    add_('recoveredAt', recovery.recoveredAt);
+    add_('operationId', recovery.operationId);
+    add_('loadId', recovery.loadId || recovery.targetLoadId || recovery.reversalLoadId);
+    add_('resumePhase', recovery.resumeOperationPhase || recovery.resumePhase);
+    add_('stageRecoveryBoundary', recovery.stageRecoveryBoundary);
+    return entry;
+  }
+
+  function compactRecovery_(recovery) {
+    if (!recovery || typeof recovery !== 'object') return recovery || null;
+    var current = clone_(recovery);
+    var lineage = [];
+    var seen = {};
+
+    function append_(entry) {
+      entry = recoveryLineageEntry_(entry);
+      var signature = stableStringify_(entry);
+      if (!entry.mode || seen[signature] || lineage.length >= RECOVERY_LINEAGE_MAX_ENTRIES) return;
+      seen[signature] = true;
+      lineage.push(entry);
+    }
+
+    (current.previousRecoveryLineage || []).forEach(append_);
+    var previous = current.previousRecovery || null;
+    delete current.previousRecovery;
+    delete current.previousRecoveryLineage;
+    while (previous && lineage.length < RECOVERY_LINEAGE_MAX_ENTRIES) {
+      append_(previous);
+      (previous.previousRecoveryLineage || []).forEach(append_);
+      previous = previous.previousRecovery || null;
+    }
+    if (lineage.length) current.previousRecoveryLineage = lineage;
+    return current;
+  }
+
+  function compactPersistedError_(error) {
+    if (!error) return null;
+    var details = clone_(error.details || null);
+    var serialized = stableStringify_(details);
+    if (serialized.length > 700) {
+      details = {
+        truncated: true,
+        sha256: hash_(serialized),
+        preview: serialized.slice(0, 500)
+      };
+    }
+    return {
+      code: text_(error.code) || 'ALPHA74_GATE6_UNEXPECTED_ERROR',
+      message: text_(error.message).slice(0, 700),
+      details: details,
+      stack: text_(error.stack).slice(0, 700)
+    };
+  }
+
+  function stateBytes_(state) {
+    return Utilities.newBlob(JSON.stringify(state), 'application/json').getBytes().length;
+  }
+
   function saveState_(state) {
+    state.recovery = compactRecovery_(state.recovery || null);
+    if (state.lastError) state.lastError = compactPersistedError_(state.lastError);
+    if (state.lastStep && state.lastStep.error) {
+      state.lastStep.error = compactPersistedError_(state.lastStep.error);
+    }
     state.updatedAt = now_();
     var json = JSON.stringify(state);
-    var bytes = Utilities.newBlob(json, 'application/json').getBytes().length;
-    assert_(bytes <= 8500, 'ALPHA74_GATE6_STATE_TOO_LARGE', 'Gate 6 checkpoint exceeds the safe Script Properties size.', {
+    var bytes = stateBytes_(state);
+    assert_(bytes <= STATE_PROPERTY_MAX_BYTES, 'ALPHA74_GATE6_STATE_TOO_LARGE', 'Gate 6 checkpoint exceeds the safe Script Properties size.', {
       bytes: bytes,
-      maximum: 8500,
+      maximum: STATE_PROPERTY_MAX_BYTES,
       retryable: false
     });
     PropertiesService.getScriptProperties().setProperty(STATE_PROPERTY, json);
     return state;
+  }
+
+  function saveTerminalState_(state) {
+    try {
+      return saveState_(state);
+    } catch (firstError) {
+      if (!firstError || firstError.code !== 'ALPHA74_GATE6_STATE_TOO_LARGE') throw firstError;
+      if (state.scan && state.scan.work) {
+        state.scan.work = null;
+        state.lastStep = state.lastStep || {};
+        state.lastStep.readOnlyScanTargetRestartRequired = true;
+      }
+      state.lastError = compactPersistedError_(state.lastError || firstError);
+      var lineage = state.recovery && state.recovery.previousRecoveryLineage || [];
+      while (lineage.length && stateBytes_(state) > STATE_PROPERTY_MAX_BYTES) lineage.pop();
+      return saveState_(state);
+    }
   }
 
   function triggers_() {
@@ -1492,6 +1585,35 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
   }
 
+  function rollbackScanStateCapacityIncident_(state, reversalOperation) {
+    var scan = state && state.scan || {};
+    var digests = state && state.digests || {};
+    var baseline = digests.baseline || {};
+    var rollback = digests.rollback || {};
+    return !!state && !!reversalOperation &&
+      state.stateSchemaVersion === STATE_SCHEMA &&
+      state.release === ROLLBACK_SCAN_STATE_CAPACITY_INCIDENT_RELEASE &&
+      state.executionId === RAW_REVERSAL_CHUNK_INCIDENT_EXECUTION_ID &&
+      state.status === 'STOPPED' && state.phase === 'STOPPED' &&
+      state.stoppedFromPhase === 'ROLLBACK_SCAN' &&
+      text_(state.operations && state.operations.reversal) === RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID &&
+      !text_(state.operations && state.operations.restore) &&
+      text_(state.loads && state.loads.canary) === RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID &&
+      !!text_(state.loads && state.loads.reversal) && !text_(state.loads && state.loads.restore) &&
+      state.acceptance && state.acceptance.canaryOperationAccepted === true &&
+      state.acceptance.reversalOperationAccepted === true &&
+      scan.schemaVersion === '4.0-alpha74-gate6-scan-1' && scan.bucket === 'rollback' &&
+      Number(scan.targetIndex || 0) === 2 && !scan.work &&
+      sameDigest_(baseline.PUBLISH_PRICES_WEEKLY, rollback.PUBLISH_PRICES_WEEKLY) &&
+      sameDigest_(baseline.PUBLISH_PRICES_MONTHLY, rollback.PUBLISH_PRICES_MONTHLY) &&
+      !rollback.PUBLISH_INDUSTRY && !rollback.PUBLISH_PRICE_AGGREGATES &&
+      text_(reversalOperation.operation_id) === RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID &&
+      text_(reversalOperation.operation_type) === 'RAW_REVERSAL_V4' &&
+      text_(reversalOperation.status) === 'SUCCESS' && text_(reversalOperation.current_phase) === 'SUCCESS' &&
+      !!text_(state.artifacts && state.artifacts.dwhBackup && state.artifacts.dwhBackup.id) &&
+      !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
+  }
+
   function recoverRuntimeContextIncident() {
     return AKORT.Core.safeRun('ALPHA74_GATE6_RECOVER_RUNTIME_CONTEXT', function () {
       AKORT.EnvironmentGuard.assertDev();
@@ -1771,6 +1893,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         );
       }
       var rawReversalChunkIncident = rawReversalChunkIncident_(state, reversalOperation, reversalInspection);
+      var rollbackScanStateCapacityIncident = rollbackScanStateCapacityIncident_(state, reversalOperation);
       var manuallyStopped = state && state.status === 'STOPPED' && text_(state.stoppedFromPhase);
       assert_(baselineIncident || manuallyStopped,
         'ALPHA74_GATE6_RESUME_STATE_INVALID', 'Gate 6 Resume requires a manually stopped checkpoint or the exact Alpha.7.4.19 baseline-header incident.', {
@@ -1779,13 +1902,14 @@ AKORT.Alpha74Gate6Acceptance = (function () {
           failedFromPhase: state ? state.failedFromPhase || '' : '',
           baselineHeaderIncident: baselineIncident
         });
-      assert_(baselineIncident || monolithicStageIncident || rawReversalChunkIncident ||
+      assert_(baselineIncident || monolithicStageIncident || rawReversalChunkIncident || rollbackScanStateCapacityIncident ||
         (state.stateSchemaVersion === STATE_SCHEMA && state.release === RELEASE),
         'ALPHA74_GATE6_RESUME_SCHEMA_INVALID', 'Gate 6 checkpoint is not compatible with this release.', {
           stateSchemaVersion: state.stateSchemaVersion,
           release: state.release,
           monolithicStageIncident: monolithicStageIncident,
-          rawReversalChunkIncident: rawReversalChunkIncident
+          rawReversalChunkIncident: rawReversalChunkIncident,
+          rollbackScanStateCapacityIncident: rollbackScanStateCapacityIncident
         });
       var flags = flagState_();
       assert_(flags.publishEngineEnabled && flags.executionEnabled && !flags.regularPipelineEnabled && !flags.userPipelineEnabled,
@@ -1922,7 +2046,31 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         };
         state.release = RELEASE;
       }
-      if (['BASELINE_SCAN', 'ARM_CANARY'].indexOf(resumePhase) < 0) setRegularPipeline_(true);
+      if (rollbackScanStateCapacityIncident) {
+        state.recovery = {
+          mode: 'ROLLBACK_SCAN_STATE_CAPACITY_RECOVERY',
+          recoveredFromRelease: state.release,
+          recoveredFromExecutionId: state.executionId,
+          recoveredAt: now_(),
+          operationId: reversalOperationId,
+          loadId: text_(state.loads && state.loads.reversal),
+          resumeOperationPhase: 'ROLLBACK_SCAN',
+          preservedRecoveryCopies: true,
+          preservedCanaryOperation: true,
+          preservedReversalOperation: true,
+          preservedRollbackTargets: ['PUBLISH_PRICES_WEEKLY', 'PUBLISH_PRICES_MONTHLY'],
+          repeatedCanary: false,
+          repeatedReversal: false,
+          readOnlyTargetToRestart: 'PUBLISH_INDUSTRY',
+          statePropertyMaxBytes: STATE_PROPERTY_MAX_BYTES,
+          previousRecovery: clone_(state.recovery || null)
+        };
+        state.release = RELEASE;
+      }
+      if (['BASELINE_SCAN', 'ARM_CANARY'].indexOf(resumePhase) < 0) {
+        setRegularPipeline_(true);
+        state.regularPipelineEnabledAt = now_();
+      }
       state.status = 'RUNNING';
       state.phase = resumePhase;
       state.finishedAt = '';
@@ -1935,7 +2083,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         resumePhase: resumePhase,
         resumedAt: now_(),
         recoveryMode: baselineIncident ? 'BASELINE_HEADER_CONTRACT_RECOVERY' :
-          monolithicStageIncident || rawReversalChunkIncident ? state.recovery.mode : 'MANUAL_STOP_RESUME'
+          monolithicStageIncident || rawReversalChunkIncident || rollbackScanStateCapacityIncident ? state.recovery.mode : 'MANUAL_STOP_RESUME'
       };
       saveState_(state);
       writeValidation_('GATE 6 ВОЗОБНОВЛЁН', { executionId: state.executionId, phase: resumePhase });
@@ -2006,14 +2154,14 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     }
     try { setRegularPipeline_(false); } catch (ignoredRegular) {}
     try { setUserPipeline_(false); } catch (ignoredUser) {}
-    deleteTriggers_();
     state.failedFromPhase = state.phase;
     state.status = 'FAILED';
     state.phase = 'FAILED';
     state.finishedAt = now_();
     state.leaseUntil = '';
     state.lastStep = { phase: 'FAILED', error: normalized };
-    saveState_(state);
+    saveTerminalState_(state);
+    try { deleteTriggers_(); } catch (ignoredTriggerCleanup) {}
     try { writeValidation_('GATE 6 FAILED', { executionId: state.executionId, error: normalized }); } catch (ignoredValidation) {}
     return AKORT.Result.failure(normalized.code, 'Gate 6 failed closed. Regular and user pipelines were disabled; recovery copies were preserved.', publicState_(state));
   }
@@ -2146,8 +2294,11 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       stageRecoveryBoundary: stageRecoveryBoundary_,
       monthlyPeriodLabelIncident: monthlyPeriodLabelIncident_,
       rawReversalChunkIncident: rawReversalChunkIncident_,
+      rollbackScanStateCapacityIncident: rollbackScanStateCapacityIncident_,
       monthlyPeriodLabelOperationPrepared: monthlyPeriodLabelOperationPrepared_,
       normalizedJsonSetting: normalizedJsonSetting_,
+      compactRecovery: compactRecovery_,
+      compactPersistedError: compactPersistedError_,
       compareDigests: compareDigests_,
       changedTargets: changedTargets_,
       operationSummary: operationSummary_,

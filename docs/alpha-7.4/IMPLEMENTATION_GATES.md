@@ -150,7 +150,7 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
-Release `4.0.0-alpha.7.4.29` готов к точному DEV-продолжению Gate 6. Harness
+Release `4.0.0-alpha.7.4.30` готов к точному DEV-продолжению Gate 6. Harness
 создаёт DWH/Publish recovery copies, выполняет canary из нового weekly/monthly
 файла через `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторную
 source-file загрузку для восстановления. Acceptance требует фактического
@@ -202,6 +202,15 @@ artifact persistence и все aggregate cursors. Поэтому bounded steps W
 Monthly, Industry и aggregates выполняются последовательно в одном
 worker budget, пока есть реальный durable progress. Операционный runbook:
 `ALPHA74_29_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
+
+`.30` закрывает state-capacity incident после успешного reversal. Накопленная
+вложенная `previousRecovery` history вместе с очередным digest accumulator
+превысила безопасный лимит Script Properties. Новый bounded audit-lineage
+сохраняет происхождение recovery без полного вложенного payload; terminal
+fail-closed state записывается до trigger cleanup. Exact allowlist продолжает
+только остановленный `.29 / ROLLBACK_SCAN` с уже принятыми Weekly/Monthly
+rollback digest и terminal reversal `SUCCESS`. Инструкция:
+`GATE6_STATE_CAPACITY_RECOVERY_HOTFIX.md`.
 Первый `.23` Resume корректно отказался продолжать, потому что старый `.22`
 успел записать `STAGED` для всех 392 строк, но потерял ответ до сохранения
 operation checkpoint. `.24` принимает это exact after-state только при нулевых

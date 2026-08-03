@@ -214,7 +214,7 @@ test('physical mock adopts 8 live rows, finishes in bounded chunks and finalizes
     load() { return { resources: { dwhSpreadsheetId: 'DWH' } }; },
     readSystemSettings() { return { RAW_REVERSAL_CHUNK_ROWS: 10 }; }
   };
-  context.AKORT.Release = { version: '4.0.0-alpha.7.4.29', rawSchemaVersion: '4.0-raw-1' };
+  context.AKORT.Release = { version: '4.0.0-alpha.7.4.30', rawSchemaVersion: '4.0-raw-1' };
   context.AKORT.Core.now = () => '2026-08-03T00:00:00.000Z';
   context.AKORT.Core.safeJson = JSON.stringify;
   context.AKORT.Core.Sheets = {

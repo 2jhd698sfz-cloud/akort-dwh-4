@@ -91,8 +91,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-11');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.29');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-12');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.30');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -387,6 +387,89 @@ test('exact stopped Alpha.7.4.26 partial RAW reversal is eligible for durable ch
   assert.equal(G.Test.rawReversalChunkIncident(state, aggregateStarted, inspection), false);
 });
 
+test('exact stopped Alpha.7.4.29 rollback scan capacity incident resumes only after accepted reversal', () => {
+  const operationId = 'OP_RAW_REVERSAL_V4_20260802T191111384Z_3683C13EE282';
+  const targetLoadId = 'LOAD_20260802T123559854Z_EFB27B040FBC';
+  const weekly = digest([['WEEKLY', 1]]);
+  const monthly = digest([['MONTHLY', 1]]);
+  const state = {
+    stateSchemaVersion: '4.0-alpha74-gate6-state-1',
+    release: '4.0.0-alpha.7.4.29',
+    executionId: 'A74_GATE6_7F437567A3ABBFBE94F1',
+    status: 'STOPPED',
+    phase: 'STOPPED',
+    stoppedFromPhase: 'ROLLBACK_SCAN',
+    operations: { canary: 'OP_CANARY', reversal: operationId, restore: '' },
+    loads: { canary: targetLoadId, reversal: 'LOAD_REVERSAL', restore: '' },
+    artifacts: { dwhBackup: { id: 'DWH_BACKUP' }, publishBackup: { id: 'PUBLISH_BACKUP' } },
+    digests: {
+      baseline: { PUBLISH_PRICES_WEEKLY: weekly, PUBLISH_PRICES_MONTHLY: monthly },
+      rollback: { PUBLISH_PRICES_WEEKLY: weekly, PUBLISH_PRICES_MONTHLY: monthly }
+    },
+    scan: {
+      schemaVersion: '4.0-alpha74-gate6-scan-1',
+      bucket: 'rollback',
+      targetIndex: 2,
+      work: null
+    },
+    acceptance: { canaryOperationAccepted: true, reversalOperationAccepted: true }
+  };
+  const operation = {
+    operation_id: operationId,
+    operation_type: 'RAW_REVERSAL_V4',
+    status: 'SUCCESS',
+    current_phase: 'SUCCESS'
+  };
+  assert.equal(G.Test.rollbackScanStateCapacityIncident(state, operation), true);
+  const restoreStarted = JSON.parse(JSON.stringify(state));
+  restoreStarted.operations.restore = 'OP_RESTORE';
+  assert.equal(G.Test.rollbackScanStateCapacityIncident(restoreStarted, operation), false);
+  const industryStarted = JSON.parse(JSON.stringify(state));
+  industryStarted.scan.work = { target: 'PUBLISH_INDUSTRY', cursor: 1000 };
+  assert.equal(G.Test.rollbackScanStateCapacityIncident(industryStarted, operation), false);
+  const reversalNotAccepted = JSON.parse(JSON.stringify(state));
+  reversalNotAccepted.acceptance.reversalOperationAccepted = false;
+  assert.equal(G.Test.rollbackScanStateCapacityIncident(reversalNotAccepted, operation), false);
+});
+
+test('Gate 6 compacts nested recovery history into bounded audit lineage', () => {
+  const recovery = {
+    mode: 'DURABLE_RAW_REVERSAL_CHUNK_RECOVERY',
+    recoveredFromRelease: '4.0.0-alpha.7.4.26',
+    operationId: 'OP_REVERSAL',
+    durableCursorSource: 'RAW_REVERSAL_LOG_SUCCESS_OBSERVATION_IDS',
+    previousRecovery: {
+      mode: 'MONTHLY_PERIOD_LABEL_READBACK_RECOVERY',
+      recoveredFromRelease: '4.0.0-alpha.7.4.24',
+      operationId: 'OP_CANARY',
+      repairedBatchKey: 'SERIES_000001_000032',
+      previousRecovery: {
+        mode: 'BOUNDED_STAGE_AFTER_STATE_RECOVERY',
+        recoveredFromRelease: '4.0.0-alpha.7.4.22',
+        operationId: 'OP_CANARY',
+        validatedStageFingerprint: 'X'.repeat(2000),
+        previousRecovery: {
+          mode: 'OPERATIONAL_RUNTIME_CONTEXT_CHECKPOINT_RECOVERY',
+          recoveredFromRelease: '4.0.0-alpha.7.4.20',
+          operationId: 'OP_CANARY'
+        }
+      }
+    }
+  };
+  const compacted = JSON.parse(JSON.stringify(G.Test.compactRecovery(recovery)));
+  assert.equal(compacted.mode, 'DURABLE_RAW_REVERSAL_CHUNK_RECOVERY');
+  assert.equal(compacted.previousRecovery, undefined);
+  assert.deepEqual(
+    compacted.previousRecoveryLineage.map(item => item.mode),
+    [
+      'MONTHLY_PERIOD_LABEL_READBACK_RECOVERY',
+      'BOUNDED_STAGE_AFTER_STATE_RECOVERY',
+      'OPERATIONAL_RUNTIME_CONTEXT_CHECKPOINT_RECOVERY'
+    ]
+  );
+  assert(Buffer.byteLength(JSON.stringify(compacted), 'utf8') < 1800);
+});
+
 test('an already stopped Gate 6 checkpoint still routes its active operation for an idempotent stop request', () => {
   const state = {
     status: 'STOPPED',
@@ -577,6 +660,9 @@ test('source contract contains source-file canary, recovery copies, standard rol
   assert(source.includes('BOUNDED_STAGE_AFTER_STATE_RECOVERY'));
   assert(source.includes('MONTHLY_PERIOD_LABEL_READBACK_RECOVERY'));
   assert(source.includes('DURABLE_RAW_REVERSAL_CHUNK_RECOVERY'));
+  assert(source.includes('ROLLBACK_SCAN_STATE_CAPACITY_RECOVERY'));
+  assert(source.includes('previousRecoveryLineage'));
+  assert(source.indexOf('saveTerminalState_(state);') < source.indexOf('try { deleteTriggers_(); } catch (ignoredTriggerCleanup) {}'));
   assert(source.includes('validateRecoveryStageSnapshot'));
   assert(source.includes('recoverMonthlyPeriodLabelIntent'));
   assert(source.includes('AKORT.OperationEngine.recoverFailedPhase'));

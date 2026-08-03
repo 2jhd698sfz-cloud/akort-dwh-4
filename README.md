@@ -6,7 +6,7 @@ Apps Script data pipeline for the AKORT analytical system.
 
 Active milestone: **Alpha.7.4 — Aggregate Integration into Existing Operation Engine**.
 
-Status: `GATE 5 ACCEPTED / GATE 6 MONTHLY LABEL RECOVERY READY / USER PIPELINE PROHIBITED`.
+Status: `GATE 5 ACCEPTED / GATE 6 ALPHA74.30 ROLLBACK-SCAN RECOVERY READY / USER PIPELINE PROHIBITED`.
 
 Accepted base:
 
@@ -36,6 +36,13 @@ See [`docs/alpha-7.4/README.md`](docs/alpha-7.4/README.md).
 The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 5 is accepted with exact 61,636-row parity across baseline, live snapshot, full build and sequential replay. Gate 6 adds recovery copies and a fail-closed three-cycle authoritative DEV canary using one new weekly/monthly source file: source-file load, standard logical reversal and source-file restore. Acceptance requires a real change in `PUBLISH_PRICE_AGGREGATES`.
 
 Gate 6 may enable the regular aggregate pipeline only inside its controlled harness. General operator submission remains prohibited until Gate 7 through `PUBLISH_USER_PIPELINE_ENABLED=FALSE`.
+
+Release `4.0.0-alpha.7.4.30` compacts the accumulated Gate 6 recovery history
+below the Script Properties value limit, persists terminal fail-closed state
+before trigger cleanup and exactly resumes the stopped `.29 / ROLLBACK_SCAN`
+checkpoint. Canary, accepted reversal and completed Weekly/Monthly rollback
+digests are preserved. Runbook:
+[`GATE6_STATE_CAPACITY_RECOVERY_HOTFIX.md`](docs/alpha-7.4/GATE6_STATE_CAPACITY_RECOVERY_HOTFIX.md).
 
 Release `4.0.0-alpha.7.4.26` fixes the verified first-batch monthly calendar
 incident: `period_start=2026-07-01` was physically written with
