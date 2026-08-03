@@ -12,10 +12,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * it has no aggregate impact under the frozen Alpha.7.4 contract.
  */
 AKORT.Alpha74Gate6Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate6-acceptance-14';
+  var VERSION = '4.0-alpha74-gate6-acceptance-15';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate6-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate6-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.32';
+  var RELEASE = '4.0.0-alpha.7.4.33';
   var BASELINE_HEADER_INCIDENT_RELEASE = '4.0.0-alpha.7.4.19';
   var RUNTIME_CONTEXT_INCIDENT_RELEASE = '4.0.0-alpha.7.4.20';
   var MONOLITHIC_STAGE_INCIDENT_RELEASE = '4.0.0-alpha.7.4.22';
@@ -23,6 +23,15 @@ AKORT.Alpha74Gate6Acceptance = (function () {
   var RAW_REVERSAL_CHUNK_INCIDENT_RELEASE = '4.0.0-alpha.7.4.26';
   var ROLLBACK_SCAN_STATE_CAPACITY_INCIDENT_RELEASE = '4.0.0-alpha.7.4.29';
   var WEEKLY_ROLLBACK_PERIOD_INCIDENT_RELEASE = '4.0.0-alpha.7.4.30';
+  var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RELEASE = '4.0.0-alpha.7.4.32';
+  var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_EXECUTION_ID = 'A74_GATE6_37FAED6EF952F9BB5FD4';
+  var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_CANARY_OPERATION_ID = 'OP_SOURCE_FILE_LOAD_V_20260803T123050299Z_BAD1844BD339';
+  var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_OPERATION_ID = 'OP_RAW_REVERSAL_V4_20260803T133248118Z_82520905BF9A';
+  var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_TARGET_LOAD_ID = 'LOAD_20260803T123127832Z_3F2F34DAD46B';
+  var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_REVERSAL_LOAD_ID = 'LOAD_REV_56A66E1F8870698F19AC0F3093F9';
+  var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_SOURCE_HASH = '5be97a7ca1743062394c3675f8d00228c3e5d287a35edeafee2b7866c4e74bde';
+  var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RAW_ROWS = 50;
+  var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_STAGE_ROWS = 392;
   var WEEKLY_ROLLBACK_PERIOD_INCIDENT_CANARY_OPERATION_ID = 'OP_SOURCE_FILE_LOAD_V_20260802T123451298Z_64F56FCB57D9';
   var WEEKLY_ROLLBACK_PERIOD_INCIDENT_BASELINE_ROWS = 61636;
   var WEEKLY_ROLLBACK_PERIOD_INCIDENT_POST_CANARY_ROWS = 62028;
@@ -1822,6 +1831,97 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
   }
 
+  function reversalCheckpointCapacityIncident_(state, operation, inspection) {
+    var checkpoint = operation && operation.checkpoint || {};
+    var completed = checkpoint.completedPhases || [];
+    var control = checkpoint.control || {};
+    var aggregate = checkpoint.aggregate || {};
+    var raw = checkpoint.rawStore || {};
+    var reversal = raw.reversal || {};
+    var records = reversal.records || [];
+    var publish = raw.publishUpdate || {};
+    var baselineAggregate = state && state.digests && state.digests.baseline &&
+      state.digests.baseline.PUBLISH_PRICE_AGGREGATES || {};
+    var postCanaryAggregate = state && state.digests && state.digests.postCanary &&
+      state.digests.postCanary.PUBLISH_PRICE_AGGREGATES || {};
+    var changedTargets = state && state.acceptance && state.acceptance.canaryChangedTargets || [];
+    var requiredCompleted = [
+      'DISCOVER', 'VALIDATE', 'PARSE', 'STAGE', 'COMMIT_RAW', 'UPDATE_PUBLISH',
+      'PREPARING_AGGREGATE_IMPACT', 'MATERIALIZING_AGGREGATE_INPUTS',
+      'CALCULATING_AGGREGATE_SLICES'
+    ];
+    return !!state && !!operation && !!inspection &&
+      state.stateSchemaVersion === STATE_SCHEMA &&
+      state.release === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RELEASE &&
+      state.executionId === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_EXECUTION_ID &&
+      state.status === 'STOPPED' && state.phase === 'STOPPED' && state.stoppedFromPhase === 'RUN_REVERSAL' &&
+      text_(state.operations && state.operations.reversal) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_OPERATION_ID &&
+      text_(state.operations && state.operations.canary) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_CANARY_OPERATION_ID &&
+      !text_(state.operations && state.operations.restore) &&
+      text_(state.loads && state.loads.canary) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_TARGET_LOAD_ID &&
+      !text_(state.loads && state.loads.reversal) && !text_(state.loads && state.loads.restore) &&
+      state.acceptance && state.acceptance.canaryOperationAccepted === true &&
+      stableStringify_(changedTargets.slice().sort()) === stableStringify_([
+        'PUBLISH_PRICE_AGGREGATES', 'PUBLISH_PRICES_MONTHLY', 'PUBLISH_PRICES_WEEKLY'
+      ].sort()) &&
+      text_(state.canarySource && state.canarySource.sourceHash) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_SOURCE_HASH &&
+      text_(state.canarySource && state.canarySource.targetTable) === 'RAW_PRICES_WEEKLY' &&
+      Number(state.canarySource && state.canarySource.normalizedRowCount || 0) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RAW_ROWS &&
+      Number(baselineAggregate.rows || 0) === 61636 && Number(postCanaryAggregate.rows || 0) === 62028 &&
+      text_(operation.operation_id) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_OPERATION_ID &&
+      text_(operation.operation_type) === 'RAW_REVERSAL_V4' &&
+      text_(operation.release_version) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RELEASE &&
+      ['PAUSED', 'RUNNING'].indexOf(text_(operation.status)) >= 0 &&
+      text_(operation.current_phase) === 'STAGING_AGGREGATE_ROWS' &&
+      text_(checkpoint.nextPhase) === 'STAGING_AGGREGATE_ROWS' && control.stopRequested === true &&
+      requiredCompleted.every(function (phase) { return completed.indexOf(phase) >= 0; }) &&
+      completed.indexOf('STAGING_AGGREGATE_ROWS') < 0 &&
+      text_(raw.loadId) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_REVERSAL_LOAD_ID &&
+      text_(reversal.targetLoadId) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_TARGET_LOAD_ID &&
+      text_(reversal.reversalLoadId) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_REVERSAL_LOAD_ID &&
+      Number(reversal.reversedRows || 0) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RAW_ROWS &&
+      Array.isArray(records) && records.length === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RAW_ROWS &&
+      records.every(function (record) {
+        return text_(record.operation_id) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_OPERATION_ID &&
+          text_(record.target_load_id) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_TARGET_LOAD_ID &&
+          text_(record.reversal_load_id) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_REVERSAL_LOAD_ID &&
+          text_(record.target_table) === 'RAW_PRICES_WEEKLY' && text_(record.status) === 'SUCCESS';
+      }) &&
+      publish.complete === true && Number(publish.weeklyRows || 0) === 13100 &&
+      Number(publish.monthlyRows || 0) === 3100 && Number(publish.industryRows || 0) === 0 &&
+      Number(publish.publishRows || 0) === 16200 &&
+      text_(aggregate.status) === 'CALCULATED' &&
+      Number(aggregate.materializationCursor || 0) === 72 && Number(aggregate.materializationTotal || 0) === 72 &&
+      Number(aggregate.calculationCursor || 0) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_STAGE_ROWS &&
+      Number(aggregate.calculationGroupCount || 0) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_STAGE_ROWS &&
+      Number(aggregate.stagingCursor || 0) === 0 && !text_(aggregate.stageFingerprint) &&
+      Number(aggregate.expectedStageRows || 0) === 0 && Number(aggregate.publishSeriesCursor || 0) === 0 &&
+      !(aggregate.publishBatches || []).length &&
+      text_(inspection.operationId) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_OPERATION_ID &&
+      text_(inspection.targetLoadId) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_TARGET_LOAD_ID &&
+      text_(inspection.reversalLoadId) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_REVERSAL_LOAD_ID &&
+      text_(inspection.targetTable) === 'RAW_PRICES_WEEKLY' && text_(inspection.targetLoadStatus) === 'REVERSED' &&
+      Number(inspection.totalRows || 0) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RAW_ROWS &&
+      Number(inspection.completedRows || 0) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RAW_ROWS &&
+      Number(inspection.pendingRows || 0) === 0 && inspection.complete === true &&
+      !!text_(state.artifacts && state.artifacts.dwhBackup && state.artifacts.dwhBackup.id) &&
+      !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
+  }
+
+  function reversalCheckpointCapacityStage_(rows) {
+    var calculated = (rows || []).filter(function (row) {
+      return text_(row.aggregate_series_key).indexOf('__') !== 0;
+    });
+    var intents = (rows || []).filter(function (row) { return text_(row.action) === 'PUBLISH_INTENT'; });
+    var exact = calculated.length === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_STAGE_ROWS && intents.length === 0 &&
+      calculated.every(function (row) {
+        return text_(row.stage_status) === 'STAGED' &&
+          text_(row.release_version) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RELEASE &&
+          !text_(row.expected_target_fingerprint) && !text_(row.verified_at);
+      });
+    return { exact: exact, calculated: calculated, publishIntents: intents.length };
+  }
+
   function recoverRuntimeContextIncident() {
     return AKORT.Core.safeRun('ALPHA74_GATE6_RECOVER_RUNTIME_CONTEXT', function () {
       AKORT.EnvironmentGuard.assertDev();
@@ -2184,6 +2284,165 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         throw activationError;
       }
       return AKORT.Result.success('Alpha.7.4 Gate 6 weekly rollback repair prepared; the worker will remove 196 legacy rows in bounded atomic batches and restart a clean cycle.', publicState_(state));
+    }, { lock: true, persistLogs: true, lockTimeoutMs: 60000 });
+  }
+
+  function recoverReversalCheckpointCapacityIncident() {
+    return AKORT.Core.safeRun('ALPHA74_GATE6_RECOVER_REVERSAL_CHECKPOINT_CAPACITY', function () {
+      AKORT.EnvironmentGuard.assertDev();
+      var state = loadState_();
+      var operationId = text_(state && state.operations && state.operations.reversal);
+      var operation = operationId ? operation_(operationId) : null;
+      var inspection = operationId ? AKORT.RawStore.inspectReversal(
+        REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_TARGET_LOAD_ID,
+        operationId
+      ) : null;
+      assert_(reversalCheckpointCapacityIncident_(state, operation, inspection),
+        'ALPHA74_GATE6_REVERSAL_CAPACITY_RECOVERY_SOURCE_INVALID', 'Reversal checkpoint recovery is restricted to the exact stopped .32 Gate 6 staging-capacity incident.', {
+          stateRelease: state && state.release || '',
+          stateExecutionId: state && state.executionId || '',
+          stateStatus: state && state.status || 'NOT_FOUND',
+          stoppedFromPhase: state && state.stoppedFromPhase || '',
+          operationId: operationId,
+          operationStatus: operation && operation.status || '',
+          operationPhase: operation && operation.current_phase || ''
+        });
+      var flags = flagState_();
+      assert_(flags.publishEngineEnabled && flags.executionEnabled && !flags.regularPipelineEnabled && !flags.userPipelineEnabled,
+        'ALPHA74_GATE6_REVERSAL_CAPACITY_RECOVERY_FLAGS_INVALID', 'Reversal checkpoint recovery requires engine=TRUE, execution=TRUE, regular=FALSE and user=FALSE.', flags);
+      assert_(triggers_().length === 0,
+        'ALPHA74_GATE6_REVERSAL_CAPACITY_RECOVERY_TRIGGER_ACTIVE', 'Reversal checkpoint recovery requires no active Gate 6 worker trigger.', {
+          triggerCount: triggers_().length
+        });
+      assertNoForeignDataOperations_(state);
+      ['dwhBackup', 'publishBackup'].forEach(function (key) {
+        DriveApp.getFileById(state.artifacts[key].id).getName();
+      });
+      var inspectedSource = AKORT.ExistingSourceParsers.inspectFile(state.canarySource.fileId, {
+        profileId: state.canarySource.profileId || '',
+        year: state.canarySource.year || '',
+        month: state.canarySource.month || '',
+        week: state.canarySource.week || '',
+        sourcePublishedAt: state.canarySource.sourcePublishedAt || ''
+      });
+      assert_(text_(inspectedSource.sourceHash) === text_(state.canarySource.sourceHash),
+        'ALPHA74_GATE6_REVERSAL_CAPACITY_RECOVERY_SOURCE_CHANGED', 'The Gate 6 canary source changed after the stopped reversal checkpoint.', {
+          expectedSourceHash: state.canarySource.sourceHash,
+          actualSourceHash: inspectedSource.sourceHash
+        });
+
+      var stageRows = aggregateStageRowsForOperation_(operationId);
+      var stageBoundary = reversalCheckpointCapacityStage_(stageRows);
+      assert_(stageBoundary.exact,
+        'ALPHA74_GATE6_REVERSAL_CAPACITY_STAGE_BOUNDARY_INVALID', 'Durable reversal aggregate stage no longer matches the exact pre-publication boundary.', {
+          operationId: operationId,
+          expectedCalculatedRows: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_STAGE_ROWS,
+          actualCalculatedRows: stageBoundary.calculated.length,
+          publishIntents: stageBoundary.publishIntents,
+          statuses: stageBoundary.calculated.map(function (row) { return text_(row.stage_status); }).filter(function (value, index, values) {
+            return values.indexOf(value) === index;
+          })
+        });
+      var aggregate = operation.checkpoint && operation.checkpoint.aggregate || {};
+      var validation = AKORT.AggregateIntegration.validateRecoveryStageSnapshot(stageBoundary.calculated, {
+        operationId: operationId,
+        loadId: operationLoadId_(operation),
+        planId: text_(aggregate.planId),
+        planFingerprint: text_(aggregate.planFingerprint)
+      });
+      assert_(validation.complete === true &&
+        Number(validation.rowCount || 0) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_STAGE_ROWS &&
+        Number(validation.seriesCount || 0) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_STAGE_ROWS,
+        'ALPHA74_GATE6_REVERSAL_CAPACITY_STAGE_VALIDATION_FAILED', 'Durable reversal aggregate stage failed exact snapshot validation.', {
+          complete: validation.complete === true,
+          rowCount: Number(validation.rowCount || 0),
+          seriesCount: Number(validation.seriesCount || 0)
+        });
+
+      var prepared = AKORT.OperationEngine.recoverReversalCheckpointCapacity(operationId, {
+        operationType: 'RAW_REVERSAL_V4',
+        releaseVersion: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RELEASE,
+        targetLoadId: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_TARGET_LOAD_ID,
+        reversalLoadId: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_REVERSAL_LOAD_ID,
+        reversedRows: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RAW_ROWS,
+        expectedStageRows: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_STAGE_ROWS,
+        affectedSeriesKeys: validation.seriesKeys,
+        stageFingerprint: validation.stageFingerprint,
+        reason: 'Alpha.7.4.33 exact Gate 6 reversal checkpoint cell-capacity recovery'
+      });
+      assert_(prepared && prepared.ok,
+        prepared && prepared.code || 'ALPHA74_GATE6_REVERSAL_CAPACITY_OPERATION_RECOVERY_FAILED',
+        prepared && prepared.message || 'The reversal operation could not be compacted at the durable stage boundary.',
+        prepared && prepared.details || {});
+      var preparedOperation = prepared.data && prepared.data.operation || {};
+      assert_(text_(preparedOperation.status) === 'PAUSED' && text_(preparedOperation.current_phase) === 'UPDATING_AGGREGATES',
+        'ALPHA74_GATE6_REVERSAL_CAPACITY_OPERATION_NOT_PREPARED', 'Compacted reversal operation did not reach the exact UPDATING_AGGREGATES checkpoint.', {
+          status: preparedOperation.status || '',
+          phase: preparedOperation.current_phase || ''
+        });
+
+      var previousRecovery = clone_(state.recovery || null);
+      state.release = RELEASE;
+      state.status = 'RUNNING';
+      state.phase = 'RUN_REVERSAL';
+      state.finishedAt = '';
+      state.failedFromPhase = '';
+      state.stoppedFromPhase = '';
+      state.leaseUntil = '';
+      state.consecutiveErrors = 0;
+      state.lastError = null;
+      state.recovery = {
+        mode: 'REVERSAL_CHECKPOINT_CELL_CAPACITY_RECOVERY',
+        recoveredFromRelease: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RELEASE,
+        recoveredFromExecutionId: state.executionId,
+        recoveredAt: now_(),
+        operationId: operationId,
+        targetLoadId: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_TARGET_LOAD_ID,
+        reversalLoadId: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_REVERSAL_LOAD_ID,
+        resumeOperationPhase: 'UPDATING_AGGREGATES',
+        preservedRecoveryCopies: true,
+        preservedRawRollbackRows: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RAW_ROWS,
+        preservedPricePublishRows: 16200,
+        preservedAggregateStageRows: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_STAGE_ROWS,
+        validatedStageSeries: Number(validation.seriesCount || 0),
+        validatedStageFingerprint: text_(validation.stageFingerprint),
+        repeatedRawRollback: false,
+        repeatedPricePublish: false,
+        repeatedAggregateCalculation: false,
+        aggregatePublishStartedBeforeRecovery: false,
+        compactDurableRecordSource: 'RAW_REVERSAL_LOG',
+        previousRecovery: previousRecovery
+      };
+      state.lastStep = {
+        phase: 'REVERSAL_CHECKPOINT_CAPACITY_RECOVERY_PREPARED',
+        operationId: operationId,
+        resumeOperationPhase: 'UPDATING_AGGREGATES',
+        stageRows: REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_STAGE_ROWS
+      };
+      try {
+        setRegularPipeline_(true);
+        state.regularPipelineEnabledAt = now_();
+        saveState_(state);
+        writeValidation_('GATE 6 ВОЗОБНОВЛЁН', {
+          executionId: state.executionId,
+          operationId: operationId,
+          phase: state.phase,
+          resumeOperationPhase: 'UPDATING_AGGREGATES',
+          recoveryMode: state.recovery.mode
+        });
+        ensureTrigger_();
+      } catch (activationError) {
+        deleteTriggers_();
+        try { setRegularPipeline_(false); } catch (ignoredRegularCleanup) {}
+        state.status = 'STOPPED';
+        state.phase = 'STOPPED';
+        state.stoppedFromPhase = 'RUN_REVERSAL';
+        state.finishedAt = now_();
+        state.lastError = normalizedError_(activationError);
+        try { saveState_(state); } catch (ignoredStateCleanup) {}
+        throw activationError;
+      }
+      return AKORT.Result.success('Alpha.7.4 Gate 6 oversized reversal checkpoint compacted; continuation starts at aggregate publication without repeating RAW, price Publish or calculation.', publicState_(state));
     }, { lock: true, persistLogs: true, lockTimeoutMs: 60000 });
   }
 
@@ -2595,6 +2854,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     recoverRuntimeContextIncident: recoverRuntimeContextIncident,
     recoverMonthlyPeriodLabelIncident: recoverMonthlyPeriodLabelIncident,
     recoverWeeklyRollbackPeriodIncident: recoverWeeklyRollbackPeriodIncident,
+    recoverReversalCheckpointCapacityIncident: recoverReversalCheckpointCapacityIncident,
     worker: worker,
     stop: stop,
     Test: Object.freeze({
@@ -2613,6 +2873,8 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       rawReversalChunkIncident: rawReversalChunkIncident_,
       rollbackScanStateCapacityIncident: rollbackScanStateCapacityIncident_,
       weeklyRollbackPeriodIncident: weeklyRollbackPeriodIncident_,
+      reversalCheckpointCapacityIncident: reversalCheckpointCapacityIncident_,
+      reversalCheckpointCapacityStage: reversalCheckpointCapacityStage_,
       monthlyPeriodLabelOperationPrepared: monthlyPeriodLabelOperationPrepared_,
       normalizedJsonSetting: normalizedJsonSetting_,
       compactRecovery: compactRecovery_,

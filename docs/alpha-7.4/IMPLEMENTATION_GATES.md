@@ -150,6 +150,18 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
+Release `4.0.0-alpha.7.4.33` устраняет current `.32 / RUN_REVERSAL` loop в
+`STAGING_AGGREGATE_ROWS`. Полный массив 50 RAW reversal records вместе с 392
+aggregate series keys превышал лимит Google Sheets в 50 000 символов на
+checkpoint cell; исключение дополнительно маскировалось как
+`LOCK_ACQUISITION_FAILED`. `.33` оставляет durable records в
+`RAW_REVERSAL_LOG`, сохраняет компактную ссылку и fingerprint, ограничивает
+operation checkpoint и step audit cells до записи и разрешает exact recovery
+из уже проверенного 392-row `STAGED` snapshot непосредственно в
+`UPDATING_AGGREGATES`. RAW rollback, price Publish, materialization и
+calculation не повторяются. Нормативный операторский документ:
+`ALPHA74_33_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
+
 Release `4.0.0-alpha.7.4.32` гарантирует compact terminal persistence и
 разрешает exact recovery из безопасно остановленного
 `.30 / stoppedFromPhase=VERIFY_ROLLBACK` checkpoint. Это устраняет повторные

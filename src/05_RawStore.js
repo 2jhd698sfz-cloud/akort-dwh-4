@@ -1071,6 +1071,34 @@ AKORT.RawStore = (function () {
     };
   }
 
+  /**
+   * Rehydrate the complete reversal payload from its durable log. Operation
+   * checkpoints keep only the compact identity and fingerprint; the 50,000
+   * character Google Sheets cell limit must never make RAW_REVERSAL_LOG data
+   * part of the resumable checkpoint itself.
+   */
+  function reversalSnapshot(targetLoadId, operationId) {
+    var inspection = inspectReversal(targetLoadId, operationId);
+    if (inspection.complete !== true || inspection.completedRows !== inspection.totalRows) {
+      throw AKORT.Core.error('RAW_REVERSAL_SNAPSHOT_INCOMPLETE', 'Durable reversal snapshot is incomplete.', {
+        retryable: false,
+        operationId: String(operationId || ''),
+        targetLoadId: String(targetLoadId || ''),
+        completedRows: inspection.completedRows,
+        totalRows: inspection.totalRows
+      });
+    }
+    var spreadsheet = getDwh_();
+    var records = reversalRecordsFor_(reversalTable_(spreadsheet), operationId, targetLoadId);
+    return {
+      targetLoadId: String(targetLoadId || ''),
+      reversalLoadId: inspection.reversalLoadId,
+      reused: true,
+      reversedRows: records.length,
+      records: compactReversalRecords_(records)
+    };
+  }
+
   function storeNormalized(source, rows, options) {
     options = options || {};
     var begin = beginLoad({
@@ -1186,6 +1214,7 @@ AKORT.RawStore = (function () {
     reverseLoad: reverseLoad,
     reverseLoadStep: reverseLoadStep,
     inspectReversal: inspectReversal,
+    reversalSnapshot: reversalSnapshot,
     auditLoad: auditLoad,
     status: status,
     statusSummary: statusSummary,
@@ -1215,6 +1244,44 @@ AKORT.RawStoreHandlers = (function () {
       sourceId: input.sourceId || '',
       rows: input.rows || []
     }));
+  }
+
+  function compactReversal_(reversal) {
+    var value = reversal || {};
+    var records = value.records || value.reversalLog || [];
+    return {
+      targetLoadId: String(value.targetLoadId || ''),
+      reversalLoadId: String(value.reversalLoadId || ''),
+      reused: value.reused === true,
+      reversedRows: Number(value.reversedRows || records.length || 0),
+      recordCount: records.length,
+      recordsFingerprint: AKORT.Core.sha256(AKORT.Core.canonicalJson(records)),
+      durableRecordSource: 'RAW_REVERSAL_LOG'
+    };
+  }
+
+  function durableReversal_(state, operationId, targetLoadId) {
+    var compact = state.reversal || {};
+    if (Array.isArray(compact.records)) return compact;
+    var snapshot = AKORT.RawStore.reversalSnapshot(
+      String(compact.targetLoadId || targetLoadId || ''),
+      String(operationId || '')
+    );
+    var fingerprint = AKORT.Core.sha256(AKORT.Core.canonicalJson(snapshot.records || []));
+    if ((compact.reversalLoadId && String(compact.reversalLoadId) !== String(snapshot.reversalLoadId)) ||
+        Number(compact.recordCount || compact.reversedRows || 0) !== Number((snapshot.records || []).length) ||
+        (compact.recordsFingerprint && String(compact.recordsFingerprint) !== fingerprint)) {
+      throw AKORT.Core.error('RAW_REVERSAL_CHECKPOINT_DURABLE_MISMATCH', 'Compact reversal checkpoint differs from RAW_REVERSAL_LOG.', {
+        retryable: false,
+        operationId: String(operationId || ''),
+        targetLoadId: String(targetLoadId || ''),
+        checkpointReversalLoadId: String(compact.reversalLoadId || ''),
+        durableReversalLoadId: String(snapshot.reversalLoadId || ''),
+        checkpointRecordCount: Number(compact.recordCount || compact.reversedRows || 0),
+        durableRecordCount: Number((snapshot.records || []).length)
+      });
+    }
+    return snapshot;
   }
 
   function storePublishPlanSummary_(state, plan) {
@@ -1329,13 +1396,14 @@ AKORT.RawStoreHandlers = (function () {
           work: reversalStep.work
         };
       }
-      state.reversal = reversalStep.reversal;
+      state.reversal = compactReversal_(reversalStep.reversal);
       state.loadId = state.reversal.reversalLoadId || '';
       delete state.reversalWork;
       return state.reversal;
     }
     if (phase === 'UPDATE_PUBLISH') {
-      var reversalPublishPlan = AKORT.IncrementalPublish.planReversal(state.reversal);
+      var durableReversal = durableReversal_(state, context.operation.operation_id, input.targetLoadId);
+      var reversalPublishPlan = AKORT.IncrementalPublish.planReversal(durableReversal);
       storePublishPlanSummary_(state, reversalPublishPlan);
       if (reversalPublishPlan.testOnly) {
         state.publishUpdate = { skipped: true, reason: 'Compatibility smoke-test isolation', marker: reversalPublishPlan.testMarker };
@@ -1350,7 +1418,9 @@ AKORT.RawStoreHandlers = (function () {
       return state.publishUpdate;
     }
     if (AKORT.AggregateIntegration.Phases.indexOf(phase) >= 0 || phase === 'FINALIZING') {
-      var reversalPlanSummary = storedPublishPlanSummary_(state, function () { return AKORT.IncrementalPublish.planReversal(state.reversal); });
+      var reversalPlanSummary = storedPublishPlanSummary_(state, function () {
+        return AKORT.IncrementalPublish.planReversal(durableReversal_(state, context.operation.operation_id, input.targetLoadId));
+      });
       state.aggregateUpdate = AKORT.AggregateIntegration.execute(phase, context, {
         loadId: state.loadId,
         mode: 'REVERSAL',

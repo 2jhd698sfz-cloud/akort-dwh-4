@@ -98,8 +98,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-14');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.32');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-15');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.33');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -529,6 +529,120 @@ test('exact Alpha.7.4.30 weekly rollback period incident is eligible only at the
   assert.equal(G.Test.weeklyRollbackPeriodIncident(restoreStarted, canaryOperation, reversalOperation), false);
 });
 
+test('exact stopped Alpha.7.4.32 reversal checkpoint is recovered only after durable staging and before aggregate publication', () => {
+  const operationId = 'OP_RAW_REVERSAL_V4_20260803T133248118Z_82520905BF9A';
+  const targetLoadId = 'LOAD_20260803T123127832Z_3F2F34DAD46B';
+  const reversalLoadId = 'LOAD_REV_56A66E1F8870698F19AC0F3093F9';
+  const records = new Array(50).fill(0).map((_, index) => ({
+    operation_id: operationId,
+    reversal_load_id: reversalLoadId,
+    target_load_id: targetLoadId,
+    target_table: 'RAW_PRICES_WEEKLY',
+    business_key: `KEY_${index}`,
+    reversed_observation_id: `OBS_${index}`,
+    restored_observation_id: `OLD_${index}`,
+    status: 'SUCCESS'
+  }));
+  const state = {
+    stateSchemaVersion: '4.0-alpha74-gate6-state-1',
+    release: '4.0.0-alpha.7.4.32',
+    executionId: 'A74_GATE6_37FAED6EF952F9BB5FD4',
+    status: 'STOPPED',
+    phase: 'STOPPED',
+    stoppedFromPhase: 'RUN_REVERSAL',
+    operations: {
+      canary: 'OP_SOURCE_FILE_LOAD_V_20260803T123050299Z_BAD1844BD339',
+      reversal: operationId,
+      restore: ''
+    },
+    loads: { canary: targetLoadId, reversal: '', restore: '' },
+    canarySource: {
+      sourceHash: '5be97a7ca1743062394c3675f8d00228c3e5d287a35edeafee2b7866c4e74bde',
+      targetTable: 'RAW_PRICES_WEEKLY',
+      normalizedRowCount: 50
+    },
+    digests: {
+      baseline: { PUBLISH_PRICE_AGGREGATES: { rows: 61636 } },
+      postCanary: { PUBLISH_PRICE_AGGREGATES: { rows: 62028 } }
+    },
+    acceptance: {
+      canaryOperationAccepted: true,
+      canaryChangedTargets: [
+        'PUBLISH_PRICES_WEEKLY', 'PUBLISH_PRICES_MONTHLY', 'PUBLISH_PRICE_AGGREGATES'
+      ]
+    },
+    artifacts: { dwhBackup: { id: 'DWH_BACKUP' }, publishBackup: { id: 'PUBLISH_BACKUP' } }
+  };
+  const operation = {
+    operation_id: operationId,
+    operation_type: 'RAW_REVERSAL_V4',
+    release_version: '4.0.0-alpha.7.4.32',
+    status: 'PAUSED',
+    current_phase: 'STAGING_AGGREGATE_ROWS',
+    checkpoint: {
+      nextPhase: 'STAGING_AGGREGATE_ROWS',
+      completedPhases: [
+        'DISCOVER', 'VALIDATE', 'PARSE', 'STAGE', 'COMMIT_RAW', 'UPDATE_PUBLISH',
+        'PREPARING_AGGREGATE_IMPACT', 'MATERIALIZING_AGGREGATE_INPUTS',
+        'CALCULATING_AGGREGATE_SLICES'
+      ],
+      control: { stopRequested: true },
+      rawStore: {
+        loadId: reversalLoadId,
+        reversal: { targetLoadId, reversalLoadId, reversedRows: 50, records },
+        publishUpdate: { complete: true, weeklyRows: 13100, monthlyRows: 3100, industryRows: 0, publishRows: 16200 }
+      },
+      aggregate: {
+        status: 'CALCULATED',
+        materializationCursor: 72,
+        materializationTotal: 72,
+        calculationCursor: 392,
+        calculationGroupCount: 392,
+        stagingCursor: 0,
+        expectedStageRows: 0,
+        publishSeriesCursor: 0,
+        publishBatches: []
+      }
+    }
+  };
+  const inspection = {
+    operationId,
+    targetLoadId,
+    reversalLoadId,
+    targetTable: 'RAW_PRICES_WEEKLY',
+    targetLoadStatus: 'REVERSED',
+    totalRows: 50,
+    completedRows: 50,
+    pendingRows: 0,
+    complete: true
+  };
+  assert.equal(G.Test.reversalCheckpointCapacityIncident(state, operation, inspection), true);
+
+  const stageRows = new Array(392).fill(0).map((_, index) => ({
+    aggregate_series_key: `SERIES_${index}`,
+    action: 'UPSERT',
+    stage_status: 'STAGED',
+    release_version: '4.0.0-alpha.7.4.32',
+    expected_target_fingerprint: '',
+    verified_at: ''
+  }));
+  const stage = G.Test.reversalCheckpointCapacityStage(stageRows);
+  assert.equal(stage.exact, true);
+  assert.equal(stage.calculated.length, 392);
+
+  const publicationStarted = JSON.parse(JSON.stringify(operation));
+  publicationStarted.checkpoint.aggregate.publishSeriesCursor = 1;
+  assert.equal(G.Test.reversalCheckpointCapacityIncident(state, publicationStarted, inspection), false);
+  const foreignCanaryState = JSON.parse(JSON.stringify(state));
+  foreignCanaryState.operations.canary = 'OP_FOREIGN_CANARY';
+  assert.equal(G.Test.reversalCheckpointCapacityIncident(foreignCanaryState, operation, inspection), false);
+  const recordsAlreadyCompacted = JSON.parse(JSON.stringify(operation));
+  delete recordsAlreadyCompacted.checkpoint.rawStore.reversal.records;
+  assert.equal(G.Test.reversalCheckpointCapacityIncident(state, recordsAlreadyCompacted, inspection), false);
+  stageRows[0].stage_status = 'VERIFIED';
+  assert.equal(G.Test.reversalCheckpointCapacityStage(stageRows).exact, false);
+});
+
 test('terminal checkpoint compaction stays below the Script Properties limit without dropping recovery evidence', () => {
   const state = {
     phase: 'FAILED',
@@ -792,6 +906,7 @@ test('source contract contains source-file canary, recovery copies, standard rol
   assert(source.includes('ROLLBACK_SCAN_STATE_CAPACITY_RECOVERY'));
   assert(source.includes('WEEKLY_ROLLBACK_PERIOD_CANONICAL_REPAIR'));
   assert(source.includes('WEEKLY_ROLLBACK_PERIOD_CANONICAL_RESTART'));
+  assert(source.includes('REVERSAL_CHECKPOINT_CELL_CAPACITY_RECOVERY'));
   assert(source.includes('maxSeries: 16'));
   assert(aggregate.includes('Math.min(16, Number(options.maxSeries || 16))'));
   assert(source.includes('previousRecoveryLineage'));
@@ -801,7 +916,11 @@ test('source contract contains source-file canary, recovery copies, standard rol
   assert(source.includes('AKORT.OperationEngine.recoverFailedPhase'));
   assert(entries.includes('AKORT_alpha74Gate6RecoverMonthlyPeriodLabel'));
   assert(entries.includes('AKORT_alpha74Gate6RecoverWeeklyRollbackPeriod'));
+  assert(entries.includes('AKORT_alpha74Gate6RecoverReversalCheckpointCapacity'));
   assert(engine.includes('expected.status || STATUSES.FAILED'));
+  assert(engine.includes('OPERATION_CHECKPOINT_CELL_LIMIT_EXCEEDED'));
+  assert(engine.includes("schemaVersion: '4.0-operation-cell-summary-1'"));
+  assert(engine.includes('recoverReversalCheckpointCapacity'));
   assert(aggregate.includes("text_(context.accepted_by) !== 'ALPHA74_GATE5_FULL_HISTORY_PARITY'"));
   assert(aggregate.includes("text_(context.mutation_boundary) !== 'ALPHA74_ATOMIC_LOGICAL_SERIES'"));
   assert(aggregate.includes('context.gate5_evidence_required !== true'));

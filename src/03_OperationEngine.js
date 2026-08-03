@@ -62,6 +62,9 @@ AKORT.OperationEngine = (function () {
     CANCELLED: true
   };
 
+  var SHEETS_CELL_MAX_CHARS = 50000;
+  var CHECKPOINT_CELL_SAFE_CHARS = 48000;
+
   var SETTINGS = {
     OPERATION_SCHEMA_VERSION: {
       value: '4.0-operation-2',
@@ -197,8 +200,99 @@ AKORT.OperationEngine = (function () {
     return checkpoint;
   }
 
+  function checkpointCellJson_(checkpoint) {
+    var serialized = AKORT.Core.safeJson(checkpoint);
+    if (serialized.length > CHECKPOINT_CELL_SAFE_CHARS) {
+      throw AKORT.Core.error('OPERATION_CHECKPOINT_CELL_LIMIT_EXCEEDED', 'Operation checkpoint exceeds the safe Google Sheets cell boundary.', {
+        retryable: false,
+        nextPhase: checkpoint && checkpoint.nextPhase || '',
+        characters: serialized.length,
+        safeMaximum: CHECKPOINT_CELL_SAFE_CHARS,
+        physicalMaximum: SHEETS_CELL_MAX_CHARS,
+        sha256: AKORT.Core.sha256(serialized)
+      });
+    }
+    return serialized;
+  }
+
+  function checkpointAuditSummary_(checkpoint) {
+    var value = checkpoint || {};
+    var aggregate = value.aggregate || {};
+    var raw = value.rawStore || {};
+    var handler = value.handlerState || {};
+    function durableProgress_(state) {
+      state = state || {};
+      var reversal = state.reversal || {};
+      var reversalWork = state.reversalWork || {};
+      var publishWork = state.publishWork || {};
+      return {
+        loadId: state.loadId || '',
+        reversal: {
+          targetLoadId: reversal.targetLoadId || '',
+          reversalLoadId: reversal.reversalLoadId || '',
+          reversedRows: Number(reversal.reversedRows || reversal.recordCount || 0),
+          recordsFingerprint: reversal.recordsFingerprint || ''
+        },
+        reversalWork: {
+          completedRows: Number(reversalWork.completedRows || 0),
+          totalRows: Number(reversalWork.totalRows || 0)
+        },
+        publishWork: {
+          stage: publishWork.stage || '',
+          cursor: Number(publishWork.cursor || 0),
+          weeklyRows: Number(publishWork.weeklyRows || 0),
+          monthlyRows: Number(publishWork.monthlyRows || 0),
+          industryRows: Number(publishWork.industryRows || 0),
+          complete: publishWork.complete === true
+        }
+      };
+    }
+    return {
+      schemaVersion: value.schemaVersion || '',
+      nextPhase: value.nextPhase || '',
+      completedPhases: (value.completedPhases || []).slice(),
+      control: clone_(value.control || {}),
+      meta: clone_(value.meta || {}),
+      lease: clone_(value.lease || null),
+      aggregate: {
+        status: aggregate.status || '',
+        loadId: aggregate.loadId || '',
+        planId: aggregate.planId || '',
+        planFingerprint: aggregate.planFingerprint || '',
+        calculationCursor: Number(aggregate.calculationCursor || 0),
+        calculationGroupCount: Number(aggregate.calculationGroupCount || 0),
+        stagingCursor: Number(aggregate.stagingCursor || 0),
+        stageStatusCursor: Number(aggregate.stageStatusCursor || 0),
+        expectedStageRows: Number(aggregate.expectedStageRows || 0),
+        stageFingerprint: aggregate.stageFingerprint || '',
+        publishSeriesCursor: Number(aggregate.publishSeriesCursor || 0),
+        latestSeriesCursor: Number(aggregate.latestSeriesCursor || 0),
+        reconciliationBatchCursor: Number(aggregate.reconciliationBatchCursor || 0),
+        affectedSeriesCount: (aggregate.affectedSeriesKeys || []).length
+      },
+      rawStore: durableProgress_(raw),
+      handlerState: durableProgress_(handler)
+    };
+  }
+
+  function auditCellJson_(value, checkpoint) {
+    var serialized = AKORT.Core.safeJson(value);
+    if (serialized.length <= CHECKPOINT_CELL_SAFE_CHARS) return serialized;
+    var compact = checkpoint ? checkpointAuditSummary_(value) : {
+      type: 'OVERSIZED_RESULT',
+      preview: serialized.slice(0, 2000)
+    };
+    return AKORT.Core.safeJson({
+      schemaVersion: '4.0-operation-cell-summary-1',
+      compacted: true,
+      originalCharacters: serialized.length,
+      originalSha256: AKORT.Core.sha256(serialized),
+      value: compact
+    });
+  }
+
   function saveCheckpoint_(operation, checkpoint) {
-    operation.checkpoint_json = AKORT.Core.safeJson(checkpoint);
+    operation.checkpoint_json = checkpointCellJson_(checkpoint);
     operation.current_phase = checkpoint.nextPhase || operation.current_phase;
     return operation;
   }
@@ -501,8 +595,8 @@ AKORT.OperationEngine = (function () {
       attempt_no: Number(operation.attempt_no || 0),
       started_at: startedAt,
       finished_at: AKORT.Core.now(),
-      checkpoint_json: AKORT.Core.safeJson(checkpoint),
-      result_json: result === undefined ? '' : AKORT.Core.safeJson(result),
+      checkpoint_json: auditCellJson_(checkpoint, true),
+      result_json: result === undefined ? '' : auditCellJson_(result, false),
       error_code: normalized ? normalized.code : '',
       error_message: normalized ? normalized.message : '',
       release_version: AKORT.Release.version
@@ -543,11 +637,11 @@ AKORT.OperationEngine = (function () {
     operation.finished_at = AKORT.Core.now();
     operation.error_code = '';
     operation.error_message = '';
+    saveObject_(operationTable, operation);
     appendStep_(spreadsheet, operation, 'SUCCESS', 'SUCCESS', AKORT.Core.now(), checkpoint, {
       terminal: true,
       completedPhases: checkpoint.completedPhases.slice()
     }, null);
-    saveObject_(operationTable, operation);
     logger.info('Operation completed successfully', null, {
       operationId: operation.operation_id,
       eventCode: 'OPERATION_SUCCESS'
@@ -752,9 +846,9 @@ AKORT.OperationEngine = (function () {
       if (outcome && outcome.repeatPhase === true) {
         checkpoint.nextPhase = phase;
         operation.current_phase = phase;
-        appendStep_(spreadsheet, operation, phase, 'CHECKPOINT', phaseStartedAt, checkpoint, outcome, null);
         saveCheckpoint_(operation, checkpoint);
         saveObject_(operationTable, operation);
+        appendStep_(spreadsheet, operation, phase, 'CHECKPOINT', phaseStartedAt, checkpoint, outcome, null);
         context.logger.info('Operation phase checkpoint saved', {
           phase: phase,
           nextPhase: phase
@@ -778,9 +872,9 @@ AKORT.OperationEngine = (function () {
       if (checkpoint.completedPhases.indexOf(phase) < 0) checkpoint.completedPhases.push(phase);
       checkpoint.nextPhase = next;
       operation.current_phase = next;
-      appendStep_(spreadsheet, operation, phase, 'SUCCESS', phaseStartedAt, checkpoint, outcome, null);
       saveCheckpoint_(operation, checkpoint);
       saveObject_(operationTable, operation);
+      appendStep_(spreadsheet, operation, phase, 'SUCCESS', phaseStartedAt, checkpoint, outcome, null);
       completedThisRun += 1;
       context.logger.info('Operation phase completed', { phase: phase, nextPhase: next }, {
         operationId: operation.operation_id,
@@ -896,6 +990,131 @@ AKORT.OperationEngine = (function () {
           expectedErrorCode: expectedErrorCode
         }, { operationId: operationId, eventCode: 'OPERATION_FAILED_PHASE_RECOVERED' });
         return AKORT.Result.success('Failed operation prepared for continuation from its exact checkpoint.', resultData_(spreadsheet, operation));
+      }, runtime.lockTimeoutMs);
+    }, { lock: false, persistLogs: true, operationId: operationId });
+  }
+
+  /**
+   * Exact recovery for a stopped RAW_REVERSAL_V4 checkpoint that reached the
+   * Sheets 50,000-character cell limit after durable aggregate staging. The
+   * caller must first validate the immutable AGGREGATE_STAGE snapshot. This
+   * method only removes the duplicated reversal record array and adopts the
+   * supplied validated stage boundary; it cannot repeat RAW or Publish work.
+   */
+  function recoverReversalCheckpointCapacity(operationId, expected) {
+    expected = expected || {};
+    return AKORT.Core.safeRun('OPERATION_RECOVER_REVERSAL_CHECKPOINT_CAPACITY', function (context) {
+      AKORT.EnvironmentGuard.assertDev();
+      var runtime = runtimeSettings_();
+      return AKORT.Core.Locks.withScriptLock('OPERATION_RECOVER_CAPACITY_' + operationId, function () {
+        var spreadsheet = getDwh_();
+        var found = findOperation_(spreadsheet, operationId);
+        var operation = found.operation;
+        var checkpoint = checkpointFor_(operation);
+        var raw = checkpoint.rawStore || {};
+        var reversal = raw.reversal || {};
+        var records = reversal.records || reversal.reversalLog || [];
+        var aggregate = checkpoint.aggregate || {};
+        var completed = checkpoint.completedPhases || [];
+        var expectedRows = Number(expected.expectedStageRows || 0);
+        var seriesKeys = (expected.affectedSeriesKeys || []).slice().sort();
+        var activeLease = leaseIsActive_(checkpoint.lease, Date.now());
+        var allowedStatus = operation.status === STATUSES.PAUSED || operation.status === STATUSES.RUNNING;
+        var phasesBeforeStage = [
+          'DISCOVER', 'VALIDATE', 'PARSE', 'STAGE', 'COMMIT_RAW', 'UPDATE_PUBLISH',
+          'PREPARING_AGGREGATE_IMPACT', 'MATERIALIZING_AGGREGATE_INPUTS',
+          'CALCULATING_AGGREGATE_SLICES'
+        ];
+        var recordsValid = Array.isArray(records) && records.length === Number(expected.reversedRows || 0) && records.every(function (record) {
+          return String(record.operation_id || '') === String(operationId) &&
+            String(record.target_load_id || '') === String(expected.targetLoadId || '') &&
+            String(record.reversal_load_id || '') === String(expected.reversalLoadId || '') &&
+            String(record.status || '') === 'SUCCESS';
+        });
+        var sourceValid = allowedStatus && !activeLease &&
+          String(operation.operation_type || '') === String(expected.operationType || 'RAW_REVERSAL_V4') &&
+          String(operation.release_version || '') === String(expected.releaseVersion || '') &&
+          String(operation.current_phase || '') === 'STAGING_AGGREGATE_ROWS' &&
+          String(checkpoint.nextPhase || '') === 'STAGING_AGGREGATE_ROWS' &&
+          checkpoint.control && checkpoint.control.stopRequested === true &&
+          phasesBeforeStage.every(function (phase) { return completed.indexOf(phase) >= 0; }) &&
+          completed.indexOf('STAGING_AGGREGATE_ROWS') < 0 &&
+          String(raw.loadId || '') === String(expected.reversalLoadId || '') &&
+          String(reversal.targetLoadId || '') === String(expected.targetLoadId || '') &&
+          String(reversal.reversalLoadId || '') === String(expected.reversalLoadId || '') &&
+          Number(reversal.reversedRows || records.length || 0) === Number(expected.reversedRows || 0) &&
+          recordsValid && String(aggregate.status || '') === 'CALCULATED' &&
+          Number(aggregate.calculationCursor || 0) === expectedRows &&
+          Number(aggregate.calculationGroupCount || 0) === expectedRows &&
+          Number(aggregate.stagingCursor || 0) === 0 &&
+          !String(aggregate.stageFingerprint || '') && Number(aggregate.expectedStageRows || 0) === 0 &&
+          Number(aggregate.publishSeriesCursor || 0) === 0 && !(aggregate.publishBatches || []).length &&
+          expectedRows > 0 && seriesKeys.length === expectedRows && !!String(expected.stageFingerprint || '');
+        if (!sourceValid) {
+          throw AKORT.Core.error('REVERSAL_CHECKPOINT_CAPACITY_RECOVERY_SOURCE_INVALID', 'Reversal checkpoint does not match the exact stopped pre-publication capacity incident.', {
+            retryable: false,
+            operationId: operationId,
+            operationType: operation.operation_type,
+            operationStatus: operation.status,
+            operationPhase: operation.current_phase,
+            operationRelease: operation.release_version,
+            checkpointPhase: checkpoint.nextPhase,
+            stopRequested: checkpoint.control && checkpoint.control.stopRequested === true,
+            activeLease: activeLease,
+            reversalRecords: records.length,
+            aggregateStatus: aggregate.status,
+            calculationCursor: Number(aggregate.calculationCursor || 0),
+            calculationGroupCount: Number(aggregate.calculationGroupCount || 0),
+            stagingCursor: Number(aggregate.stagingCursor || 0),
+            expectedStageRows: expectedRows,
+            affectedSeriesCount: seriesKeys.length
+          });
+        }
+
+        var recordsFingerprint = AKORT.Core.sha256(AKORT.Core.canonicalJson(records));
+        raw.reversal = {
+          targetLoadId: String(expected.targetLoadId || ''),
+          reversalLoadId: String(expected.reversalLoadId || ''),
+          reused: reversal.reused === true,
+          reversedRows: Number(expected.reversedRows || 0),
+          recordCount: records.length,
+          recordsFingerprint: recordsFingerprint,
+          durableRecordSource: 'RAW_REVERSAL_LOG'
+        };
+        aggregate.expectedStageRows = expectedRows;
+        aggregate.affectedSeriesKeys = seriesKeys;
+        aggregate.stageFingerprint = String(expected.stageFingerprint || '');
+        aggregate.stagingCursor = expectedRows;
+        aggregate.stageStatusCursor = expectedRows;
+        aggregate.status = 'STAGED';
+        if (completed.indexOf('STAGING_AGGREGATE_ROWS') < 0) completed.push('STAGING_AGGREGATE_ROWS');
+        checkpoint.nextPhase = 'UPDATING_AGGREGATES';
+        checkpoint.control.stopRequested = false;
+        checkpoint.lease = null;
+        operation.status = STATUSES.PAUSED;
+        operation.current_phase = 'UPDATING_AGGREGATES';
+        operation.finished_at = '';
+        operation.error_code = '';
+        operation.error_message = '';
+        saveCheckpoint_(operation, checkpoint);
+        saveObject_(found.table, operation);
+        appendStep_(spreadsheet, operation, 'STAGING_AGGREGATE_ROWS', 'RECOVERY_PREPARED', AKORT.Core.now(), checkpoint, {
+          recovery: 'REVERSAL_CHECKPOINT_CELL_CAPACITY',
+          adoptedDurableStage: true,
+          expectedStageRows: expectedRows,
+          affectedSeriesCount: seriesKeys.length,
+          stageFingerprint: aggregate.stageFingerprint,
+          reversalRecordCount: records.length,
+          reversalRecordsFingerprint: recordsFingerprint,
+          resumePhase: 'UPDATING_AGGREGATES',
+          reason: String(expected.reason || '')
+        }, null);
+        context.logger.info('Oversized reversal checkpoint compacted at the exact durable aggregate-stage boundary', {
+          resumePhase: operation.current_phase,
+          expectedStageRows: expectedRows,
+          reversalRecordCount: records.length
+        }, { operationId: operationId, eventCode: 'REVERSAL_CHECKPOINT_CAPACITY_RECOVERED' });
+        return AKORT.Result.success('Reversal checkpoint compacted and prepared at UPDATING_AGGREGATES.', resultData_(spreadsheet, operation));
       }, runtime.lockTimeoutMs);
     }, { lock: false, persistLogs: true, operationId: operationId });
   }
@@ -1033,6 +1252,7 @@ AKORT.OperationEngine = (function () {
     run: run,
     resume: resume,
     recoverFailedPhase: recoverFailedPhase,
+    recoverReversalCheckpointCapacity: recoverReversalCheckpointCapacity,
     requestStop: requestStop,
     status: status,
     engineStatus: engineStatus,

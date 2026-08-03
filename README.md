@@ -6,7 +6,7 @@ Apps Script data pipeline for the AKORT analytical system.
 
 Active milestone: **Alpha.7.4 — Aggregate Integration into Existing Operation Engine**.
 
-Status: `GATE 5 ACCEPTED / GATE 6 ALPHA74.32 STOPPED-CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`.
+Status: `GATE 5 ACCEPTED / GATE 6 ALPHA74.33 REVERSAL-CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`.
 
 Accepted base:
 
@@ -36,6 +36,17 @@ See [`docs/alpha-7.4/README.md`](docs/alpha-7.4/README.md).
 The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 5 is accepted with exact 61,636-row parity across baseline, live snapshot, full build and sequential replay. Gate 6 adds recovery copies and a fail-closed three-cycle authoritative DEV canary using one new weekly/monthly source file: source-file load, standard logical reversal and source-file restore. Acceptance requires a real change in `PUBLISH_PRICE_AGGREGATES`.
 
 Gate 6 may enable the regular aggregate pipeline only inside its controlled harness. General operator submission remains prohibited until Gate 7 through `PUBLISH_USER_PIPELINE_ENABLED=FALSE`.
+
+Release `4.0.0-alpha.7.4.33` fixes the current `.32 / RUN_REVERSAL`
+checkpoint-cell incident. RAW rollback, ordinary weekly/monthly Publish,
+materialization, calculation and the exact 392-row durable stage have already
+completed; aggregate publication has not started. `.33` compacts the duplicated
+50-record reversal payload, validates and adopts the existing stage, then
+continues from `UPDATING_AGGREGATES` without repeating accepted work. New
+checkpoints and audit cells are bounded before Sheets writes, and errors raised
+inside a script lock are no longer misclassified as lock-acquisition failures.
+Runbook:
+[`ALPHA74_33_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`](docs/alpha-7.4/ALPHA74_33_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md).
 
 Release `4.0.0-alpha.7.4.32` guarantees compact terminal-state persistence and
 allows the exact safely stopped `.30 / VERIFY_ROLLBACK` checkpoint to enter

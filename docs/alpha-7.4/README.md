@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 5 ACCEPTED / GATE 6 ALPHA74.32 STOPPED-CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`
+`GATE 5 ACCEPTED / GATE 6 ALPHA74.33 REVERSAL-CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`
 
 Дата фиксации: 3 августа 2026 года.
 
@@ -61,6 +61,10 @@
 - `GATE6_STATE_CAPACITY_RECOVERY_HOTFIX.md` — compaction вложенной recovery
   history, надёжное terminal fail-closed сохранение и exact продолжение
   остановленного `.29 / ROLLBACK_SCAN` без повторения canary и reversal.
+- `ALPHA74_33_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md` — commit, `clasp push` и
+  exact recovery текущей `.32 / RUN_REVERSAL` операции из проверенного
+  392-row `STAGED` snapshot без повторения RAW rollback, Publish цен,
+  materialization и calculation.
 - `GATE6_WEEKLY_ROLLBACK_PERIOD_RECOVERY_HOTFIX.md` — exact `.30` recovery
   196 weekly aggregate rows, ошибочно записанных на UTC-субботу вместо
   ISO-воскресенья, с bounded atomic repair и чистым перезапуском Gate 6.
@@ -391,6 +395,19 @@ recovery как bounded audit-lineage, сохраняет terminal state до cl
 trigger и разрешает Resume только для точного остановленного
 `.29 / ROLLBACK_SCAN` checkpoint. Canary, reversal и два завершённых digest не
 повторяются. Инструкция: `GATE6_STATE_CAPACITY_RECOVERY_HOTFIX.md`.
+
+`.31` исправил точный legacy Saturday identity в 196 weekly rollback rows, а
+`.32` гарантировал компактное сохранение terminal mismatch state перед
+canonical repair. Новый чистый цикл дошёл до следующей независимой границы:
+текущая `.32` reversal operation полностью выполнила 50-row RAW rollback,
+16 200 ordinary price Publish rows, 72 materialization combinations и 392
+aggregate calculations. Все 392 aggregate rows уже физически `STAGED`, но
+operation checkpoint не мог добавить их series keys рядом с полным массивом
+50 reversal records из-за лимита Google Sheets в 50 000 символов на ячейку.
+`.33` хранит durable reversal records в `RAW_REVERSAL_LOG`, ограничивает
+checkpoint/audit cells и принимает точный существующий stage непосредственно в
+`UPDATING_AGGREGATES`, не повторяя завершённую работу. Инструкция:
+`ALPHA74_33_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

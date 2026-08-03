@@ -168,16 +168,16 @@ AKORT.Core = (function () {
 
   function withScriptLock_(label, fn, timeoutMs) {
     var lock = LockService.getScriptLock();
-    var acquired = false;
     try {
       lock.waitLock(Number(timeoutMs || 30000));
-      acquired = true;
-      return fn();
     } catch (lockError) {
       if (lockError && lockError.code) throw lockError;
       throw error('LOCK_ACQUISITION_FAILED', 'Could not acquire script lock: ' + String(label || 'unnamed'), { cause: String(lockError) });
+    }
+    try {
+      return fn();
     } finally {
-      if (acquired) lock.releaseLock();
+      lock.releaseLock();
     }
   }
 
