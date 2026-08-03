@@ -3,7 +3,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
 var AKORT_RELEASE_DEFINITION = {
   system: 'AKORT analytical monitoring system',
-  version: '4.0.0-alpha.7.4.26',
+  version: '4.0.0-alpha.7.4.29',
   channel: 'alpha',
   environment: 'DEV',
   schemaVersion: '4.0-core-1',
@@ -16,7 +16,7 @@ var AKORT_RELEASE_DEFINITION = {
   baselineLabel: 'VERIFIED_BASELINE_2026-07-10',
   baselineDate: '2026-07-10',
   productionCompatibility: '3.1.7',
-  purpose: 'Alpha.7.4 incremental aggregate integration with accepted Gate 5 full-history parity, controlled RAW_INDUSTRY input and fail-closed Gate 6 authoritative DEV canary; Alpha.7.4.25 preserves durable bounded work, canonicalizes monthly period labels from period_start, repairs only the verified first 32-series .24 read-back incident, and resumes bounded publication without repeating RAW, price Publish, materialization, calculation or staging; general user publication remains gated until Gate 7',
+  purpose: 'Alpha.7.4 incremental aggregate integration with accepted Gate 5 full-history parity, controlled RAW_INDUSTRY input and fail-closed Gate 6 authoritative DEV canary; Alpha.7.4.29 safely re-arms stopped active operations and tracks durable bounded work across RAW reversal, Weekly Monthly Industry Publish, aggregate artifact persistence and every aggregate cursor so one bounded Gate 6 worker can drain real checkpoint progress; general user publication remains gated until Gate 7',
   serviceTables: Object.freeze(['SYSTEM_SETTINGS','RELEASE_REGISTRY','OPERATION_QUEUE','OPERATION_STEPS','AGGREGATE_STAGE','SYSTEM_LOG','RAW_STAGE','RAW_LOAD_REGISTRY','RAW_REVERSAL_LOG','SOURCE_PROFILE_REGISTRY','PARSER_STAGE','PARSER_ISSUES','PUBLISH_IMPACT','PUBLISH_RUNS','PUBLISH_RECONCILIATION','INDUSTRY_INPUT','INDUSTRY_INPUT_LOG','GATE6_CANARY_INPUT']),
   rawTargets: Object.freeze(['RAW_PRICES_WEEKLY','RAW_PRICES_MONTHLY','RAW_INDUSTRY']),
   publishTargets: Object.freeze(['PUBLISH_PRICES_WEEKLY','PUBLISH_PRICES_MONTHLY','PUBLISH_INDUSTRY']),

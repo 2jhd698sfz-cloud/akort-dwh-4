@@ -1081,7 +1081,11 @@ AKORT.SourceParserHandlers = (function () {
         return state.publishUpdate;
       }
       AKORT.IncrementalPublish.appendImpact(operation.operation_id, state.loadId, publishPlan);
-      state.publishUpdate = AKORT.IncrementalPublish.applyPublish(publishPlan, operation.operation_id);
+      var publishStep = AKORT.IncrementalPublish.applyPublishStep(publishPlan, operation.operation_id, state.publishWork);
+      state.publishWork = publishStep.work;
+      if (publishStep.repeatPhase === true) return publishStep;
+      state.publishUpdate = publishStep;
+      delete state.publishWork;
       return state.publishUpdate;
     }
     if (AKORT.AggregateIntegration.Phases.indexOf(phase) >= 0 || phase === 'FINALIZING') {

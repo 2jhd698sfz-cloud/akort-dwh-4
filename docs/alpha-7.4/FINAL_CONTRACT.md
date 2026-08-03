@@ -70,6 +70,10 @@
     принят только как exact after-state: все строки однородно `STAGED`, scope,
     schema и fingerprints валидны, а publish intents, target fingerprints и
     `verified_at` отсутствуют. Смешанный или третий state остаётся fail-closed.
+14. Worker progress watchdog обязан учитывать RAW reversal work,
+    Publish work как `rawStore`, так и `handlerState`, input-artifact persistence
+    и каждый durable aggregate cursor. Изменение любого из этих checkpoints
+    является реальным прогрессом и не может прервать bounded drain loop.
 
 ## 5. Operation phases
 
@@ -207,10 +211,28 @@ https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheet
 ## 8. Reversal
 
 - Reversal создаёт обычную `RAW_REVERSAL_V4`.
+- `COMMIT_RAW` reversal выполняется только bounded exact-once пачками; полный
+  target load в одном handler invocation запрещён.
+- Authoritative durable cursor — уникальные successful
+  `RAW_REVERSAL_LOG.reversed_observation_id` в scope
+  `operation_id + target_load_id + reversal_load_id`.
+- Lost response после RAW flag/log write принимает уже записанный chunk и
+  продолжает с первой отсутствующей observation. Duplicate log, второй
+  reversal load ID, чужая observation или later version дают fail-closed.
 - Alpha.6 строит reversal impact.
 - Alpha.7.3 `planReversal` использует positive current-effect evidence и previous inputs.
 - Результат проходит те же stages и publication adapter.
 - Отдельный physical reverse executor запрещён.
+- Weekly и Monthly Publish заменяются только целыми logical series и имеют
+  durable `stage + cursor + plan_fingerprint`; максимум 25 series за step.
+- Industry Publish использует тот же контракт, максимум 10 series за step.
+- Повтор `UPDATE_PUBLISH` после lost response идемпотентно повторяет только
+  текущую пачку и никогда не возвращается к `COMMIT_RAW` или началу source
+  operation.
+- Большие source/target таблицы могут кэшироваться только в памяти одного
+  worker invocation. После physical write cache обязан быть сброшен;
+  durable truth хранится только в operation checkpoint, stage, intent и
+  append-only журналах.
 
 ## 9. Full build and reconciliation
 

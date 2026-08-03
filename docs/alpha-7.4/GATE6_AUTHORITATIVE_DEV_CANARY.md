@@ -36,7 +36,7 @@ Canary может быть новым периодом или уточнение
 чтобы это был реальный файл, который должен остаться в DEV после успешного
 завершения Gate 6.
 
-Текущий release `.20` сохраняет канонизацию завершающей пунктуации единиц
+Текущий release `.29` сохраняет канонизацию завершающей пунктуации единиц
 из `.19`.
 Например, `10 шт` в источнике и `10 шт.` в `DIM_PRODUCTS` считаются одной
 единицей. Это parser normalization: справочник и исходный файл вручную менять
@@ -198,6 +198,26 @@ AGGREGATE_PUBLISH_READBACK_MISMATCH`, не выполнять обычный Res
 Status. Подробности: `GATE6_MONTHLY_PERIOD_LABEL_RECOVERY_HOTFIX.md`.
 `.25` завершилась до мутаций на неверной private-ссылке;
 `.26` использует реальный DefaultAdapter и тот же exact `.24` checkpoint.
+
+Если после завершения canary и `postCanary` scan `.26` остаётся в
+`RUN_REVERSAL`, а reversal operation — в `COMMIT_RAW`, сначала выполнить
+`AKORT_alpha74Gate6Stop()` и дождаться `STOPPED / RUN_REVERSAL / triggerCount=0`.
+Не редактировать частичные записи `RAW_REVERSAL_LOG`. Затем установить `.29`,
+выполнить общий Install, оставить только aggregate execution flag, выполнить
+smoke test, contract scan и Status и один раз вызвать обычный
+`AKORT_alpha74Gate6Resume()`. Exact recovery принимает уже записанные
+observations и продолжает rollback bounded-пачками по 10 строк по durable
+cursor из `RAW_REVERSAL_LOG`; aggregate pipeline до этого incident не
+начинался. Ожидаемый mode: `DURABLE_RAW_REVERSAL_CHUNK_RECOVERY`.
+После RAW recovery `.29` выполняет Weekly/Monthly/Industry Publish durable
+порциями полных серий и aggregate materialization двумя крупными bounded
+steps вместо примерно 96 малых проходов с повторным target scan. Подробности:
+`GATE6_DURABLE_RAW_REVERSAL_HOTFIX.md` и
+`GATE6_FAST_INCREMENTAL_UPDATE_HOTFIX.md`.
+Для текущего уже остановленного state после `clasp push` нужно ещё раз
+выполнить `.29` `AKORT_alpha74Gate6Stop()` и убедиться, что ответ
+содержит `operationStopRequested=true`. Полная последовательность:
+`ALPHA74_29_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
 
 Экстренная остановка: `AKORT_alpha74Gate6Stop()`. Она сохраняет исходную фазу,
 operation IDs, digest cursors и recovery-копии. После проверки причины тот же

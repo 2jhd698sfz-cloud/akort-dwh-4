@@ -336,6 +336,38 @@ staging сохраняются. Инструкция:
 `.26` использует `DefaultAdapter.readCalculatedRows` и добавляет общий
 статический контроль всех private Apps Script calls.
 
+После успешного завершения canary и `postCanary` digest операция rollback на
+`.26` осталась в `RAW_REVERSAL_V4 / COMMIT_RAW`. Проверка canonical DWH
+показала 8 из 50 записанных reversal rows, пустой operation cursor и
+`aggregate.status=NOT_STARTED`: задержка не была связана с пересчётом 61 636
+aggregate rows. Причина — монолитная `RawStore.reverseLoad`, которая отдельно
+фильтровала историю и записывала каждую observation, а operation checkpoint
+получала только после всех 50 строк. `.27` использует линейный RAW index,
+bounded batch по 10 observations и `RAW_REVERSAL_LOG` как exact-once durable
+cursor. Точный остановленный `.26` incident продолжается обычным
+`AKORT_alpha74Gate6Resume()` с первой observation, которой ещё нет в журнале;
+восемь принятых строк, canary и `postCanary` Publish не повторяются.
+Инструкция: `GATE6_DURABLE_RAW_REVERSAL_HOTFIX.md`.
+
+`.28` устраняет следующий системный performance defect Gate 6. Принятый
+affected-set из 381 aggregate combinations ранее исполнялся окнами по 4,
+причём каждое окно повторно читало Weekly/Monthly sources и строило индекс
+61 636-row aggregate target. Теперь source snapshot и target index живут один
+worker invocation, materialization имеет durable окна по 250, а один trigger
+может последовательно выполнить до 40 checkpoints в пределах 190 секунд.
+Weekly/Monthly/Industry `UPDATE_PUBLISH` также получил durable cursor и порции
+полных серий 25/25/10. Это не повторяет Gate 5 historical replay и не ослабляет
+atomic/read-back/lost-response/third-state проверки. Инструкция:
+`GATE6_FAST_INCREMENTAL_UPDATE_HOTFIX.md`.
+
+`.29` является операционным release-кандидатом для текущего Gate 6. Он
+позволяет повторному Stop установить `stopRequested=true` для уже
+остановленного `RUN_REVERSAL` checkpoint и добавляет в progress fingerprint
+RAW reversal, Weekly/Monthly/Industry Publish, input-artifact persistence,
+calculation, staging, publication, latest, reconciliation и finalization cursors.
+Инструкция коммита, `clasp push` и Apps Script:
+`ALPHA74_29_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
+
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию
 `DIM_INDUSTRY_SERIES`, два пользовательских поля (`Период`, `Значение`),

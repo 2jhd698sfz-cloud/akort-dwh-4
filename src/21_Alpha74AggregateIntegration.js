@@ -8,8 +8,12 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * reconciliation. The default adapter is the only physical-write boundary.
  */
 AKORT.AggregateIntegration = (function () {
-  var VERSION = '4.0-aggregate-integration-5';
-  var RELEASE = '4.0.0-alpha.7.4.26';
+  var VERSION = '4.0-aggregate-integration-6';
+  var RELEASE = '4.0.0-alpha.7.4.29';
+  // Invocation-local cache only. Durable truth remains in AGGREGATE_STAGE and
+  // publish intents; this cache merely prevents the same 61k-row projection
+  // from being downloaded once per bounded batch in a single worker run.
+  var ALPHA74_TARGET_READ_CACHE = null;
   var MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE = '4.0.0-alpha.7.4.24';
   var OPERATION_SCHEMA_VERSION = '4.0-operation-2';
   var STAGE_SCHEMA_VERSION = '4.0-aggregate-stage-1';
@@ -48,12 +52,12 @@ AKORT.AggregateIntegration = (function () {
     PUBLISH_AGGREGATE_EXECUTION_ENABLED: false,
     PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED: false,
     PUBLISH_AGGREGATE_CALCULATION_GROUPS_PER_STEP: 8,
-    PUBLISH_AGGREGATE_MATERIALIZATION_COMBOS_PER_STEP: 4,
-    PUBLISH_AGGREGATE_STAGE_VALIDATION_ROWS_PER_STEP: 100,
-    PUBLISH_AGGREGATE_PUBLICATION_SERIES_PER_STEP: 32,
-    PUBLISH_AGGREGATE_LATEST_SERIES_PER_STEP: 32,
-    PUBLISH_AGGREGATE_RECONCILIATION_SERIES_PER_STEP: 32,
-    PUBLISH_AGGREGATE_STAGE_STATUS_ROWS_PER_STEP: 250,
+    PUBLISH_AGGREGATE_MATERIALIZATION_COMBOS_PER_STEP: 250,
+    PUBLISH_AGGREGATE_STAGE_VALIDATION_ROWS_PER_STEP: 2000,
+    PUBLISH_AGGREGATE_PUBLICATION_SERIES_PER_STEP: 500,
+    PUBLISH_AGGREGATE_LATEST_SERIES_PER_STEP: 500,
+    PUBLISH_AGGREGATE_RECONCILIATION_SERIES_PER_STEP: 500,
+    PUBLISH_AGGREGATE_STAGE_STATUS_ROWS_PER_STEP: 2000,
     PUBLISH_AGGREGATE_MONOLITHIC_COMBO_LIMIT: 8,
     PUBLISH_AGGREGATE_ATOMIC_MAX_ROWS: 5000,
     PUBLISH_AGGREGATE_ATOMIC_MAX_CELLS: 100000,
@@ -1355,6 +1359,7 @@ AKORT.AggregateIntegration = (function () {
           state.runtimeSettings.artifactChunkChars,
           state.runtimeSettings.artifactChunksPerStep
         );
+        state.artifactPersistence = clone_(boundedArtifactPersistence);
         state.status = boundedArtifactPersistence.complete ? 'INPUTS_MATERIALIZED' : 'MATERIALIZING_INPUTS';
         return {
           workSchemaVersion: BOUNDED_WORK_VERSION,
@@ -1413,6 +1418,7 @@ AKORT.AggregateIntegration = (function () {
         state.runtimeSettings.artifactChunkChars,
         state.runtimeSettings.artifactChunksPerStep
       );
+      state.artifactPersistence = clone_(artifactPersistence);
       state.status = artifactPersistence.complete ? 'INPUTS_MATERIALIZED' : 'MATERIALIZING_INPUTS';
       return {
         planId: state.planId,
@@ -3046,58 +3052,88 @@ AKORT.AggregateIntegration = (function () {
     };
   }
 
+  function targetReadCache_(target) {
+    var signature = [
+      text_(target.spreadsheetId),
+      String(target.sheet.getSheetId()),
+      String(target.rowCount),
+      String(target.headers.length)
+    ].join('|');
+    if (ALPHA74_TARGET_READ_CACHE && ALPHA74_TARGET_READ_CACHE.signature === signature) {
+      return ALPHA74_TARGET_READ_CACHE;
+    }
+    var specs = AGGREGATE_IDENTITY_COLUMNS.slice();
+    if (!specs.some(function (spec) { return spec.header === 'period_start'; })) {
+      specs.push({ header: 'period_start', column: 12 });
+    }
+    var projections = [];
+    if (target.rowCount) {
+      var sheetRef = quotedSheetName_(target.sheetName);
+      var ranges = specs.map(function (spec) {
+        var column = a1Column_(spec.column);
+        return sheetRef + '!' + column + '2:' + column + (target.rowCount + 1);
+      });
+      var columns = batchGetValues_(target.spreadsheetId, ranges);
+      for (var rowIndex = 0; rowIndex < target.rowCount; rowIndex += 1) {
+        var projection = { __row: rowIndex + 2 };
+        specs.forEach(function (spec, columnIndex) {
+          var values = columns[columnIndex] || [];
+          projection[spec.header] = values[rowIndex] && values[rowIndex][0] !== undefined ? values[rowIndex][0] : '';
+        });
+        projections.push(projection);
+      }
+    }
+    ALPHA74_TARGET_READ_CACHE = {
+      schemaVersion: '4.0-alpha74-target-read-cache-1',
+      signature: signature,
+      projections: projections,
+      rowsByPhysical: {}
+    };
+    return ALPHA74_TARGET_READ_CACHE;
+  }
+
+  function cachedTargetRows_(target, physicalRows) {
+    var cache = targetReadCache_(target);
+    var requested = uniqueSorted_((physicalRows || []).map(String)).map(Number).sort(function (a, b) { return a - b; });
+    var missing = requested.filter(function (rowNumber) { return !cache.rowsByPhysical[String(rowNumber)]; });
+    if (missing.length) {
+      rowsFromBlocks_(target.spreadsheetId, target.sheetName, rowBlocks_(missing), target.headers).forEach(function (row) {
+        cache.rowsByPhysical[String(row.__row)] = row;
+      });
+    }
+    return requested.map(function (rowNumber) { return cache.rowsByPhysical[String(rowNumber)]; }).filter(Boolean);
+  }
+
+  function invalidateTargetReadCache_() {
+    ALPHA74_TARGET_READ_CACHE = null;
+  }
+
   function readTargetRowsForStage_(stageRecords) {
     var target = targetSheetContext_();
     if (!target.rowCount || !(stageRecords || []).length) return [];
-    var sheetRef = quotedSheetName_(target.sheetName);
-    var ranges = AGGREGATE_IDENTITY_COLUMNS.map(function (spec) {
-      var column = a1Column_(spec.column);
-      return sheetRef + '!' + column + '2:' + column + (target.rowCount + 1);
-    });
-    var columns = batchGetValues_(target.spreadsheetId, ranges);
+    var cache = targetReadCache_(target);
     var signatures = stageSignatureMap_(stageRecords), physicalRows = [];
-    for (var rowIndex = 0; rowIndex < target.rowCount; rowIndex += 1) {
-      var projection = {};
-      AGGREGATE_IDENTITY_COLUMNS.forEach(function (spec, columnIndex) {
-        var values = columns[columnIndex] || [];
-        projection[spec.header] = values[rowIndex] && values[rowIndex][0] !== undefined ? values[rowIndex][0] : '';
-      });
-      if (signatures[publicSignature_(projection)]) physicalRows.push(rowIndex + 2);
-    }
-    return rowsFromBlocks_(target.spreadsheetId, target.sheetName, rowBlocks_(physicalRows), target.headers);
+    cache.projections.forEach(function (projection) {
+      if (signatures[publicSignature_(projection)]) physicalRows.push(projection.__row);
+    });
+    return cachedTargetRows_(target, physicalRows);
   }
 
   function readTargetRowsForCombos_(combos) {
     var target = targetSheetContext_();
     if (!target.rowCount || !(combos || []).length) return [];
-    var specs = [
-      { header: 'dataset_code', column: 1 },
-      { header: 'frequency', column: 3 },
-      { header: 'value_type', column: 10 },
-      { header: 'index_type', column: 11 },
-      { header: 'period_start', column: 12 }
-    ];
+    var cache = targetReadCache_(target);
     var comboSet = {};
     (combos || []).forEach(function (combo) {
       comboSet[aggregateComboKey_(combo.frequency, combo.datasetCode, combo.period, combo.valueType, combo.indexType)] = true;
     });
-    var sheetRef = quotedSheetName_(target.sheetName);
-    var ranges = specs.map(function (spec) {
-      var column = a1Column_(spec.column);
-      return sheetRef + '!' + column + '2:' + column + (target.rowCount + 1);
-    });
-    var columns = batchGetValues_(target.spreadsheetId, ranges), physicalRows = [];
-    for (var rowIndex = 0; rowIndex < target.rowCount; rowIndex += 1) {
-      var row = {};
-      specs.forEach(function (spec, columnIndex) {
-        var values = columns[columnIndex] || [];
-        row[spec.header] = values[rowIndex] && values[rowIndex][0] !== undefined ? values[rowIndex][0] : '';
-      });
+    var physicalRows = [];
+    cache.projections.forEach(function (row) {
       if (comboSet[aggregateComboKey_(row.frequency, row.dataset_code, row.period_start, row.value_type, row.index_type)]) {
-        physicalRows.push(rowIndex + 2);
+        physicalRows.push(row.__row);
       }
-    }
-    return rowsFromBlocks_(target.spreadsheetId, target.sheetName, rowBlocks_(physicalRows), target.headers);
+    });
+    return cachedTargetRows_(target, physicalRows);
   }
 
   function readTargetTailRows_(rowCount) {
@@ -3264,7 +3300,9 @@ AKORT.AggregateIntegration = (function () {
         retryable: false
       });
     }
-    return batchUpdateReplacement_(publish_(), replacement);
+    var result = batchUpdateReplacement_(publish_(), replacement);
+    invalidateTargetReadCache_();
+    return result;
   }
 
   function gate4AtomicReplaceIsolated_(spreadsheet, replacement) {

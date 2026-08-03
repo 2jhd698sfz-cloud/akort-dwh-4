@@ -1,0 +1,10 @@
+**/**
+!**/*.js
+!**/*.html
+!appsscript.json
+
+# Never upload local smoke fixtures or editor/backup artifacts.
+**/*.backup-*
+**/*.bak
+**/*.tmp
+**/*~

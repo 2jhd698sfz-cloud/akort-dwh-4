@@ -150,7 +150,7 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
-Release `4.0.0-alpha.7.4.26` готов к точному DEV-продолжению Gate 6. Harness
+Release `4.0.0-alpha.7.4.29` готов к точному DEV-продолжению Gate 6. Harness
 создаёт DWH/Publish recovery copies, выполняет canary из нового weekly/monthly
 файла через `SOURCE_FILE_LOAD_V4`, штатный `RAW_REVERSAL_V4` и повторную
 source-file загрузку для восстановления. Acceptance требует фактического
@@ -183,6 +183,25 @@ reconciliation и finalization. Точный остановленный `.22` ch
 продолжается обычным `AKORT_alpha74Gate6Resume()` с сохранением RAW, ordinary
 price Publish, materialization и рассчитанных stage rows. Нормативный runbook:
 `GATE6_BOUNDED_AGGREGATE_PHASES_HOTFIX.md`.
+
+После подтверждённого `.26` partial RAW rollback `.27` ввела exact-once
+reversal chunks. `.28` устраняет системную причину многочасового выполнения:
+381 affected aggregate combinations больше не делятся на окна по 4 с новым
+61 636-row scan на каждом окне. Source snapshot и target index теперь
+переиспользуются внутри worker invocation, materialization идёт bounded
+пачками по 250, а один trigger выполняет несколько durable resume steps.
+Обычный Weekly/Monthly/Industry `UPDATE_PUBLISH` также переведён на durable
+порции полных logical series (25/25/10). Frozen atomic limits, read-back,
+lost-response recovery и third-state fail-closed сохранены. Инструкция:
+`GATE6_FAST_INCREMENTAL_UPDATE_HOTFIX.md`.
+
+`.29` закрывает два барьера операционной готовности `.28`:
+повторный Stop находит active operation через `stoppedFromPhase`, а
+progress watchdog учит `reversalWork`, Publish work обоих handler-типов,
+artifact persistence и все aggregate cursors. Поэтому bounded steps Weekly,
+Monthly, Industry и aggregates выполняются последовательно в одном
+worker budget, пока есть реальный durable progress. Операционный runbook:
+`ALPHA74_29_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
 Первый `.23` Resume корректно отказался продолжать, потому что старый `.22`
 успел записать `STAGED` для всех 392 строк, но потерял ответ до сохранения
 operation checkpoint. `.24` принимает это exact after-state только при нулевых
@@ -206,6 +225,17 @@ Recovery `.25` остановилась до любых мутаций на не
 `DefaultAdapter.readCalculatedRows`, сохраняет exact `.24` source-state и
 добавляет в mandatory test chain проверку всех unresolved private
 Apps Script calls.
+
+После успешного canary и `postCanary` scan `.26` штатный `RAW_REVERSAL_V4`
+остался в монолитном `COMMIT_RAW`. Read-only проверка DWH доказала, что
+aggregate pipeline ещё не запускался, а в `RAW_REVERSAL_LOG` физически
+сохранены только 8 из 50 observations без operation checkpoint. `.27`
+переводит RAW reversal на bounded exact-once пачки по 10 observations,
+использует successful reversal log IDs как durable cursor и разрешает обычный
+`AKORT_alpha74Gate6Resume()` только для точного остановленного `.26` incident.
+Recovery начинает с первой незавершённой observation; canary, принятые восемь
+строк и `postCanary` Publish не повторяются. Нормативная инструкция:
+`GATE6_DURABLE_RAW_REVERSAL_HOTFIX.md`.
 
 ## Gate 7 — Acceptance
 

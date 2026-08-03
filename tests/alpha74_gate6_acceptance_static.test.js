@@ -91,8 +91,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-8');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.26');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-11');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.29');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -338,6 +338,152 @@ test('exact Alpha.7.4.24 monthly period-label readback incident is eligible only
   assert.equal(G.Test.monthlyPeriodLabelOperationPrepared(state, prepared), false);
 });
 
+test('exact stopped Alpha.7.4.26 partial RAW reversal is eligible for durable chunk adoption', () => {
+  const operationId = 'OP_RAW_REVERSAL_V4_20260802T191111384Z_3683C13EE282';
+  const targetLoadId = 'LOAD_20260802T123559854Z_EFB27B040FBC';
+  const state = {
+    stateSchemaVersion: '4.0-alpha74-gate6-state-1',
+    release: '4.0.0-alpha.7.4.26',
+    executionId: 'A74_GATE6_7F437567A3ABBFBE94F1',
+    status: 'STOPPED',
+    phase: 'STOPPED',
+    stoppedFromPhase: 'RUN_REVERSAL',
+    operations: { canary: 'OP_CANARY', reversal: operationId, restore: '' },
+    loads: { canary: targetLoadId, reversal: '', restore: '' },
+    artifacts: { dwhBackup: { id: 'DWH_BACKUP' }, publishBackup: { id: 'PUBLISH_BACKUP' } }
+  };
+  const operation = {
+    operation_id: operationId,
+    operation_type: 'RAW_REVERSAL_V4',
+    release_version: '4.0.0-alpha.7.4.26',
+    status: 'PAUSED',
+    current_phase: 'COMMIT_RAW',
+    checkpoint: {
+      nextPhase: 'COMMIT_RAW',
+      completedPhases: ['DISCOVER', 'VALIDATE', 'PARSE', 'STAGE'],
+      control: { stopRequested: true },
+      aggregate: { status: 'NOT_STARTED' },
+      rawStore: {}
+    }
+  };
+  const inspection = {
+    operationId,
+    targetLoadId,
+    targetTable: 'RAW_PRICES_WEEKLY',
+    targetLoadStatus: 'COMMITTED',
+    reversalLoadId: 'LOAD_REV_20260802T193440542Z_9D4AB8FFFF24',
+    totalRows: 50,
+    completedRows: 8,
+    pendingRows: 42,
+    complete: false
+  };
+  assert.equal(G.Test.rawReversalChunkIncident(state, operation, inspection), true);
+  const restarted = JSON.parse(JSON.stringify(inspection));
+  restarted.completedRows = 0;
+  restarted.pendingRows = 50;
+  assert.equal(G.Test.rawReversalChunkIncident(state, operation, restarted), false);
+  const aggregateStarted = JSON.parse(JSON.stringify(operation));
+  aggregateStarted.checkpoint.aggregate.status = 'IMPACT_PREPARED';
+  assert.equal(G.Test.rawReversalChunkIncident(state, aggregateStarted, inspection), false);
+});
+
+test('an already stopped Gate 6 checkpoint still routes its active operation for an idempotent stop request', () => {
+  const state = {
+    status: 'STOPPED',
+    phase: 'STOPPED',
+    stoppedFromPhase: 'RUN_REVERSAL',
+    operations: { canary: 'OP_CANARY', reversal: 'OP_REVERSAL', restore: 'OP_RESTORE' }
+  };
+  assert.equal(G.Test.activeOperationId(state), 'OP_REVERSAL');
+  state.stoppedFromPhase = 'RUN_CANARY';
+  assert.equal(G.Test.activeOperationId(state), 'OP_CANARY');
+  state.stoppedFromPhase = 'RUN_RESTORE';
+  assert.equal(G.Test.activeOperationId(state), 'OP_RESTORE');
+});
+
+test('operation progress fingerprint changes for RAW reversal and every durable Publish handler cursor', () => {
+  const operation = {
+    status: 'PAUSED',
+    current_phase: 'COMMIT_RAW',
+    checkpoint: {
+      completedPhases: ['DISCOVER', 'VALIDATE', 'PARSE', 'STAGE'],
+      aggregate: { status: 'NOT_STARTED' },
+      rawStore: {
+        loadId: '',
+        reversalWork: {
+          workSchemaVersion: '4.0-raw-reversal-work-1',
+          completedRows: 8,
+          pendingRows: 42,
+          totalRows: 50,
+          chunkRows: 10
+        }
+      },
+      handlerState: {}
+    }
+  };
+  const initial = G.Test.operationProgressFingerprint(operation);
+  assert.equal(initial, G.Test.operationProgressFingerprint(JSON.parse(JSON.stringify(operation))));
+
+  const reversalAdvanced = JSON.parse(JSON.stringify(operation));
+  reversalAdvanced.checkpoint.rawStore.reversalWork.completedRows = 18;
+  reversalAdvanced.checkpoint.rawStore.reversalWork.pendingRows = 32;
+  assert.notEqual(initial, G.Test.operationProgressFingerprint(reversalAdvanced));
+
+  const rawPublishAdvanced = JSON.parse(JSON.stringify(operation));
+  rawPublishAdvanced.current_phase = 'UPDATE_PUBLISH';
+  rawPublishAdvanced.checkpoint.rawStore.publishWork = {
+    workSchemaVersion: '4.0-publish-work-1',
+    stage: 'INDUSTRY',
+    cursor: 10,
+    batches: 3,
+    industryRows: 120
+  };
+  const rawPublish = G.Test.operationProgressFingerprint(rawPublishAdvanced);
+  rawPublishAdvanced.checkpoint.rawStore.publishWork.cursor = 20;
+  rawPublishAdvanced.checkpoint.rawStore.publishWork.batches = 4;
+  assert.notEqual(rawPublish, G.Test.operationProgressFingerprint(rawPublishAdvanced));
+
+  const sourcePublishAdvanced = JSON.parse(JSON.stringify(operation));
+  sourcePublishAdvanced.current_phase = 'UPDATE_PUBLISH';
+  sourcePublishAdvanced.checkpoint.rawStore = {};
+  sourcePublishAdvanced.checkpoint.handlerState.publishWork = {
+    workSchemaVersion: '4.0-publish-work-1',
+    stage: 'MONTHLY',
+    cursor: 25,
+    batches: 1,
+    monthlyRows: 3100
+  };
+  const sourcePublish = G.Test.operationProgressFingerprint(sourcePublishAdvanced);
+  sourcePublishAdvanced.checkpoint.handlerState.publishWork.stage = 'INDUSTRY';
+  sourcePublishAdvanced.checkpoint.handlerState.publishWork.cursor = 0;
+  sourcePublishAdvanced.checkpoint.handlerState.publishWork.batches = 2;
+  assert.notEqual(sourcePublish, G.Test.operationProgressFingerprint(sourcePublishAdvanced));
+
+  const aggregateAdvanced = JSON.parse(JSON.stringify(operation));
+  aggregateAdvanced.current_phase = 'CALCULATING_AGGREGATE_SLICES';
+  aggregateAdvanced.checkpoint.aggregate = {
+    status: 'CALCULATING',
+    calculationCursor: 8,
+    batchNo: 1,
+    artifactPersistence: { persistedChunks: 25, totalChunks: 40, complete: false }
+  };
+  const aggregateFingerprint = G.Test.operationProgressFingerprint(aggregateAdvanced);
+  aggregateAdvanced.checkpoint.aggregate.calculationCursor = 16;
+  aggregateAdvanced.checkpoint.aggregate.batchNo = 2;
+  assert.notEqual(aggregateFingerprint, G.Test.operationProgressFingerprint(aggregateAdvanced));
+
+  const artifactAdvanced = JSON.parse(JSON.stringify(operation));
+  artifactAdvanced.current_phase = 'MATERIALIZING_AGGREGATE_INPUTS';
+  artifactAdvanced.checkpoint.aggregate = {
+    status: 'MATERIALIZING_INPUTS',
+    materializationCursor: 381,
+    artifactPersistence: { persistedChunks: 25, totalChunks: 75, complete: false, fingerprint: 'ARTIFACT' }
+  };
+  const artifactFingerprint = G.Test.operationProgressFingerprint(artifactAdvanced);
+  artifactAdvanced.checkpoint.aggregate.artifactPersistence.persistedChunks = 50;
+  assert.notEqual(artifactFingerprint, G.Test.operationProgressFingerprint(artifactAdvanced));
+});
+
 test('control sheet accepts a Drive file ID or URL and rejects arbitrary text', () => {
   const fileId = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
   assert.equal(G.Test.parseFileId(fileId), fileId);
@@ -430,6 +576,7 @@ test('source contract contains source-file canary, recovery copies, standard rol
   assert(source.includes('OPERATIONAL_RUNTIME_CONTEXT_CHECKPOINT_RECOVERY'));
   assert(source.includes('BOUNDED_STAGE_AFTER_STATE_RECOVERY'));
   assert(source.includes('MONTHLY_PERIOD_LABEL_READBACK_RECOVERY'));
+  assert(source.includes('DURABLE_RAW_REVERSAL_CHUNK_RECOVERY'));
   assert(source.includes('validateRecoveryStageSnapshot'));
   assert(source.includes('recoverMonthlyPeriodLabelIntent'));
   assert(source.includes('AKORT.OperationEngine.recoverFailedPhase'));

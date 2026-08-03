@@ -44,6 +44,10 @@ AKORT.RawStore = (function () {
       value: 'LATEST_LOAD_ONLY', type: 'STRING',
       description: 'Logical reversal is allowed only when no later revision exists'
     },
+    RAW_REVERSAL_CHUNK_ROWS: {
+      value: 10, type: 'NUMBER',
+      description: 'Maximum RAW observations reversed in one durable Operation Engine checkpoint'
+    },
     RAW_STORE_ENABLED: {
       value: true, type: 'BOOLEAN',
       description: 'Enable normalized alpha.4 RAW Store operations in DEV'
@@ -91,6 +95,7 @@ AKORT.RawStore = (function () {
     STAGED: 'STAGED',
     COMMITTING: 'COMMITTING',
     COMMITTED: 'COMMITTED',
+    REVERSING: 'REVERSING',
     FAILED: 'FAILED',
     REVERSED: 'REVERSED'
   };
@@ -339,6 +344,7 @@ AKORT.RawStore = (function () {
       stageBatchSize: Number(settings.RAW_STAGE_BATCH_SIZE || 500),
       duplicatePolicy: String(settings.RAW_DUPLICATE_POLICY || 'REUSE_COMMITTED'),
       reversalPolicy: String(settings.RAW_REVERSAL_POLICY || 'LATEST_LOAD_ONLY'),
+      reversalChunkRows: Math.max(1, Number(settings.RAW_REVERSAL_CHUNK_ROWS || 10)),
       enabled: settings.RAW_STORE_ENABLED === undefined ? true : Boolean(settings.RAW_STORE_ENABLED)
     };
   }
@@ -388,7 +394,7 @@ AKORT.RawStore = (function () {
     return rows.filter(function (row) {
       return String(row.target_table) === String(targetTable) &&
         String(row.source_hash) === String(sourceHash) &&
-        [LOAD_STATUSES.CREATED, LOAD_STATUSES.STAGED, LOAD_STATUSES.COMMITTING, LOAD_STATUSES.COMMITTED].indexOf(String(row.status)) >= 0;
+        [LOAD_STATUSES.CREATED, LOAD_STATUSES.STAGED, LOAD_STATUSES.COMMITTING, LOAD_STATUSES.COMMITTED, LOAD_STATUSES.REVERSING].indexOf(String(row.status)) >= 0;
     })[0] || null;
   }
 
@@ -404,6 +410,13 @@ AKORT.RawStore = (function () {
     var spreadsheet = getDwh_();
     var existing = existingSourceLoad_(spreadsheet, targetTable, sourceHash);
     if (existing) {
+      if (String(existing.status) === LOAD_STATUSES.REVERSING) {
+        throw AKORT.Core.error('RAW_SOURCE_REVERSAL_IN_PROGRESS', 'The matching source load is being reversed and cannot be reused until its durable reversal finishes.', {
+          loadId: existing.load_id,
+          targetTable: targetTable,
+          sourceHash: sourceHash
+        });
+      }
       return {
         loadId: existing.load_id,
         reused: true,
@@ -708,107 +721,353 @@ AKORT.RawStore = (function () {
     };
   }
 
-  function reverseLoad(targetLoadId, operationId, reason) {
-    var spreadsheet = getDwh_();
-    var targetFound = findLoad_(spreadsheet, targetLoadId);
-    var targetLoad = targetFound.load;
-    if (String(targetLoad.status) === LOAD_STATUSES.REVERSED) {
-      var prior = readObjects_(reversalTable_(spreadsheet)).filter(function (row) {
-        return String(row.target_load_id) === String(targetLoadId) && String(row.status) === 'SUCCESS';
-      });
-      return {
+  function deterministicReversalLoadId_(operationId, targetLoadId) {
+    return 'LOAD_REV_' + AKORT.Core.sha256(String(operationId || '') + '|' + String(targetLoadId || '')).slice(0, 28).toUpperCase();
+  }
+
+  function reversalRecordsFor_(table, operationId, targetLoadId) {
+    return readObjects_(table).filter(function (row) {
+      return String(row.operation_id) === String(operationId || '') &&
+        String(row.target_load_id) === String(targetLoadId || '') &&
+        String(row.status) === 'SUCCESS';
+    });
+  }
+
+  function reversalLoadIdFor_(records, operationId, targetLoadId) {
+    var ids = {};
+    (records || []).forEach(function (row) {
+      var value = String(row.reversal_load_id || '');
+      if (value) ids[value] = true;
+    });
+    var values = Object.keys(ids);
+    if (values.length > 1) {
+      throw AKORT.Core.error('RAW_REVERSAL_LOAD_ID_CONFLICT', 'One reversal operation contains more than one reversal load ID.', {
+        operationId: operationId,
         targetLoadId: targetLoadId,
-        reversalLoadId: prior.length ? String(prior[0].reversal_load_id || '') : '',
-        reused: true,
-        reversedRows: Number(targetLoad.rows_reversed || 0),
-        reversalLog: prior
-      };
-    }
-    if (String(targetLoad.status) !== LOAD_STATUSES.COMMITTED) {
-      throw AKORT.Core.error('RAW_LOAD_NOT_REVERSIBLE', 'Only a committed RAW load may be logically reversed.', {
-        targetLoadId: targetLoadId,
-        status: targetLoad.status
+        reversalLoadIds: values
       });
     }
-    var targetTable = String(targetLoad.target_table);
-    var rawTable = table_(spreadsheet, targetTable, spec_(targetTable).headers);
-    var allRows = rawRowObjects_(rawTable);
-    var targetRows = allRows.filter(function (row) { return String(row.load_id) === String(targetLoadId); });
-    if (!targetRows.length) throw AKORT.Core.error('REVERSAL_TARGET_EMPTY', 'Committed load has no RAW rows to reverse.', { targetLoadId: targetLoadId });
-    // Validate the complete reversal before mutating any is_latest flags.
-    targetRows.forEach(function (targetRow) {
-      var key = businessKeyFromRaw_(targetTable, targetRow);
-      var later = allRows.filter(function (row) {
-        return businessKeyFromRaw_(targetTable, row) === key &&
-          Number(row.version_no || 0) > Number(targetRow.version_no || 0);
+    return values[0] || deterministicReversalLoadId_(operationId, targetLoadId);
+  }
+
+  function reversalIndex_(targetTable, allRows) {
+    var byKey = {};
+    (allRows || []).forEach(function (row) {
+      var key = businessKeyFromRaw_(targetTable, row);
+      byKey[key] = byKey[key] || [];
+      byKey[key].push(row);
+    });
+    Object.keys(byKey).forEach(function (key) {
+      byKey[key].sort(function (a, b) {
+        return Number(a.version_no || 0) - Number(b.version_no || 0) || Number(a.__row || 0) - Number(b.__row || 0);
+      });
+    });
+    return byKey;
+  }
+
+  function planReversalChunk_(targetTable, allRows, targetRows, existingRecords, chunkRows, targetLoadId) {
+    var byKey = reversalIndex_(targetTable, allRows);
+    var targetByObservation = {};
+    (targetRows || []).forEach(function (row) {
+      var observationId = String(row.observation_id || '');
+      if (!observationId || targetByObservation[observationId]) {
+        throw AKORT.Core.error('RAW_REVERSAL_TARGET_ID_INVALID', 'Reversal target observations must have unique IDs.', {
+          targetLoadId: targetLoadId,
+          observationId: observationId
+        });
+      }
+      targetByObservation[observationId] = row;
+      var key = businessKeyFromRaw_(targetTable, row);
+      var later = (byKey[key] || []).filter(function (candidate) {
+        return Number(candidate.version_no || 0) > Number(row.version_no || 0);
       });
       if (later.length) {
         throw AKORT.Core.error('REVERSAL_CONFLICT_LATER_VERSION', 'Logical reversal is blocked because a later revision exists.', {
           targetLoadId: targetLoadId,
           businessKey: key,
-          laterObservationIds: later.map(function (row) { return row.observation_id; })
+          laterObservationIds: later.map(function (candidate) { return candidate.observation_id; })
         });
       }
     });
-    var reversalLoadId = id_('LOAD_REV');
-    var reversalLog = reversalTable_(spreadsheet);
-    var records = [];
-    targetRows.forEach(function (targetRow) {
+
+    var completed = {};
+    (existingRecords || []).forEach(function (record) {
+      var observationId = String(record.reversed_observation_id || '');
+      if (!targetByObservation[observationId]) {
+        throw AKORT.Core.error('RAW_REVERSAL_LOG_TARGET_MISMATCH', 'A durable reversal record does not belong to the target load.', {
+          targetLoadId: targetLoadId,
+          reversedObservationId: observationId
+        });
+      }
+      if (completed[observationId]) {
+        throw AKORT.Core.error('RAW_REVERSAL_LOG_DUPLICATE', 'A target observation has more than one durable reversal record.', {
+          targetLoadId: targetLoadId,
+          reversedObservationId: observationId
+        });
+      }
+      completed[observationId] = true;
+    });
+
+    var pending = (targetRows || []).filter(function (row) {
+      return !completed[String(row.observation_id || '')];
+    }).sort(function (a, b) { return Number(a.__row || 0) - Number(b.__row || 0); });
+    var selected = pending.slice(0, Math.max(1, Number(chunkRows || 1)));
+    var items = selected.map(function (targetRow) {
       var key = businessKeyFromRaw_(targetTable, targetRow);
-      var history = allRows.filter(function (row) { return businessKeyFromRaw_(targetTable, row) === key; });
+      var history = byKey[key] || [];
       var restored = history.filter(function (row) {
         return Number(row.version_no || 0) < Number(targetRow.version_no || 0);
-      }).sort(function (a, b) { return Number(b.version_no || 0) - Number(a.version_no || 0); })[0] || null;
-      if (truthy_(targetRow.is_latest)) updateLatestFlag_(rawTable, targetRow, false);
-      if (restored) updateLatestFlag_(rawTable, restored, true);
-      var logRecord = {
+      }).sort(function (a, b) {
+        return Number(b.version_no || 0) - Number(a.version_no || 0) || Number(b.__row || 0) - Number(a.__row || 0);
+      })[0] || null;
+      return { key: key, target: targetRow, restored: restored };
+    });
+    return {
+      total: (targetRows || []).length,
+      completed: Object.keys(completed).length,
+      pending: pending.length,
+      items: items
+    };
+  }
+
+  function columnA1_(column) {
+    var value = Number(column || 0);
+    var text = '';
+    while (value > 0) {
+      value -= 1;
+      text = String.fromCharCode(65 + value % 26) + text;
+      value = Math.floor(value / 26);
+    }
+    return text;
+  }
+
+  function writeLatestFlags_(rawTable, items) {
+    var index = headersIndex_(rawTable.headers);
+    var column = columnA1_(index.is_latest + 1);
+    var targetRanges = {};
+    var restoredRanges = {};
+    (items || []).forEach(function (item) {
+      if (!item.target || !item.target.__row) throw AKORT.Core.error('RAW_REVERSAL_ROW_REFERENCE_MISSING', 'Target RAW row has no durable row reference.');
+      targetRanges[column + Number(item.target.__row)] = true;
+      if (item.restored) {
+        if (!item.restored.__row) throw AKORT.Core.error('RAW_REVERSAL_ROW_REFERENCE_MISSING', 'Restored RAW row has no durable row reference.');
+        restoredRanges[column + Number(item.restored.__row)] = true;
+      }
+    });
+    var targets = Object.keys(targetRanges);
+    var restored = Object.keys(restoredRanges);
+    if (targets.length) rawTable.sheet.getRangeList(targets).setValue(0);
+    if (restored.length) rawTable.sheet.getRangeList(restored).setValue(1);
+    return { reversedFlags: targets.length, restoredFlags: restored.length };
+  }
+
+  function appendObjects_(table, objects) {
+    if (!(objects || []).length) return [];
+    var startRow = Math.max(2, table.sheet.getLastRow() + 1);
+    var requiredLastRow = startRow + objects.length - 1;
+    if (requiredLastRow > table.sheet.getMaxRows()) {
+      table.sheet.insertRowsAfter(table.sheet.getMaxRows(), requiredLastRow - table.sheet.getMaxRows());
+    }
+    table.sheet.getRange(startRow, 1, objects.length, table.headers.length).setValues(objects.map(function (object) {
+      return rowValues_(table.headers, object);
+    }));
+    objects.forEach(function (object, index) { object.__row = startRow + index; });
+    return objects;
+  }
+
+  function compactReversalRecords_(records) {
+    return (records || []).map(function (row) {
+      return {
+        operation_id: String(row.operation_id || ''),
+        reversal_load_id: String(row.reversal_load_id || ''),
+        target_load_id: String(row.target_load_id || ''),
+        target_table: String(row.target_table || ''),
+        business_key: String(row.business_key || ''),
+        reversed_observation_id: String(row.reversed_observation_id || ''),
+        restored_observation_id: String(row.restored_observation_id || ''),
+        status: String(row.status || '')
+      };
+    });
+  }
+
+  function finalizeReversal_(targetFound, reversalLoadId, operationId, targetLoadId, targetTable, records) {
+    var loads = readObjects_(targetFound.table);
+    var existing = loads.filter(function (row) { return String(row.load_id) === String(reversalLoadId); })[0] || null;
+    if (existing) {
+      if (String(existing.operation_id) !== String(operationId || '') || String(existing.source_id) !== String(targetLoadId) ||
+          String(existing.target_table) !== String(targetTable) || String(existing.status) !== LOAD_STATUSES.COMMITTED) {
+        throw AKORT.Core.error('RAW_REVERSAL_REGISTRY_CONFLICT', 'Existing reversal load registry row does not match the durable reversal.', {
+          reversalLoadId: reversalLoadId,
+          operationId: operationId,
+          targetLoadId: targetLoadId
+        });
+      }
+    } else {
+      var finishedAt = AKORT.Core.now();
+      appendObject_(targetFound.table, {
+        load_id: reversalLoadId,
+        operation_id: String(operationId || ''),
+        source_id: targetLoadId,
+        source_name: 'Logical reversal of ' + targetLoadId,
+        source_hash: AKORT.Core.sha256('REVERSAL|' + targetLoadId),
+        target_table: targetTable,
+        status: LOAD_STATUSES.COMMITTED,
+        rows_received: records.length,
+        rows_staged: 0,
+        rows_inserted: 0,
+        rows_revised: 0,
+        rows_unchanged: 0,
+        rows_reversed: records.length,
+        started_at: finishedAt,
+        finished_at: finishedAt,
+        error_code: '',
+        error_message: '',
+        release_version: AKORT.Release.version
+      });
+    }
+    var targetLoad = targetFound.load;
+    targetLoad.status = LOAD_STATUSES.REVERSED;
+    targetLoad.rows_reversed = records.length;
+    targetLoad.finished_at = AKORT.Core.now();
+    targetLoad.error_code = '';
+    targetLoad.error_message = '';
+    saveObject_(targetFound.table, targetLoad);
+    return {
+      targetLoadId: targetLoadId,
+      reversalLoadId: reversalLoadId,
+      reused: !!existing,
+      reversedRows: records.length,
+      records: compactReversalRecords_(records)
+    };
+  }
+
+  /**
+   * Execute one bounded, durable RAW reversal chunk.
+   * RAW_REVERSAL_LOG is the exact-once cursor: a lost response is recovered by
+   * re-reading successful observation IDs, never by restarting from row 1.
+   */
+  function reverseLoadStep(targetLoadId, operationId, reason, options) {
+    options = options || {};
+    var spreadsheet = getDwh_();
+    var targetFound = findLoad_(spreadsheet, targetLoadId);
+    var targetLoad = targetFound.load;
+    var reversalLog = reversalTable_(spreadsheet);
+    var existingRecords = reversalRecordsFor_(reversalLog, operationId, targetLoadId);
+    var reversalLoadId = reversalLoadIdFor_(existingRecords, operationId, targetLoadId);
+    var targetTable = String(targetLoad.target_table);
+
+    if (String(targetLoad.status) === LOAD_STATUSES.REVERSED) {
+      if (!existingRecords.length) {
+        throw AKORT.Core.error('RAW_REVERSAL_DURABLE_LOG_MISSING', 'Reversed RAW load has no durable records for this operation.', {
+          operationId: operationId,
+          targetLoadId: targetLoadId
+        });
+      }
+      return {
+        complete: true,
+        work: {
+          schemaVersion: '4.0-raw-reversal-work-1',
+          targetLoadId: targetLoadId,
+          reversalLoadId: reversalLoadId,
+          targetTable: targetTable,
+          completedRows: existingRecords.length,
+          totalRows: Number(targetLoad.rows_reversed || existingRecords.length),
+          chunkRows: Math.max(1, Number(options.chunkRows || runtimeSettings_().reversalChunkRows))
+        },
+        reversal: {
+          targetLoadId: targetLoadId,
+          reversalLoadId: reversalLoadId,
+          reused: true,
+          reversedRows: existingRecords.length,
+          records: compactReversalRecords_(existingRecords)
+        }
+      };
+    }
+    if ([LOAD_STATUSES.COMMITTED, LOAD_STATUSES.REVERSING].indexOf(String(targetLoad.status)) < 0) {
+      throw AKORT.Core.error('RAW_LOAD_NOT_REVERSIBLE', 'Only a committed or durably reversing RAW load may be logically reversed.', {
+        targetLoadId: targetLoadId,
+        status: targetLoad.status
+      });
+    }
+
+    var rawTable = table_(spreadsheet, targetTable, spec_(targetTable).headers);
+    var allRows = rawRowObjects_(rawTable);
+    var targetRows = allRows.filter(function (row) { return String(row.load_id) === String(targetLoadId); });
+    if (!targetRows.length) throw AKORT.Core.error('REVERSAL_TARGET_EMPTY', 'Committed load has no RAW rows to reverse.', { targetLoadId: targetLoadId });
+    var chunkRows = Math.max(1, Number(options.chunkRows || runtimeSettings_().reversalChunkRows));
+    var plan = planReversalChunk_(targetTable, allRows, targetRows, existingRecords, chunkRows, targetLoadId);
+
+    if (String(targetLoad.status) !== LOAD_STATUSES.REVERSING) {
+      targetLoad.status = LOAD_STATUSES.REVERSING;
+      targetLoad.finished_at = '';
+      targetLoad.error_code = '';
+      targetLoad.error_message = '';
+      saveObject_(targetFound.table, targetLoad);
+    }
+
+    var newRecords = plan.items.map(function (item) {
+      return {
         reversal_id: id_('REV'),
         operation_id: String(operationId || ''),
         reversal_load_id: reversalLoadId,
         target_load_id: targetLoadId,
         target_table: targetTable,
-        business_key: key,
-        reversed_observation_id: targetRow.observation_id,
-        restored_observation_id: restored ? restored.observation_id : '',
+        business_key: item.key,
+        reversed_observation_id: item.target.observation_id,
+        restored_observation_id: item.restored ? item.restored.observation_id : '',
         reversed_at: AKORT.Core.now(),
         reason: String(reason || 'Logical reversal'),
         status: 'SUCCESS',
         release_version: AKORT.Release.version
       };
-      appendObject_(reversalLog, logRecord);
-      records.push(logRecord);
     });
-    targetLoad.status = LOAD_STATUSES.REVERSED;
-    targetLoad.rows_reversed = records.length;
-    targetLoad.finished_at = AKORT.Core.now();
-    saveObject_(targetFound.table, targetLoad);
-    var reversalLoad = {
-      load_id: reversalLoadId,
-      operation_id: String(operationId || ''),
-      source_id: targetLoadId,
-      source_name: 'Logical reversal of ' + targetLoadId,
-      source_hash: AKORT.Core.sha256('REVERSAL|' + targetLoadId),
-      target_table: targetTable,
-      status: LOAD_STATUSES.COMMITTED,
-      rows_received: records.length,
-      rows_staged: 0,
-      rows_inserted: 0,
-      rows_revised: 0,
-      rows_unchanged: 0,
-      rows_reversed: records.length,
-      started_at: AKORT.Core.now(),
-      finished_at: AKORT.Core.now(),
-      error_code: '',
-      error_message: '',
-      release_version: AKORT.Release.version
-    };
-    appendObject_(targetFound.table, reversalLoad);
+    var flagWrites = writeLatestFlags_(rawTable, plan.items);
+    appendObjects_(reversalLog, newRecords);
+    var records = existingRecords.concat(newRecords);
+    var complete = records.length === targetRows.length;
+    var reversal = complete ? finalizeReversal_(targetFound, reversalLoadId, operationId, targetLoadId, targetTable, records) : null;
     return {
-      targetLoadId: targetLoadId,
-      reversalLoadId: reversalLoadId,
-      reused: false,
-      reversedRows: records.length,
-      records: records
+      complete: complete,
+      work: {
+        schemaVersion: '4.0-raw-reversal-work-1',
+        targetLoadId: targetLoadId,
+        reversalLoadId: reversalLoadId,
+        targetTable: targetTable,
+        completedRows: records.length,
+        totalRows: targetRows.length,
+        chunkRows: chunkRows,
+        lastChunkRows: newRecords.length,
+        reversedFlags: flagWrites.reversedFlags,
+        restoredFlags: flagWrites.restoredFlags
+      },
+      reversal: reversal
+    };
+  }
+
+  function reverseLoad(targetLoadId, operationId, reason, options) {
+    return reverseLoadStep(targetLoadId, operationId, reason, options);
+  }
+
+  function inspectReversal(targetLoadId, operationId) {
+    var spreadsheet = getDwh_();
+    var targetFound = findLoad_(spreadsheet, targetLoadId);
+    var targetLoad = targetFound.load;
+    var targetTable = String(targetLoad.target_table);
+    var rawTable = table_(spreadsheet, targetTable, spec_(targetTable).headers);
+    var allRows = rawRowObjects_(rawTable);
+    var targetRows = allRows.filter(function (row) { return String(row.load_id) === String(targetLoadId); });
+    var records = reversalRecordsFor_(reversalTable_(spreadsheet), operationId, targetLoadId);
+    var plan = planReversalChunk_(targetTable, allRows, targetRows, records, 1, targetLoadId);
+    return {
+      operationId: String(operationId || ''),
+      targetLoadId: String(targetLoadId || ''),
+      targetTable: targetTable,
+      targetLoadStatus: String(targetLoad.status || ''),
+      reversalLoadId: reversalLoadIdFor_(records, operationId, targetLoadId),
+      totalRows: targetRows.length,
+      completedRows: records.length,
+      pendingRows: plan.pending,
+      complete: records.length === targetRows.length
     };
   }
 
@@ -925,13 +1184,17 @@ AKORT.RawStore = (function () {
     commitLoad: commitLoad,
     storeNormalized: storeNormalized,
     reverseLoad: reverseLoad,
+    reverseLoadStep: reverseLoadStep,
+    inspectReversal: inspectReversal,
     auditLoad: auditLoad,
     status: status,
     statusSummary: statusSummary,
     Test: {
       cleanup: cleanupTestArtifacts,
       getDwh: getDwh_,
-      findLoad: function (loadId) { return findLoad_(getDwh_(), loadId).load; }
+      findLoad: function (loadId) { return findLoad_(getDwh_(), loadId).load; },
+      planReversalChunk: planReversalChunk_,
+      reversalLoadId: reversalLoadIdFor_
     }
   };
 })();
@@ -1015,7 +1278,11 @@ AKORT.RawStoreHandlers = (function () {
         return state.publishUpdate;
       }
       AKORT.IncrementalPublish.appendImpact(context.operation.operation_id, state.loadId, publishPlan);
-      state.publishUpdate = AKORT.IncrementalPublish.applyPublish(publishPlan, context.operation.operation_id);
+      var publishStep = AKORT.IncrementalPublish.applyPublishStep(publishPlan, context.operation.operation_id, state.publishWork);
+      state.publishWork = publishStep.work;
+      if (publishStep.repeatPhase === true) return publishStep;
+      state.publishUpdate = publishStep;
+      delete state.publishWork;
       return state.publishUpdate;
     }
     if (AKORT.AggregateIntegration.Phases.indexOf(phase) >= 0 || phase === 'FINALIZING') {
@@ -1049,8 +1316,22 @@ AKORT.RawStoreHandlers = (function () {
     if (phase === 'PARSE') return { skipped: true, reason: 'Logical reversal does not parse source rows' };
     if (phase === 'STAGE') return { staged: true, logicalOnly: true };
     if (phase === 'COMMIT_RAW') {
-      state.reversal = AKORT.RawStore.reverseLoad(input.targetLoadId, context.operation.operation_id, input.reason || 'Operation Engine logical reversal');
+      var reversalStep = AKORT.RawStore.reverseLoadStep(
+        input.targetLoadId,
+        context.operation.operation_id,
+        input.reason || 'Operation Engine logical reversal'
+      );
+      state.reversalWork = reversalStep.work;
+      if (!reversalStep.complete) {
+        return {
+          repeatPhase: true,
+          bounded: true,
+          work: reversalStep.work
+        };
+      }
+      state.reversal = reversalStep.reversal;
       state.loadId = state.reversal.reversalLoadId || '';
+      delete state.reversalWork;
       return state.reversal;
     }
     if (phase === 'UPDATE_PUBLISH') {
@@ -1061,7 +1342,11 @@ AKORT.RawStoreHandlers = (function () {
         return state.publishUpdate;
       }
       AKORT.IncrementalPublish.appendImpact(context.operation.operation_id, state.loadId, reversalPublishPlan);
-      state.publishUpdate = AKORT.IncrementalPublish.applyPublish(reversalPublishPlan, context.operation.operation_id);
+      var reversalPublishStep = AKORT.IncrementalPublish.applyPublishStep(reversalPublishPlan, context.operation.operation_id, state.publishWork);
+      state.publishWork = reversalPublishStep.work;
+      if (reversalPublishStep.repeatPhase === true) return reversalPublishStep;
+      state.publishUpdate = reversalPublishStep;
+      delete state.publishWork;
       return state.publishUpdate;
     }
     if (AKORT.AggregateIntegration.Phases.indexOf(phase) >= 0 || phase === 'FINALIZING') {

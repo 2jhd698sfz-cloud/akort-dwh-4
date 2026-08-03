@@ -33,7 +33,7 @@ DISCOVER
 | `src/01_Config.js` | `AKORT.Config.load()`, `resources.dwhSpreadsheetId`, `resources.publishSpreadsheetId` | Использовать текущие canonical resource keys. Не вводить `dwhTechSpreadsheetId` или `controlSpreadsheetId`. Добавить только отдельный optional artifact folder key, если immutable input artifacts нельзя безопасно хранить в DWH stage. |
 | `src/02_Core.js` | `AKORT.Core.safeRun`, `AKORT.Core.error`, `AKORT.Core.sha256`, canonical JSON, locks, sheet helpers, logging, manifest hash | Использовать без отдельного safety/runtime слоя. Все ошибки Alpha.7.4 проходят через существующий error/result/log contract. |
 | `src/03_OperationEngine.js` | `OPERATION_QUEUE`, `OPERATION_STEPS`, `enqueue`, `run`, `resume`, `requestStop`, lease, execution budget, retry/dead-letter, checkpoints | Расширить одну state machine. Добавить aggregate phases и checkpoint schema `4.0-operation-2`. Не создавать global `active_run` и второй dispatcher. |
-| `src/05_RawStore.js` | `commitLoad`, `reverseLoad`, `auditLoad`; handler state сохраняет `loadId` и reversal evidence | Использовать `load_id` как корень lineage. Reversal запускает обычный `RAW_REVERSAL_V4` и проходит тот же aggregate dependency pipeline. |
+| `src/05_RawStore.js` | `commitLoad`, `reverseLoadStep`, `auditLoad`; handler state сохраняет `loadId`, `reversalWork` и reversal evidence | Использовать `load_id` как корень lineage. Reversal запускает обычный `RAW_REVERSAL_V4`, фиксирует exact-once cursor по successful observation IDs в `RAW_REVERSAL_LOG`, выполняет `COMMIT_RAW` bounded-пачками и затем проходит тот же aggregate dependency pipeline. |
 | `src/06_ExistingSourceParsers.js` | `SOURCE_FILE_LOAD_V4`; parser → RAW → Publish; `handlerState.publishPlanSummary` | Сохранить текущую загрузку файлов. После `UPDATE_PUBLISH` передавать authoritative operation/load context в aggregate integration phases. |
 | `src/07_IncrementalPublish.js` | `planLoad`, `planReversal`, `planFromAffected`, `summarizePlan`, `appendImpact`, `applyPublish`; `PUBLISH_IMPACT`, `PUBLISH_RUNS`, reconciliation infrastructure | Alpha.6 остаётся единственным источником первичного impact. `applyAggregates` перестаёт создавать `DEFERRED_TO_ALPHA7` и становится входом в интегрированные phases. Не копировать Alpha.6 private implementation целиком; вынести минимальные reusable adapters при необходимости. |
 | `src/13_Alpha71AggregateContract.js` | 29-колоночный Publish contract, `aggregate_series_key`, `aggregate_row_key`, period/frontier/weight/membership semantics | Frozen identity и output schema. Любая строка staging и Publish обязана проходить этот контракт. |
@@ -84,7 +84,7 @@ release_version
 
 ## 4. Authoritative data flow
 
-1. `RawStore.commitLoad` или `RawStore.reverseLoad` фиксирует logical source state.
+1. `RawStore.commitLoad` или bounded `RawStore.reverseLoadStep` фиксирует logical source state.
 2. `IncrementalPublish.planLoad/planReversal` строит первичный impact.
 3. `IncrementalPublish.appendImpact` сохраняет его в `PUBLISH_IMPACT`.
 4. Aggregate integration читает impact только для текущих `operation_id + load_id`.
@@ -98,13 +98,24 @@ release_version
    immutable stage snapshot и возвращает operation в bounded execution.
 9. Alpha.7.4.26 выводит monthly `period_label` только из canonical
    `period_start`, отдельно проверяет physical label и exact-recovery первой
-   `.24` пачки из 32 серий без повторения завершённых upstream phases.
-   `.26` исправляет неверную recovery-ссылку `.25` и вводит repository-wide
+   `.24` пачки из 32 серий без повторения завершённых upstream phases. `.26`
+   исправляет неверную recovery-ссылку `.25` и вводит repository-wide
    unresolved-private-call test.
-10. Полный ожидаемый affected-set сохраняется в `AGGREGATE_STAGE`.
-11. Publish adapter заменяет логические агрегатные серии в `PUBLISH_PRICE_AGGREGATES`.
-12. Read-back подтверждает keys, hashes, calendar labels, latest и отсутствие изменений вне affected-set.
-13. Reconciliation разрешает переход к `UPDATE_STATUS`, `QUICK_AUDIT`, `FINALIZING`, `SUCCESS`.
+10. Alpha.7.4.27 распространяет обязательный bounded-work контракт на RAW
+    reversal: не более 10 observations за step, batch flag/log writes и
+    восстановление lost response по durable `RAW_REVERSAL_LOG`, без возврата к
+    первой уже принятой строке.
+11. Alpha.7.4.28 переводит обычный `UPDATE_PUBLISH` на durable complete-series
+    chunks (Weekly/Monthly 25, Industry 10), переиспользует один source
+    snapshot и один aggregate target index внутри worker invocation и
+    выполняет несколько operation checkpoints за один ограниченный trigger.
+12. Alpha.7.4.29 маршрутизирует повторный Stop по `stoppedFromPhase` и
+    включает в watchdog все durable cursors RAW, source handler, Industry Publish
+    и aggregate phases, включая input-artifact chunks.
+13. Полный ожидаемый affected-set сохраняется в `AGGREGATE_STAGE`.
+14. Publish adapter заменяет логические агрегатные серии в `PUBLISH_PRICE_AGGREGATES`.
+15. Read-back подтверждает keys, hashes, calendar labels, latest и отсутствие изменений вне affected-set.
+16. Reconciliation разрешает переход к `UPDATE_STATUS`, `QUICK_AUDIT`, `FINALIZING`, `SUCCESS`.
 
 ## 5. Checkpoint ownership
 

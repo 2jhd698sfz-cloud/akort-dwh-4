@@ -113,8 +113,8 @@ function seriesTarget(seriesId, period, rowNumber) {
 }
 
 test('A74 metadata and schemas are exact', () => {
-  assert.equal(A.Version, '4.0-aggregate-integration-5');
-  assert.equal(A.Release, '4.0.0-alpha.7.4.26');
+  assert.equal(A.Version, '4.0-aggregate-integration-6');
+  assert.equal(A.Release, '4.0.0-alpha.7.4.29');
   assert.equal(A.OperationSchemaVersion, '4.0-operation-2');
   assert.deepEqual(Array.from(A.Phases), [
     'PREPARING_AGGREGATE_IMPACT',
@@ -641,7 +641,7 @@ test('repository wiring removes deferred executor and hard-coded write probes', 
   assert(release.includes("'AGGREGATE_STAGE'"));
   assert(release.includes("'FINALIZING'"));
   assert(release.includes("'24_Alpha74Gate3Acceptance.js'"));
-  assert(release.includes("version: '4.0.0-alpha.7.4.26'"));
+  assert(release.includes("version: '4.0.0-alpha.7.4.29'"));
   assert(release.includes('durable bounded work'));
   const boundedSettings = [
     'PUBLISH_AGGREGATE_MATERIALIZATION_COMBOS_PER_STEP',

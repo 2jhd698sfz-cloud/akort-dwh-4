@@ -12,20 +12,26 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * it has no aggregate impact under the frozen Alpha.7.4 contract.
  */
 AKORT.Alpha74Gate6Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate6-acceptance-8';
+  var VERSION = '4.0-alpha74-gate6-acceptance-11';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate6-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate6-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.26';
+  var RELEASE = '4.0.0-alpha.7.4.29';
   var BASELINE_HEADER_INCIDENT_RELEASE = '4.0.0-alpha.7.4.19';
   var RUNTIME_CONTEXT_INCIDENT_RELEASE = '4.0.0-alpha.7.4.20';
   var MONOLITHIC_STAGE_INCIDENT_RELEASE = '4.0.0-alpha.7.4.22';
   var MONTHLY_PERIOD_LABEL_INCIDENT_RELEASE = '4.0.0-alpha.7.4.24';
+  var RAW_REVERSAL_CHUNK_INCIDENT_RELEASE = '4.0.0-alpha.7.4.26';
+  var RAW_REVERSAL_CHUNK_INCIDENT_EXECUTION_ID = 'A74_GATE6_7F437567A3ABBFBE94F1';
+  var RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID = 'OP_RAW_REVERSAL_V4_20260802T191111384Z_3683C13EE282';
+  var RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID = 'LOAD_20260802T123559854Z_EFB27B040FBC';
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE6_STATE_V1';
   var CONTROL_SHEET = 'GATE6_CANARY_INPUT';
   var TRIGGER_HANDLER = 'AKORT_alpha74Gate6Worker';
   var TRIGGER_MINUTES = 1;
   var WORKER_LEASE_MS = 330000;
   var WORKER_BUDGET_MS = 240000;
+  var OPERATION_WORK_BUDGET_MS = 190000;
+  var MAX_OPERATION_RESUMES_PER_WORKER = 40;
   var DIGEST_CHUNK_ROWS = 1000;
   var MAX_WORKER_STEPS = 120;
   var MAX_CONSECUTIVE_ERRORS = 3;
@@ -766,15 +772,98 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     return actual;
   }
 
-  function runOperation_(operationId) {
-    var before = operation_(operationId);
-    if (before.status === 'SUCCESS' || TERMINAL_FAILURES.indexOf(before.status) >= 0) return before;
-    AKORT.OperationEngine.resume(operationId, {
-      maxSteps: 50,
-      executionBudgetMs: 210000,
-      minRemainingMs: 15000
+  function durableHandlerProgress_(state) {
+    state = state || {};
+    var reversal = state.reversal || {};
+    var reversalWork = state.reversalWork || {};
+    var publishWork = state.publishWork || {};
+    return {
+      loadId: state.loadId,
+      cursor: state.cursor,
+      reversal: {
+        reversalLoadId: reversal.reversalLoadId,
+        targetLoadId: reversal.targetLoadId,
+        cursor: reversal.cursor,
+        rowsProcessed: reversal.rowsProcessed
+      },
+      reversalWork: {
+        workSchemaVersion: reversalWork.workSchemaVersion,
+        targetLoadId: reversalWork.targetLoadId,
+        reversalLoadId: reversalWork.reversalLoadId,
+        completedRows: reversalWork.completedRows,
+        pendingRows: reversalWork.pendingRows,
+        totalRows: reversalWork.totalRows,
+        chunkRows: reversalWork.chunkRows
+      },
+      publishWork: {
+        workSchemaVersion: publishWork.workSchemaVersion,
+        operationId: publishWork.operationId,
+        loadId: publishWork.loadId,
+        planFingerprint: publishWork.planFingerprint,
+        stage: publishWork.stage,
+        cursor: publishWork.cursor,
+        batches: publishWork.batches,
+        weeklyRows: publishWork.weeklyRows,
+        monthlyRows: publishWork.monthlyRows,
+        industryRows: publishWork.industryRows,
+        complete: publishWork.complete
+      }
+    };
+  }
+
+  function operationProgressFingerprint_(operation) {
+    var checkpoint = operation && operation.checkpoint || {};
+    var aggregate = checkpoint.aggregate || {};
+    var artifactPersistence = aggregate.artifactPersistence || {};
+    return hash_({
+      status: operation && operation.status,
+      phase: operation && operation.current_phase,
+      completed: checkpoint.completedPhases || [],
+      aggregate: {
+        status: aggregate.status,
+        materializationCursor: aggregate.materializationCursor,
+        artifactPersistence: {
+          persistedChunks: artifactPersistence.persistedChunks,
+          totalChunks: artifactPersistence.totalChunks,
+          complete: artifactPersistence.complete,
+          fingerprint: artifactPersistence.fingerprint
+        },
+        calculationCursor: aggregate.calculationCursor,
+        stagingCursor: aggregate.stagingCursor,
+        stageStatusCursor: aggregate.stageStatusCursor,
+        publishSeriesCursor: aggregate.publishSeriesCursor,
+        publishBatchCursor: aggregate.publishBatchCursor,
+        latestSeriesCursor: aggregate.latestSeriesCursor,
+        reconciliationBatchCursor: aggregate.reconciliationBatchCursor,
+        finalizationCursor: aggregate.finalizationCursor,
+        batchNo: aggregate.batchNo
+      },
+      rawStore: durableHandlerProgress_(checkpoint.rawStore),
+      handlerState: durableHandlerProgress_(checkpoint.handlerState)
     });
-    return operation_(operationId);
+  }
+
+  function runOperation_(operationId) {
+    var current = operation_(operationId);
+    if (current.status === 'SUCCESS' || TERMINAL_FAILURES.indexOf(current.status) >= 0) return current;
+    var started = Date.now(), resumes = 0;
+    var previous = operationProgressFingerprint_(current);
+    while (resumes < MAX_OPERATION_RESUMES_PER_WORKER && Date.now() - started < OPERATION_WORK_BUDGET_MS) {
+      var remaining = OPERATION_WORK_BUDGET_MS - (Date.now() - started);
+      if (remaining < 20000) break;
+      AKORT.OperationEngine.resume(operationId, {
+        maxSteps: 50,
+        executionBudgetMs: Math.max(20000, remaining),
+        minRemainingMs: 10000
+      });
+      resumes += 1;
+      current = operation_(operationId);
+      if (current.status === 'SUCCESS' || TERMINAL_FAILURES.indexOf(current.status) >= 0) return current;
+      var next = operationProgressFingerprint_(current);
+      if (next === previous) break;
+      previous = next;
+    }
+    return current;
   }
 
   function enqueueSourceFile_(state, role) {
@@ -960,7 +1049,17 @@ AKORT.Alpha74Gate6Acceptance = (function () {
           status: reversal.status
         });
       }
-      if (reversal.status !== 'SUCCESS') return { phase: 'RUN_REVERSAL', operationId: state.operations.reversal, status: reversal.status };
+      if (reversal.status !== 'SUCCESS') {
+        var reversalCheckpoint = reversal.checkpoint || {};
+        var reversalRaw = reversalCheckpoint.rawStore || {};
+        return {
+          phase: 'RUN_REVERSAL',
+          operationId: state.operations.reversal,
+          status: reversal.status,
+          operationPhase: reversal.current_phase || reversalCheckpoint.nextPhase || '',
+          reversalWork: clone_(reversalRaw.reversalWork || null)
+        };
+      }
       assertOperationAccepted_(reversal, 'RAW_REVERSAL_V4');
       state.acceptance.reversalOperationAccepted = true;
       state.loads.reversal = operationLoadId_(reversal);
@@ -1357,6 +1456,42 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
   }
 
+  function rawReversalChunkIncident_(state, operation, inspection) {
+    var checkpoint = operation && operation.checkpoint || {};
+    var completed = checkpoint.completedPhases || [];
+    var control = checkpoint.control || {};
+    var aggregate = checkpoint.aggregate || {};
+    var rawStore = checkpoint.rawStore || {};
+    return !!state && !!operation && !!inspection &&
+      state.stateSchemaVersion === STATE_SCHEMA && state.release === RAW_REVERSAL_CHUNK_INCIDENT_RELEASE &&
+      state.executionId === RAW_REVERSAL_CHUNK_INCIDENT_EXECUTION_ID &&
+      state.status === 'STOPPED' && state.phase === 'STOPPED' && state.stoppedFromPhase === 'RUN_REVERSAL' &&
+      text_(state.operations && state.operations.reversal) === RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID &&
+      text_(state.loads && state.loads.canary) === RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID &&
+      text_(operation.operation_id) === RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID &&
+      text_(operation.operation_type) === 'RAW_REVERSAL_V4' &&
+      text_(operation.release_version) === RAW_REVERSAL_CHUNK_INCIDENT_RELEASE &&
+      ['PAUSED', 'RUNNING'].indexOf(text_(operation.status)) >= 0 &&
+      text_(operation.current_phase) === 'COMMIT_RAW' && text_(checkpoint.nextPhase) === 'COMMIT_RAW' &&
+      control.stopRequested === true &&
+      completed.indexOf('DISCOVER') >= 0 && completed.indexOf('VALIDATE') >= 0 &&
+      completed.indexOf('PARSE') >= 0 && completed.indexOf('STAGE') >= 0 &&
+      completed.indexOf('COMMIT_RAW') < 0 && completed.indexOf('UPDATE_PUBLISH') < 0 &&
+      text_(aggregate.status) === 'NOT_STARTED' &&
+      !text_(rawStore.loadId) && !rawStore.reversal &&
+      text_(inspection.operationId) === RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID &&
+      text_(inspection.targetLoadId) === RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID &&
+      text_(inspection.targetTable) === 'RAW_PRICES_WEEKLY' &&
+      ['COMMITTED', 'REVERSING'].indexOf(text_(inspection.targetLoadStatus)) >= 0 &&
+      Number(inspection.totalRows || 0) === 50 && Number(inspection.completedRows || 0) > 0 &&
+      Number(inspection.completedRows || 0) < Number(inspection.totalRows || 0) &&
+      Number(inspection.pendingRows || 0) === Number(inspection.totalRows || 0) - Number(inspection.completedRows || 0) &&
+      inspection.complete === false &&
+      !!text_(inspection.reversalLoadId) &&
+      !!text_(state.artifacts && state.artifacts.dwhBackup && state.artifacts.dwhBackup.id) &&
+      !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
+  }
+
   function recoverRuntimeContextIncident() {
     return AKORT.Core.safeRun('ALPHA74_GATE6_RECOVER_RUNTIME_CONTEXT', function () {
       AKORT.EnvironmentGuard.assertDev();
@@ -1623,6 +1758,19 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       var activeOperation = activeOperationId ? operation_(activeOperationId) : null;
       var monolithicStageIncident = monolithicStageIncident_(state, activeOperation);
       var monolithicStageRecovery = null;
+      var reversalOperationId = text_(state && state.operations && state.operations.reversal);
+      var reversalOperation = reversalOperationId ? operation_(reversalOperationId) : null;
+      var reversalInspection = null;
+      if (state && state.release === RAW_REVERSAL_CHUNK_INCIDENT_RELEASE &&
+          state.executionId === RAW_REVERSAL_CHUNK_INCIDENT_EXECUTION_ID &&
+          reversalOperationId === RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID &&
+          text_(state.loads && state.loads.canary) === RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID) {
+        reversalInspection = AKORT.RawStore.inspectReversal(
+          RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID,
+          RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID
+        );
+      }
+      var rawReversalChunkIncident = rawReversalChunkIncident_(state, reversalOperation, reversalInspection);
       var manuallyStopped = state && state.status === 'STOPPED' && text_(state.stoppedFromPhase);
       assert_(baselineIncident || manuallyStopped,
         'ALPHA74_GATE6_RESUME_STATE_INVALID', 'Gate 6 Resume requires a manually stopped checkpoint or the exact Alpha.7.4.19 baseline-header incident.', {
@@ -1631,11 +1779,13 @@ AKORT.Alpha74Gate6Acceptance = (function () {
           failedFromPhase: state ? state.failedFromPhase || '' : '',
           baselineHeaderIncident: baselineIncident
         });
-      assert_(baselineIncident || monolithicStageIncident || (state.stateSchemaVersion === STATE_SCHEMA && state.release === RELEASE),
+      assert_(baselineIncident || monolithicStageIncident || rawReversalChunkIncident ||
+        (state.stateSchemaVersion === STATE_SCHEMA && state.release === RELEASE),
         'ALPHA74_GATE6_RESUME_SCHEMA_INVALID', 'Gate 6 checkpoint is not compatible with this release.', {
           stateSchemaVersion: state.stateSchemaVersion,
           release: state.release,
-          monolithicStageIncident: monolithicStageIncident
+          monolithicStageIncident: monolithicStageIncident,
+          rawReversalChunkIncident: rawReversalChunkIncident
         });
       var flags = flagState_();
       assert_(flags.publishEngineEnabled && flags.executionEnabled && !flags.regularPipelineEnabled && !flags.userPipelineEnabled,
@@ -1749,6 +1899,29 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         };
         state.release = RELEASE;
       }
+      if (rawReversalChunkIncident) {
+        state.recovery = {
+          mode: 'DURABLE_RAW_REVERSAL_CHUNK_RECOVERY',
+          recoveredFromRelease: state.release,
+          recoveredFromExecutionId: state.executionId,
+          recoveredAt: now_(),
+          operationId: reversalOperationId,
+          targetLoadId: RAW_REVERSAL_CHUNK_INCIDENT_TARGET_LOAD_ID,
+          reversalLoadId: reversalInspection.reversalLoadId,
+          resumeOperationPhase: 'COMMIT_RAW',
+          preservedRecoveryCopies: true,
+          preservedCanaryPublish: true,
+          preservedPartialReversalRows: Number(reversalInspection.completedRows || 0),
+          remainingReversalRows: Number(reversalInspection.pendingRows || 0),
+          totalReversalRows: Number(reversalInspection.totalRows || 0),
+          repeatedCompletedRows: false,
+          aggregatePipelineStarted: false,
+          durableCursorSource: 'RAW_REVERSAL_LOG_SUCCESS_OBSERVATION_IDS',
+          chunkWorkSchemaVersion: '4.0-raw-reversal-work-1',
+          previousRecovery: clone_(state.recovery || null)
+        };
+        state.release = RELEASE;
+      }
       if (['BASELINE_SCAN', 'ARM_CANARY'].indexOf(resumePhase) < 0) setRegularPipeline_(true);
       state.status = 'RUNNING';
       state.phase = resumePhase;
@@ -1762,7 +1935,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         resumePhase: resumePhase,
         resumedAt: now_(),
         recoveryMode: baselineIncident ? 'BASELINE_HEADER_CONTRACT_RECOVERY' :
-          monolithicStageIncident ? state.recovery.mode : 'MANUAL_STOP_RESUME'
+          monolithicStageIncident || rawReversalChunkIncident ? state.recovery.mode : 'MANUAL_STOP_RESUME'
       };
       saveState_(state);
       writeValidation_('GATE 6 ВОЗОБНОВЛЁН', { executionId: state.executionId, phase: resumePhase });
@@ -1878,9 +2051,11 @@ AKORT.Alpha74Gate6Acceptance = (function () {
 
   function activeOperationId_(state) {
     if (!state || !state.operations) return '';
-    if (state.phase.indexOf('CANARY') >= 0) return text_(state.operations.canary);
-    if (state.phase.indexOf('REVERS') >= 0 || state.phase.indexOf('ROLLBACK') >= 0) return text_(state.operations.reversal);
-    if (state.phase.indexOf('RESTORE') >= 0 || state.phase === 'FINAL_SCAN' || state.phase === 'FINAL_VALIDATION') return text_(state.operations.restore);
+    var phase = text_(state.phase);
+    if (phase === 'STOPPED') phase = text_(state.stoppedFromPhase);
+    if (phase.indexOf('CANARY') >= 0) return text_(state.operations.canary);
+    if (phase.indexOf('REVERS') >= 0 || phase.indexOf('ROLLBACK') >= 0) return text_(state.operations.reversal);
+    if (phase.indexOf('RESTORE') >= 0 || phase === 'FINAL_SCAN' || phase === 'FINAL_VALIDATION') return text_(state.operations.restore);
     return '';
   }
 
@@ -1888,26 +2063,54 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     return AKORT.Core.safeRun('ALPHA74_GATE6_STOP', function () {
       AKORT.EnvironmentGuard.assertDev();
       var state = loadState_();
+      var repeatedStop = !!state && state.status === 'STOPPED';
       var operationId = activeOperationId_(state);
-      if (operationId) {
-        try { AKORT.OperationEngine.requestStop(operationId); } catch (ignoredStop) {}
-      }
       setRegularPipeline_(false);
       setUserPipeline_(false);
       var removed = deleteTriggers_();
+      var operationStopRequested = !operationId;
+      var operationStopResult = null;
+      if (operationId) {
+        operationStopResult = AKORT.OperationEngine.requestStop(operationId);
+        var stoppedOperation = operationStopResult && operationStopResult.data && operationStopResult.data.operation || {};
+        var stoppedCheckpoint = stoppedOperation.checkpoint || {};
+        var stoppedControl = stoppedCheckpoint.control || {};
+        var terminalOperation = stoppedOperation.status === 'SUCCESS' || TERMINAL_FAILURES.indexOf(text_(stoppedOperation.status)) >= 0;
+        operationStopRequested = operationStopResult.ok === true && (stoppedControl.stopRequested === true || terminalOperation);
+      }
       if (state && state.status === 'RUNNING') {
         state.stoppedFromPhase = state.phase;
         state.status = 'STOPPED';
         state.phase = 'STOPPED';
         state.finishedAt = now_();
         state.leaseUntil = '';
-        state.lastStep = { phase: 'STOPPED', operationStopRequested: !!operationId };
+      }
+      if (state) {
+        state.lastStep = {
+          phase: 'STOPPED',
+          operationId: operationId,
+          operationStopRequested: operationStopRequested,
+          repeatedStop: repeatedStop
+        };
         saveState_(state);
       }
       try { writeValidation_('GATE 6 ОСТАНОВЛЕН', { executionId: state && state.executionId || '', phase: state && state.stoppedFromPhase || '' }); } catch (ignoredValidation) {}
+      if (!operationStopRequested) {
+        return AKORT.Result.failure(
+          'ALPHA74_GATE6_OPERATION_STOP_NOT_CONFIRMED',
+          'Gate 6 was disabled fail-closed, but the active operation stop request was not confirmed. Run Gate6Stop again before Resume.',
+          {
+            triggersRemoved: removed,
+            operationId: operationId,
+            operationStopResult: clone_(operationStopResult),
+            state: publicState_(state)
+          }
+        );
+      }
       return AKORT.Result.success('Alpha.7.4 Gate 6 stopped fail-closed. Recovery copies were preserved.', {
         triggersRemoved: removed,
-        operationStopRequested: operationId,
+        operationId: operationId,
+        operationStopRequested: operationStopRequested,
         state: publicState_(state)
       });
     }, { lock: false, persistLogs: true });
@@ -1942,11 +2145,14 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       monolithicStageIncident: monolithicStageIncident_,
       stageRecoveryBoundary: stageRecoveryBoundary_,
       monthlyPeriodLabelIncident: monthlyPeriodLabelIncident_,
+      rawReversalChunkIncident: rawReversalChunkIncident_,
       monthlyPeriodLabelOperationPrepared: monthlyPeriodLabelOperationPrepared_,
       normalizedJsonSetting: normalizedJsonSetting_,
       compareDigests: compareDigests_,
       changedTargets: changedTargets_,
-      operationSummary: operationSummary_
+      operationSummary: operationSummary_,
+      operationProgressFingerprint: operationProgressFingerprint_,
+      activeOperationId: activeOperationId_
     })
   });
 })();
