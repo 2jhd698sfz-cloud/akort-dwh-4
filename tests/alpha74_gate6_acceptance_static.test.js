@@ -7,6 +7,7 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const context = vm.createContext({
   console,
+  Buffer,
   Date,
   JSON,
   Math,
@@ -18,7 +19,13 @@ const context = vm.createContext({
   Error,
   RegExp,
   isFinite,
-  parseInt
+  parseInt,
+  Utilities: {
+    newBlob(value) {
+      const bytes = Buffer.from(String(value), 'utf8');
+      return { getBytes: () => Array.from(bytes) };
+    }
+  }
 });
 
 context.AKORT = {
@@ -91,8 +98,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-13');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.31');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-14');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.32');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -501,12 +508,57 @@ test('exact Alpha.7.4.30 weekly rollback period incident is eligible only at the
     }
   };
   assert.equal(G.Test.weeklyRollbackPeriodIncident(state, canaryOperation, reversalOperation), true);
+  const safelyStopped = JSON.parse(JSON.stringify(state));
+  safelyStopped.status = 'STOPPED';
+  safelyStopped.phase = 'STOPPED';
+  safelyStopped.stoppedFromPhase = 'VERIFY_ROLLBACK';
+  safelyStopped.failedFromPhase = '';
+  safelyStopped.lastError = null;
+  assert.equal(G.Test.weeklyRollbackPeriodIncident(safelyStopped, canaryOperation, reversalOperation), true);
+  const stillRunning = JSON.parse(JSON.stringify(state));
+  stillRunning.status = 'RUNNING';
+  stillRunning.phase = 'VERIFY_ROLLBACK';
+  stillRunning.failedFromPhase = '';
+  stillRunning.lastError = null;
+  assert.equal(G.Test.weeklyRollbackPeriodIncident(stillRunning, canaryOperation, reversalOperation), false);
   const wrongBoundary = JSON.parse(JSON.stringify(state));
   wrongBoundary.digests.rollback.PUBLISH_PRICE_AGGREGATES.rows = 61831;
   assert.equal(G.Test.weeklyRollbackPeriodIncident(wrongBoundary, canaryOperation, reversalOperation), false);
   const restoreStarted = JSON.parse(JSON.stringify(state));
   restoreStarted.operations.restore = 'OP_RESTORE';
   assert.equal(G.Test.weeklyRollbackPeriodIncident(restoreStarted, canaryOperation, reversalOperation), false);
+});
+
+test('terminal checkpoint compaction stays below the Script Properties limit without dropping recovery evidence', () => {
+  const state = {
+    phase: 'FAILED',
+    executionId: 'A74_GATE6_7F437567A3ABBFBE94F1',
+    operations: { canary: 'OP_CANARY', reversal: 'OP_REVERSAL', restore: '' },
+    digests: { baseline: { keep: 'BASELINE' }, rollback: { keep: 'ROLLBACK' } },
+    recovery: {
+      mode: 'ROLLBACK_SCAN_STATE_CAPACITY_RECOVERY',
+      previousRecoveryLineage: new Array(8).fill(0).map((_, index) => ({
+        mode: `RECOVERY_${index}`,
+        recoveredFromExecutionId: `EXECUTION_${index}_${'X'.repeat(500)}`
+      }))
+    },
+    metrics: { workerExecutions: 11, steps: 222, diagnostic: 'M'.repeat(1200) },
+    lastError: {
+      code: 'ALPHA74_GATE6_ROLLBACK_MISMATCH',
+      message: 'Logical reversal did not restore the exact pre-canary Publish state.',
+      details: { diagnostic: 'D'.repeat(1600) },
+      stack: 'S'.repeat(1600)
+    },
+    lastStep: { phase: 'FAILED', error: { diagnostic: 'E'.repeat(1600) } }
+  };
+  const compacted = G.Test.compactTerminalState(state);
+  assert(G.Test.stateBytes(compacted) <= 8500);
+  assert.equal(compacted.executionId, 'A74_GATE6_7F437567A3ABBFBE94F1');
+  assert.equal(compacted.operations.reversal, 'OP_REVERSAL');
+  assert.equal(compacted.digests.baseline.keep, 'BASELINE');
+  assert.equal(compacted.digests.rollback.keep, 'ROLLBACK');
+  assert.equal(compacted.lastError.code, 'ALPHA74_GATE6_ROLLBACK_MISMATCH');
+  assert.equal(compacted.lastStep.errorCode, 'ALPHA74_GATE6_ROLLBACK_MISMATCH');
 });
 
 test('Gate 6 compacts nested recovery history into bounded audit lineage', () => {

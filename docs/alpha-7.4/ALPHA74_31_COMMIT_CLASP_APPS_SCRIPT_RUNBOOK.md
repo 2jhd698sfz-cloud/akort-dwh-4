@@ -1,5 +1,10 @@
 # Alpha.7.4.31 — commit, clasp push и восстановление Gate 6
 
+> Этот runbook заменён документом
+> `ALPHA74_32_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`: live state остался
+> `RUNNING / VERIFY_ROLLBACK`, потому что terminal mismatch diagnostic не
+> поместился в Script Properties. Последовательность `.31` больше не выполнять.
+
 ## Подтверждённое исходное состояние
 
 Gate 6 `.30` штатно завершился fail-closed в `VERIFY_ROLLBACK`:

@@ -150,7 +150,14 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
-Release `4.0.0-alpha.7.4.31` готов к точному восстановлению Gate 6 после
+Release `4.0.0-alpha.7.4.32` гарантирует compact terminal persistence и
+разрешает exact recovery из безопасно остановленного
+`.30 / stoppedFromPhase=VERIFY_ROLLBACK` checkpoint. Это устраняет повторные
+worker leases, когда полная mismatch-диагностика не помещается рядом с
+накопленным durable state. Нормативный операторский документ:
+`ALPHA74_32_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
+
+Release `4.0.0-alpha.7.4.31` подготовил точное восстановление Gate 6 после
 fail-closed `.30 / VERIFY_ROLLBACK`: три обычных Publish-листа уже совпали с
 baseline, а Aggregates содержит ровно 196 weekly rows с legacy Saturday
 identity. `.31` удаляет только этот доказанный набор bounded atomic batches,

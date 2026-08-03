@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 5 ACCEPTED / GATE 6 ALPHA74.31 WEEKLY-ROLLBACK RECOVERY READY / USER PIPELINE PROHIBITED`
+`GATE 5 ACCEPTED / GATE 6 ALPHA74.32 STOPPED-CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`
 
 Дата фиксации: 3 августа 2026 года.
 
@@ -64,6 +64,9 @@
 - `GATE6_WEEKLY_ROLLBACK_PERIOD_RECOVERY_HOTFIX.md` — exact `.30` recovery
   196 weekly aggregate rows, ошибочно записанных на UTC-субботу вместо
   ISO-воскресенья, с bounded atomic repair и чистым перезапуском Gate 6.
+- `ALPHA74_32_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md` — безопасная остановка
+  повторно захватывающего lease worker, commit, `clasp push` и exact recovery
+  из `STOPPED / VERIFY_ROLLBACK` checkpoint.
 - `ALPHA74_31_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md` — commit, `clasp push` и
   единственная разрешённая Apps Script последовательность для текущего
   `+196` rollback incident.

@@ -12,10 +12,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * it has no aggregate impact under the frozen Alpha.7.4 contract.
  */
 AKORT.Alpha74Gate6Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate6-acceptance-13';
+  var VERSION = '4.0-alpha74-gate6-acceptance-14';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate6-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate6-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.31';
+  var RELEASE = '4.0.0-alpha.7.4.32';
   var BASELINE_HEADER_INCIDENT_RELEASE = '4.0.0-alpha.7.4.19';
   var RUNTIME_CONTEXT_INCIDENT_RELEASE = '4.0.0-alpha.7.4.20';
   var MONOLITHIC_STAGE_INCIDENT_RELEASE = '4.0.0-alpha.7.4.22';
@@ -506,6 +506,41 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     return Utilities.newBlob(JSON.stringify(state), 'application/json').getBytes().length;
   }
 
+  function compactTerminalState_(state) {
+    state.recovery = compactRecovery_(state.recovery || null);
+    if (state.lastError) state.lastError = compactPersistedError_(state.lastError);
+    var errorCode = text_(state.lastError && state.lastError.code);
+    state.lastStep = {
+      phase: text_(state.phase) || 'FAILED',
+      errorCode: errorCode
+    };
+    if (state.lastError) state.lastError.stack = '';
+
+    var lineage = state.recovery && state.recovery.previousRecoveryLineage || [];
+    while (lineage.length && stateBytes_(state) > STATE_PROPERTY_MAX_BYTES) lineage.pop();
+
+    if (stateBytes_(state) > STATE_PROPERTY_MAX_BYTES && state.lastError && state.lastError.details) {
+      var detailsJson = stableStringify_(state.lastError.details);
+      state.lastError.details = {
+        truncated: true,
+        sha256: hash_(detailsJson)
+      };
+    }
+    if (stateBytes_(state) > STATE_PROPERTY_MAX_BYTES && state.recovery) {
+      delete state.recovery.previousRecoveryLineage;
+    }
+    if (stateBytes_(state) > STATE_PROPERTY_MAX_BYTES && state.metrics) {
+      state.metrics = {
+        workerExecutions: Number(state.metrics.workerExecutions || 0),
+        steps: Number(state.metrics.steps || 0)
+      };
+    }
+    if (stateBytes_(state) > STATE_PROPERTY_MAX_BYTES) {
+      state.lastStep = { phase: text_(state.phase) || 'FAILED' };
+    }
+    return state;
+  }
+
   function saveState_(state) {
     state.recovery = compactRecovery_(state.recovery || null);
     if (state.lastError) state.lastError = compactPersistedError_(state.lastError);
@@ -535,8 +570,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
         state.lastStep.readOnlyScanTargetRestartRequired = true;
       }
       state.lastError = compactPersistedError_(state.lastError || firstError);
-      var lineage = state.recovery && state.recovery.previousRecoveryLineage || [];
-      while (lineage.length && stateBytes_(state) > STATE_PROPERTY_MAX_BYTES) lineage.pop();
+      compactTerminalState_(state);
       return saveState_(state);
     }
   }
@@ -1733,11 +1767,15 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     var canaryAggregate = canaryCheckpoint.aggregate || {};
     var reversalCheckpoint = reversalOperation && reversalOperation.checkpoint || {};
     var reversalAggregate = reversalCheckpoint.aggregate || {};
+    var failedMismatch = !!state && state.status === 'FAILED' && state.phase === 'FAILED' &&
+      state.failedFromPhase === 'VERIFY_ROLLBACK' &&
+      state.lastError && state.lastError.code === 'ALPHA74_GATE6_ROLLBACK_MISMATCH';
+    var stoppedBeforeMismatchPersistence = !!state && state.status === 'STOPPED' && state.phase === 'STOPPED' &&
+      state.stoppedFromPhase === 'VERIFY_ROLLBACK';
     return !!state && !!canaryOperation && !!reversalOperation &&
       state.stateSchemaVersion === STATE_SCHEMA && state.release === WEEKLY_ROLLBACK_PERIOD_INCIDENT_RELEASE &&
       state.executionId === RAW_REVERSAL_CHUNK_INCIDENT_EXECUTION_ID &&
-      state.status === 'FAILED' && state.phase === 'FAILED' && state.failedFromPhase === 'VERIFY_ROLLBACK' &&
-      state.lastError && state.lastError.code === 'ALPHA74_GATE6_ROLLBACK_MISMATCH' &&
+      (failedMismatch || stoppedBeforeMismatchPersistence) &&
       text_(state.operations && state.operations.canary) === WEEKLY_ROLLBACK_PERIOD_INCIDENT_CANARY_OPERATION_ID &&
       text_(state.operations && state.operations.reversal) === RAW_REVERSAL_CHUNK_INCIDENT_OPERATION_ID &&
       !text_(state.operations && state.operations.restore) &&
@@ -2437,7 +2475,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     state.phase = 'FAILED';
     state.finishedAt = now_();
     state.leaseUntil = '';
-    state.lastStep = { phase: 'FAILED', error: normalized };
+    state.lastStep = { phase: 'FAILED', errorCode: normalized.code };
     saveTerminalState_(state);
     try { deleteTriggers_(); } catch (ignoredTriggerCleanup) {}
     try { writeValidation_('GATE 6 FAILED', { executionId: state.executionId, error: normalized }); } catch (ignoredValidation) {}
@@ -2579,6 +2617,8 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       normalizedJsonSetting: normalizedJsonSetting_,
       compactRecovery: compactRecovery_,
       compactPersistedError: compactPersistedError_,
+      compactTerminalState: compactTerminalState_,
+      stateBytes: stateBytes_,
       compareDigests: compareDigests_,
       changedTargets: changedTargets_,
       operationSummary: operationSummary_,
