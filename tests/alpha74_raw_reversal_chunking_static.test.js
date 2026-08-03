@@ -115,6 +115,40 @@ test('revision reversal selects the immediately preceding version for latest res
   assert.equal(plan.items[0].restored.observation_id, 'OBS_PREVIOUS');
 });
 
+test('revision reversal never restores a predecessor from a load already marked REVERSED', () => {
+  const previous = { ...rawRow(1, 'LOAD_PREVIOUS'), observation_id: 'OBS_PREVIOUS', version_no: 1, is_latest: 0, __row: 2 };
+  const current = { ...rawRow(1, 'LOAD_CANARY'), observation_id: 'OBS_CURRENT', version_no: 2, is_latest: 1, __row: 3 };
+  const plan = R.Test.planReversalChunk(
+    'RAW_PRICES_WEEKLY', [previous, current], [current], [], 10, 'LOAD_CANARY',
+    { LOAD_PREVIOUS: true }
+  );
+  assert.equal(plan.items.length, 1);
+  assert.equal(plan.items[0].restored, null);
+});
+
+test('reversed-predecessor repair deterministically clears the resurrected version', () => {
+  const previous = { ...rawRow(1, 'LOAD_PREVIOUS'), observation_id: 'OBS_PREVIOUS', version_no: 1, is_latest: 1, __row: 2 };
+  const current = { ...rawRow(1, 'LOAD_CANARY'), observation_id: 'OBS_CURRENT', version_no: 2, is_latest: 0, __row: 3 };
+  const key = R.businessKey('RAW_PRICES_WEEKLY', current);
+  const records = [{
+    target_table: 'RAW_PRICES_WEEKLY',
+    business_key: key,
+    reversed_observation_id: 'OBS_CURRENT',
+    restored_observation_id: 'OBS_PREVIOUS'
+  }];
+  const loads = [
+    { load_id: 'LOAD_PREVIOUS', status: 'REVERSED' },
+    { load_id: 'LOAD_CANARY', status: 'REVERSED' }
+  ];
+  const plan = R.Test.planReversedPredecessorRepair(
+    'RAW_PRICES_WEEKLY', [previous, current], loads, records, 0, 10, 'LOAD_CANARY'
+  );
+  assert.equal(plan.total, 1);
+  assert.equal(plan.items[0].recordedRestoredObservationId, 'OBS_PREVIOUS');
+  assert.equal(plan.items[0].correctRestoredObservationId, '');
+  assert.deepEqual(Array.from(plan.invalidPreviousLoadIds), ['LOAD_PREVIOUS']);
+});
+
 test('operation handler persists one bounded reversal chunk through repeatPhase', () => {
   const source = fs.readFileSync(path.join(root, 'src/05_RawStore.js'), 'utf8');
   assert(source.includes("RAW_REVERSAL_CHUNK_ROWS"));
@@ -219,7 +253,7 @@ test('physical mock adopts 8 live rows, finishes in bounded chunks and finalizes
     load() { return { resources: { dwhSpreadsheetId: 'DWH' } }; },
     readSystemSettings() { return { RAW_REVERSAL_CHUNK_ROWS: 10 }; }
   };
-  context.AKORT.Release = { version: '4.0.0-alpha.7.4.33', rawSchemaVersion: '4.0-raw-1' };
+  context.AKORT.Release = { version: '4.0.0-alpha.7.4.34', rawSchemaVersion: '4.0-raw-1' };
   context.AKORT.Core.now = () => '2026-08-03T00:00:00.000Z';
   context.AKORT.Core.safeJson = JSON.stringify;
   context.AKORT.Core.Sheets = {
@@ -280,6 +314,58 @@ test('physical mock adopts 8 live rows, finishes in bounded chunks and finalizes
   assert.equal(sheets.RAW_REVERSAL_LOG.getLastRow() - 1, 50);
   assert.equal(context.AKORT.Core.Sheets.readObjects(sheets.RAW_LOAD_REGISTRY)
     .filter(row => row.load_id === 'LOAD_REV_EXISTING').length, 1);
+
+  const previousRepairRow = {
+    ...rawRow(1, 'LOAD_PREVIOUS_REVERSED'),
+    observation_id: 'OBS_PREVIOUS_REVERSED', version_no: 1, revision_type: 'INITIAL', is_latest: 1, __row: 2
+  };
+  const currentRepairRow = {
+    ...rawRow(1, 'LOAD_CANARY_REPAIR'),
+    observation_id: 'OBS_CANARY_REPAIR', version_no: 2, revision_type: 'REVISION', is_latest: 0, __row: 3
+  };
+  const repairBusinessKey = R.businessKey('RAW_PRICES_WEEKLY', currentRepairRow);
+  const repairTargetLoad = {
+    ...targetLoad,
+    load_id: 'LOAD_CANARY_REPAIR', operation_id: 'OP_CANARY_REPAIR', status: 'REVERSED',
+    rows_inserted: 0, rows_revised: 1, rows_reversed: 1
+  };
+  const repairPreviousLoad = {
+    ...targetLoad,
+    load_id: 'LOAD_PREVIOUS_REVERSED', operation_id: 'OP_PREVIOUS', status: 'REVERSED',
+    rows_inserted: 1, rows_revised: 0, rows_reversed: 1
+  };
+  const repairRecord = {
+    reversal_id: 'REV_REPAIR', operation_id: 'OP_ORIGINAL_REVERSAL', reversal_load_id: 'LOAD_REV_REPAIR',
+    target_load_id: 'LOAD_CANARY_REPAIR', target_table: 'RAW_PRICES_WEEKLY', business_key: repairBusinessKey,
+    reversed_observation_id: 'OBS_CANARY_REPAIR', restored_observation_id: 'OBS_PREVIOUS_REVERSED',
+    reversed_at: 'OLD', reason: 'Repair fixture', status: 'SUCCESS', release_version: '4.0.0-alpha.7.4.33'
+  };
+  const repairSheets = {
+    RAW_LOAD_REGISTRY: new FakeSheet(
+      'RAW_LOAD_REGISTRY', Array.from(tables.RAW_LOAD_REGISTRY), [repairPreviousLoad, repairTargetLoad]
+    ),
+    RAW_REVERSAL_LOG: new FakeSheet('RAW_REVERSAL_LOG', Array.from(tables.RAW_REVERSAL_LOG), [repairRecord]),
+    RAW_STAGE: new FakeSheet('RAW_STAGE', Array.from(tables.RAW_STAGE), []),
+    RAW_PRICES_WEEKLY: new FakeSheet(
+      'RAW_PRICES_WEEKLY', Array.from(specs.RAW_PRICES_WEEKLY.headers), [previousRepairRow, currentRepairRow]
+    )
+  };
+  const repairSpreadsheet = new FakeSpreadsheet(repairSheets);
+  context.SpreadsheetApp = { openById() { return repairSpreadsheet; } };
+  const repaired = R.repairReversedPredecessorStep(
+    'LOAD_CANARY_REPAIR', 'OP_ORIGINAL_REVERSAL', null, { chunkRows: 1 }
+  );
+  assert.equal(repaired.complete, true);
+  assert.equal(repaired.repair.repairedRows, 1);
+  assert.deepEqual(Array.from(repaired.repair.invalidPreviousLoadIds), ['LOAD_PREVIOUS_REVERSED']);
+  assert.equal(context.AKORT.Core.Sheets.readObjects(repairSheets.RAW_PRICES_WEEKLY)
+    .filter(row => Number(row.is_latest) === 1).length, 0);
+  const repairedReplay = R.repairReversedPredecessorStep(
+    'LOAD_CANARY_REPAIR', 'OP_ORIGINAL_REVERSAL', repaired.work, { chunkRows: 1 }
+  );
+  assert.equal(repairedReplay.complete, true);
+  assert.equal(context.AKORT.Core.Sheets.readObjects(repairSheets.RAW_PRICES_WEEKLY)
+    .filter(row => Number(row.is_latest) === 1).length, 0);
 });
 
 let failed = 0;

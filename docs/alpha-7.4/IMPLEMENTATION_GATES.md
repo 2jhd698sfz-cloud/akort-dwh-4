@@ -150,7 +150,18 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
-Release `4.0.0-alpha.7.4.33` устраняет current `.32 / RUN_REVERSAL` loop в
+Release `4.0.0-alpha.7.4.34` устраняет подтверждённый `.33` RAW-lineage
+incident. Все 50 rollback records восстановили observations старой W27
+загрузки, хотя её load уже имел статус `REVERSED`; поэтому ordinary Weekly и
+Monthly остались равны post-canary. Новый общий reversal contract исключает
+такие observations из predecessor selection и later-version conflicts. Exact
+recovery исправляет 50 RAW latest flags и повторяет штатные price/aggregate
+phases из исправленного RAW без parser, source stage и canary RAW commit.
+Активные Gate 6 digest checkpoints дополнительно компактируются до безопасной
+границы Script Properties. Нормативный операторский документ:
+`ALPHA74_34_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
+
+Release `4.0.0-alpha.7.4.33` устраняет `.32 / RUN_REVERSAL` loop в
 `STAGING_AGGREGATE_ROWS`. Полный массив 50 RAW reversal records вместе с 392
 aggregate series keys превышал лимит Google Sheets в 50 000 символов на
 checkpoint cell; исключение дополнительно маскировалось как

@@ -6,7 +6,7 @@ Apps Script data pipeline for the AKORT analytical system.
 
 Active milestone: **Alpha.7.4 — Aggregate Integration into Existing Operation Engine**.
 
-Status: `GATE 5 ACCEPTED / GATE 6 ALPHA74.33 REVERSAL-CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`.
+Status: `GATE 5 ACCEPTED / GATE 6 ALPHA74.34 RAW-LINEAGE RECOVERY READY / USER PIPELINE PROHIBITED`.
 
 Accepted base:
 
@@ -37,7 +37,18 @@ The local Alpha.7.4 implementation includes durable staging, bounded calculation
 
 Gate 6 may enable the regular aggregate pipeline only inside its controlled harness. General operator submission remains prohibited until Gate 7 through `PUBLISH_USER_PIPELINE_ENABLED=FALSE`.
 
-Release `4.0.0-alpha.7.4.33` fixes the current `.32 / RUN_REVERSAL`
+Release `4.0.0-alpha.7.4.34` fixes the confirmed `.33` RAW-lineage incident:
+the second W27 canary revised 50 observations from an older load already marked
+`REVERSED`, and logical rollback restored those invalid predecessors because it
+selected only by version number. Reversal now excludes observations owned by
+`REVERSED` loads from predecessor selection and later-version conflicts. The
+exact recovery corrects 50 RAW latest flags and reruns the standard price and
+aggregate phases from corrected RAW without repeating parser, source staging or
+the canary RAW commit. Active digest checkpoints are compacted before reaching
+the Script Properties limit. Runbook:
+[`ALPHA74_34_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`](docs/alpha-7.4/ALPHA74_34_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md).
+
+Release `4.0.0-alpha.7.4.33` fixes the `.32 / RUN_REVERSAL`
 checkpoint-cell incident. RAW rollback, ordinary weekly/monthly Publish,
 materialization, calculation and the exact 392-row durable stage have already
 completed; aggregate publication has not started. `.33` compacts the duplicated

@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 5 ACCEPTED / GATE 6 ALPHA74.33 REVERSAL-CHECKPOINT RECOVERY READY / USER PIPELINE PROHIBITED`
+`GATE 5 ACCEPTED / GATE 6 ALPHA74.34 RAW-LINEAGE RECOVERY READY / USER PIPELINE PROHIBITED`
 
 Дата фиксации: 3 августа 2026 года.
 
@@ -408,6 +408,14 @@ operation checkpoint не мог добавить их series keys рядом с
 checkpoint/audit cells и принимает точный существующий stage непосредственно в
 `UPDATING_AGGREGATES`, не повторяя завершённую работу. Инструкция:
 `ALPHA74_33_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
+
+После завершения `.33` живой RAW показал независимую семантическую причину
+rollback mismatch: все 50 `restored_observation_id` принадлежали старой W27
+загрузке со статусом `REVERSED`. `.34` исключает версии таких загрузок из
+predecessor selection и later-version conflicts, исправляет 50 RAW latest
+флагов exact bounded operation и заново строит price/aggregate Publish из
+исправленного RAW. Parser, source stage и canary RAW commit не повторяются.
+Инструкция: `ALPHA74_34_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
 
 В `4.0.0-alpha.7.4.5` подготовлен локальный операторский контур
 `INDUSTRY_INPUT`: по одной строке на каждую активную серию

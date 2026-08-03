@@ -98,8 +98,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-15');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.33');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-16');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.34');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -641,6 +641,91 @@ test('exact stopped Alpha.7.4.32 reversal checkpoint is recovered only after dur
   assert.equal(G.Test.reversalCheckpointCapacityIncident(state, recordsAlreadyCompacted, inspection), false);
   stageRows[0].stage_status = 'VERIFIED';
   assert.equal(G.Test.reversalCheckpointCapacityStage(stageRows).exact, false);
+});
+
+test('exact Alpha.7.4.33 rollback scan is eligible only when all 50 restored predecessors belong to the old REVERSED load', () => {
+  const canaryOperationId = 'OP_SOURCE_FILE_LOAD_V_20260803T123050299Z_BAD1844BD339';
+  const reversalOperationId = 'OP_RAW_REVERSAL_V4_20260803T133248118Z_82520905BF9A';
+  const targetLoadId = 'LOAD_20260803T123127832Z_3F2F34DAD46B';
+  const reversalLoadId = 'LOAD_REV_56A66E1F8870698F19AC0F3093F9';
+  const d = (rows, columns, headersHash, hash) => ({ rows, columns, headersHash, hash });
+  const weeklyBaseline = d(20211, 36, '8fd026cde044bd1e3f08fef67e437557aa3b6c9b09510423f70676fbe2d422fa', '86b2bd53bbe264ca3616ec012154ef6a37c844ce7d531e5d196e0604af9476fa');
+  const monthlyBaseline = d(12957, 33, '227a94e1197e10a18353460dcc1558a1b2ababa960c68604e5111d1046f4ee3f', 'b7a4f03c5439f0ef60997bfb86cdcbd0dc2ff0560bf63e8776aa8ff31eb6a430');
+  const weeklyPost = d(20311, 36, weeklyBaseline.headersHash, '8d2d32f38a7fb68a6cc49f9c887e8432d9e0cde5ed0079d8c0d6c20d8dfe4612');
+  const monthlyPost = d(13057, 33, monthlyBaseline.headersHash, '50b2f16f25f2365c2493a3f218066fc3c0b161cf4ae1b0beed2e96d96de8f657');
+  const state = {
+    stateSchemaVersion: '4.0-alpha74-gate6-state-1',
+    release: '4.0.0-alpha.7.4.33',
+    executionId: 'A74_GATE6_37FAED6EF952F9BB5FD4',
+    status: 'FAILED', phase: 'FAILED', failedFromPhase: 'ROLLBACK_SCAN',
+    operations: { canary: canaryOperationId, reversal: reversalOperationId, restore: '' },
+    loads: { canary: targetLoadId, reversal: reversalLoadId, restore: '' },
+    canarySource: {
+      sourceHash: '5be97a7ca1743062394c3675f8d00228c3e5d287a35edeafee2b7866c4e74bde',
+      targetTable: 'RAW_PRICES_WEEKLY', normalizedRowCount: 50
+    },
+    acceptance: { canaryOperationAccepted: true, reversalOperationAccepted: true },
+    scan: { bucket: 'rollback', targetIndex: 2, work: null },
+    digests: {
+      baseline: {
+        PUBLISH_PRICES_WEEKLY: weeklyBaseline,
+        PUBLISH_PRICES_MONTHLY: monthlyBaseline,
+        PUBLISH_PRICE_AGGREGATES: d(61636, 29, 'AGGREGATE_HEADERS', '4a9af3ebc4de06c0777410f480cfb0ad5d41e811f63be598db86d7a58fb3c62c')
+      },
+      postCanary: {
+        PUBLISH_PRICES_WEEKLY: weeklyPost,
+        PUBLISH_PRICES_MONTHLY: monthlyPost,
+        PUBLISH_PRICE_AGGREGATES: d(62028, 29, 'AGGREGATE_HEADERS', 'ac7902c2a0e23a276de844704397eb2ec0c9c62dd06d48ebe3068228ba38ddad')
+      },
+      rollback: {
+        PUBLISH_PRICES_WEEKLY: { ...weeklyPost },
+        PUBLISH_PRICES_MONTHLY: { ...monthlyPost }
+      }
+    },
+    artifacts: { dwhBackup: { id: 'DWH_BACKUP' }, publishBackup: { id: 'PUBLISH_BACKUP' } }
+  };
+  const canaryOperation = {
+    operation_id: canaryOperationId, operation_type: 'SOURCE_FILE_LOAD_V4', status: 'SUCCESS', current_phase: 'SUCCESS',
+    checkpoint: { handlerState: { loadId: targetLoadId } }
+  };
+  const reversalOperation = {
+    operation_id: reversalOperationId, operation_type: 'RAW_REVERSAL_V4', status: 'SUCCESS', current_phase: 'SUCCESS',
+    checkpoint: { rawStore: { loadId: reversalLoadId } }
+  };
+  const inspection = {
+    targetLoadId, sourceOperationId: reversalOperationId, targetTable: 'RAW_PRICES_WEEKLY', targetLoadStatus: 'REVERSED',
+    reversalLoadId, reversalRecordCount: 50, repairRows: 50, planFingerprint: 'REPAIR',
+    invalidPreviousLoadIds: ['LOAD_20260802T123559854Z_EFB27B040FBC']
+  };
+  assert.equal(G.Test.reversedPredecessorIncident(state, canaryOperation, reversalOperation, inspection), true);
+  const foreign = JSON.parse(JSON.stringify(inspection));
+  foreign.invalidPreviousLoadIds = ['LOAD_FOREIGN'];
+  assert.equal(G.Test.reversedPredecessorIncident(state, canaryOperation, reversalOperation, foreign), false);
+  const partial = JSON.parse(JSON.stringify(inspection));
+  partial.repairRows = 49;
+  assert.equal(G.Test.reversedPredecessorIncident(state, canaryOperation, reversalOperation, partial), false);
+});
+
+test('active checkpoint compaction preserves comparison digests while removing repeated metadata', () => {
+  const state = {
+    digests: {
+      baseline: { A: { rows: 1, columns: 2, headersHash: 'H', hash: 'X', chunks: 10, mode: 'ROW_MULTISET_V1' } },
+      rollback: { A: { rows: 1, columns: 2, headersHash: 'H', hash: 'X', chunks: 10, mode: 'ROW_MULTISET_V1' } }
+    },
+    artifacts: { dwhBackup: { id: 'DWH', name: 'DWH', url: 'https://example.test/dwh' } },
+    gate5: { evidence: { id: 'EVIDENCE', sha256: 'SHA', schemaVersion: 'SCHEMA', url: 'https://example.test/evidence', bytes: 100 } },
+    recovery: null,
+    metrics: {}
+  };
+  const compacted = G.Test.compactCheckpointState(state);
+  assert.equal(compacted.digests.baseline.A.hash, 'X');
+  assert.equal(compacted.digests.baseline.A.chunks, undefined);
+  assert.equal(compacted.digests.rollback.A.mode, undefined);
+  assert.equal(compacted.artifacts.dwhBackup.id, 'DWH');
+  assert.equal(compacted.artifacts.dwhBackup.url, undefined);
+  assert.deepEqual(JSON.parse(JSON.stringify(compacted.gate5.evidence)), {
+    id: 'EVIDENCE', sha256: 'SHA', schemaVersion: 'SCHEMA'
+  });
 });
 
 test('terminal checkpoint compaction stays below the Script Properties limit without dropping recovery evidence', () => {

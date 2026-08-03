@@ -33,6 +33,7 @@ function AKORT_alpha74Gate6RecoverRuntimeContext(){return AKORT_printResult_(AKO
 function AKORT_alpha74Gate6RecoverMonthlyPeriodLabel(){return AKORT_printResult_(AKORT.Alpha74Gate6Acceptance.recoverMonthlyPeriodLabelIncident());}
 function AKORT_alpha74Gate6RecoverWeeklyRollbackPeriod(){return AKORT_printResult_(AKORT.Alpha74Gate6Acceptance.recoverWeeklyRollbackPeriodIncident());}
 function AKORT_alpha74Gate6RecoverReversalCheckpointCapacity(){return AKORT_printResult_(AKORT.Alpha74Gate6Acceptance.recoverReversalCheckpointCapacityIncident());}
+function AKORT_alpha74Gate6RecoverReversedPredecessor(){return AKORT_printResult_(AKORT.Alpha74Gate6Acceptance.recoverReversedPredecessorIncident());}
 function AKORT_alpha74Gate6Worker(){return AKORT.Alpha74Gate6Acceptance.worker();}
 function AKORT_alpha74Gate6Stop(){return AKORT_printResult_(AKORT.Alpha74Gate6Acceptance.stop());}
 function AKORT_alpha74IndustryInputInstall(){return AKORT_printResult_(AKORT.IndustryInput.install());}
