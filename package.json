@@ -1,12 +1,12 @@
 {
   "name": "akort-dwh-4",
-  "version": "4.0.0-alpha.7.4.35",
+  "version": "4.0.0-alpha.7.4.36",
   "private": true,
   "description": "AKORT DWH 4.0 Apps Script development repository",
   "scripts": {
     "status:dev": "clasp status",
     "deploy:dev": "bash scripts/deploy-dev.sh",
-    "test": "npm run test:apps-script-references && npm run test:alpha71-contract && npm run test:alpha72-calculator && npm run test:alpha72-golden && npm run test:alpha73-special-revision && npm run test:alpha74-integration && npm run test:alpha74-gate3 && npm run test:alpha74-gate4 && npm run test:alpha74-gate5 && npm run test:alpha74-industry-input && npm run test:alpha74-raw-reversal && npm run test:alpha74-gate6-fast-update && npm run test:alpha74-gate6",
+    "test": "npm run test:apps-script-references && npm run test:alpha71-contract && npm run test:alpha72-calculator && npm run test:alpha72-golden && npm run test:alpha73-special-revision && npm run test:alpha74-integration && npm run test:alpha74-gate3 && npm run test:alpha74-gate4 && npm run test:alpha74-gate5 && npm run test:alpha74-industry-input && npm run test:alpha74-raw-reversal && npm run test:alpha74-gate6-fast-update && npm run test:alpha74-gate6 && npm run test:alpha74-gate7",
     "test:apps-script-references": "node tests/apps_script_private_references_static.test.js",
     "test:alpha71-contract": "node tests/alpha71_contract_static.test.js",
     "test:alpha72-calculator": "node tests/alpha72_calculator_static.test.js",
@@ -19,6 +19,7 @@
     "test:alpha74-industry-input": "node tests/alpha74_industry_input_static.test.js",
     "test:alpha74-raw-reversal": "node tests/alpha74_raw_reversal_chunking_static.test.js",
     "test:alpha74-gate6-fast-update": "node tests/alpha74_gate6_fast_update_static.test.js",
-    "test:alpha74-gate6": "node tests/alpha74_gate6_acceptance_static.test.js"
+    "test:alpha74-gate6": "node tests/alpha74_gate6_acceptance_static.test.js",
+    "test:alpha74-gate7": "node tests/alpha74_gate7_acceptance_static.test.js"
   }
 }

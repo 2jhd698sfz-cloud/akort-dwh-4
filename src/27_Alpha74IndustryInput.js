@@ -12,12 +12,14 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  */
 AKORT.IndustryInput = (function () {
   var VERSION = '4.0-alpha74-industry-input-1';
-  var RELEASE = '4.0.0-alpha.7.4.35';
+  var RELEASE = '4.0.0-alpha.7.4.36';
   var INPUT_SHEET = 'INDUSTRY_INPUT';
   var LOG_SHEET = 'INDUSTRY_INPUT_LOG';
   var HEADER_ROW = 5;
   var DATA_START_ROW = 6;
   var LAST_OPERATION_PROPERTY = 'AKORT_ALPHA74_INDUSTRY_INPUT_LAST_OPERATION';
+  var GATE7_PERMIT_SCHEMA = '4.0-alpha74-gate7-industry-permit-1';
+  var GATE7_PERMIT_PROPERTY = 'AKORT_ALPHA74_GATE7_INDUSTRY_PERMIT_V1';
   var MAX_ROWS_PER_OPERATION = 100;
 
   var HEADERS = Object.freeze([
@@ -1194,6 +1196,666 @@ AKORT.IndustryInput = (function () {
     }, { lock: false, persistLogs: true });
   }
 
+
+  function acceptancePermitCore_(permit) {
+    return {
+      schemaVersion: text_(permit && permit.schemaVersion),
+      release: text_(permit && permit.release),
+      executionId: text_(permit && permit.executionId),
+      controlFingerprint: text_(permit && permit.controlFingerprint),
+      matrixFingerprint: text_(permit && permit.matrixFingerprint),
+      issuedAt: text_(permit && permit.issuedAt),
+      expiresAt: text_(permit && permit.expiresAt),
+      rows: (permit && permit.rows || []).map(function (row) {
+        return {
+          rowNumber: Number(row.rowNumber || 0),
+          seriesId: text_(row.seriesId),
+          fingerprint: text_(row.fingerprint),
+          action: text_(row.action)
+        };
+      }),
+      contentHash: text_(permit && permit.contentHash)
+    };
+  }
+
+  function acceptancePermitDigest_(permit) {
+    return AKORT.Core.sha256(
+      AKORT.Core.canonicalJson(acceptancePermitCore_(permit))
+    );
+  }
+
+  function readAcceptancePermit_() {
+    var raw = PropertiesService
+      .getScriptProperties()
+      .getProperty(GATE7_PERMIT_PROPERTY);
+    if (!raw) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_PERMIT_MISSING',
+        'Gate 7 Industry permit is missing.',
+        {}
+      );
+    }
+    try {
+      return JSON.parse(raw);
+    } catch (caught) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_PERMIT_INVALID',
+        'Gate 7 Industry permit is not valid JSON.',
+        { message: caught.message || String(caught) }
+      );
+    }
+  }
+
+  function writeAcceptancePermit_(permit) {
+    PropertiesService
+      .getScriptProperties()
+      .setProperty(
+        GATE7_PERMIT_PROPERTY,
+        JSON.stringify(permit)
+      );
+    return permit;
+  }
+
+  function assertAcceptanceRuntimeReady_() {
+    var state = gate5State_();
+    if (!state || String(state.status) !== 'SUCCESS') {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_GATE5_NOT_ACCEPTED',
+        'Gate 7 Industry acceptance requires terminal SUCCESS Gate 5.',
+        { gate5Status: state ? state.status : 'NOT_FOUND' }
+      );
+    }
+
+    var settings = AKORT.Config.readSystemSettings();
+    if (truthy_(settings.PUBLISH_USER_PIPELINE_ENABLED)) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_USER_PIPELINE_MUST_REMAIN_DISABLED',
+        'Gate 7 acceptance cannot run after the general user pipeline is enabled.',
+        { userPipelineEnabled: true }
+      );
+    }
+
+    if (!truthy_(settings.PUBLISH_ENGINE_ENABLED) ||
+        !truthy_(settings.PUBLISH_AGGREGATE_EXECUTION_ENABLED) ||
+        !truthy_(settings.PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED)) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_REGULAR_PIPELINE_NOT_READY',
+        'Gate 7 Industry acceptance requires the accepted Gate 6 runtime flags.',
+        {
+          publishEngineEnabled:
+            truthy_(settings.PUBLISH_ENGINE_ENABLED),
+          aggregateExecutionEnabled:
+            truthy_(settings.PUBLISH_AGGREGATE_EXECUTION_ENABLED),
+          regularPipelineEnabled:
+            truthy_(
+              settings.PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED
+            )
+        }
+      );
+    }
+
+    return settings;
+  }
+
+  function acceptanceEntryPublic_(entry) {
+    return {
+      rowNumber: Number(entry.rowNumber || 0),
+      seriesId: text_(entry.normalized && entry.normalized.series_id),
+      fingerprint: text_(entry.fingerprint),
+      action: text_(entry.action),
+      normalized: JSON.parse(JSON.stringify(entry.normalized || {}))
+    };
+  }
+
+  function acceptanceInspect() {
+    return AKORT.Core.safeRun(
+      'INDUSTRY_INPUT_GATE7_INSPECT',
+      function () {
+        AKORT.EnvironmentGuard.assertDev();
+        assertAcceptanceRuntimeReady_();
+
+        var validation = validateInternal_();
+        if (validation.counts.processing) {
+          return AKORT.Result.failure(
+            'INDUSTRY_INPUT_GATE7_OPERATION_IN_PROGRESS',
+            'An Industry operation is already in progress.',
+            {
+              counts: validation.counts,
+              physicalWrites: false
+            }
+          );
+        }
+        if (validation.errors.length) {
+          return AKORT.Result.failure(
+            'INDUSTRY_INPUT_GATE7_VALIDATION_FAILED',
+            'Gate 7 Industry form contains validation errors.',
+            {
+              counts: validation.counts,
+              errors: validation.errors,
+              physicalWrites: false
+            }
+          );
+        }
+
+        var ready = validation.entries.filter(function (entry) {
+          return entry.action !== 'NOOP';
+        });
+        var noChanges = validation.entries.filter(function (entry) {
+          return entry.action === 'NOOP';
+        });
+
+        return AKORT.Result.success(
+          'Gate 7 Industry form inspected.',
+          {
+            counts: validation.counts,
+            readyRows: ready.map(acceptanceEntryPublic_),
+            noChangeRows: noChanges.map(acceptanceEntryPublic_),
+            physicalWrites: false
+          }
+        );
+      },
+      { lock: true, persistLogs: false }
+    );
+  }
+
+  function assertAcceptancePermit_(authorization, statuses) {
+    authorization = authorization || {};
+    statuses = statuses || [];
+
+    var permit = readAcceptancePermit_();
+    var digest = acceptancePermitDigest_(permit);
+
+    if (text_(permit.schemaVersion) !== GATE7_PERMIT_SCHEMA ||
+        text_(permit.release) !== RELEASE) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_PERMIT_CONTRACT_MISMATCH',
+        'Gate 7 Industry permit contract does not match this release.',
+        {
+          schemaVersion: permit.schemaVersion || '',
+          release: permit.release || ''
+        }
+      );
+    }
+
+    if (!text_(authorization.executionId) ||
+        text_(authorization.executionId) !== text_(permit.executionId) ||
+        !text_(authorization.permitDigest) ||
+        text_(authorization.permitDigest) !== digest ||
+        text_(permit.permitDigest) !== digest) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_PERMIT_AUTHORIZATION_MISMATCH',
+        'Gate 7 Industry authorization does not match the stored permit.',
+        {
+          executionId: text_(authorization.executionId),
+          permitExecutionId: text_(permit.executionId)
+        }
+      );
+    }
+
+    if (statuses.indexOf(text_(permit.status)) < 0) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_PERMIT_STATUS_INVALID',
+        'Gate 7 Industry permit is not in an allowed lifecycle state.',
+        {
+          status: text_(permit.status),
+          allowed: statuses
+        }
+      );
+    }
+
+    var expires = new Date(text_(permit.expiresAt));
+    if (!isFinite(expires.getTime()) || expires.getTime() < Date.now()) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_PERMIT_EXPIRED',
+        'Gate 7 Industry permit has expired.',
+        { expiresAt: text_(permit.expiresAt) }
+      );
+    }
+
+    return permit;
+  }
+
+  function assertExactAcceptanceRows_(permit, validation) {
+    if (validation.counts.processing) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_OPERATION_IN_PROGRESS',
+        'An Industry operation is already in progress.',
+        { counts: validation.counts }
+      );
+    }
+    if (validation.errors.length) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_VALIDATION_FAILED',
+        'Gate 7 Industry form contains validation errors.',
+        {
+          counts: validation.counts,
+          errors: validation.errors
+        }
+      );
+    }
+
+    var noOps = validation.entries.filter(function (entry) {
+      return entry.action === 'NOOP';
+    });
+    var ready = validation.entries.filter(function (entry) {
+      return entry.action !== 'NOOP';
+    });
+
+    if (noOps.length) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_UNAPPROVED_NOOP_ROWS',
+        'Gate 7 permit forbids additional no-change form rows.',
+        { rows: noOps.map(acceptanceEntryPublic_) }
+      );
+    }
+
+    var approved = (permit.rows || []).slice().sort(function (left, right) {
+      return Number(left.rowNumber || 0) - Number(right.rowNumber || 0);
+    });
+    var actual = ready.slice().sort(function (left, right) {
+      return Number(left.rowNumber || 0) - Number(right.rowNumber || 0);
+    });
+
+    if (!approved.length ||
+        approved.length !== actual.length ||
+        approved.length > MAX_ROWS_PER_OPERATION) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_ROW_SET_MISMATCH',
+        'Gate 7 Industry form differs from the approved row set.',
+        {
+          approvedRows: approved.length,
+          actualRows: actual.length,
+          maximum: MAX_ROWS_PER_OPERATION
+        }
+      );
+    }
+
+    actual.forEach(function (entry, index) {
+      var expected = approved[index] || {};
+      var normalized = entry.normalized || {};
+      if (Number(expected.rowNumber || 0) !==
+            Number(entry.rowNumber || 0) ||
+          text_(expected.seriesId) !==
+            text_(normalized.series_id) ||
+          text_(expected.fingerprint) !==
+            text_(entry.fingerprint) ||
+          text_(expected.action) !==
+            text_(entry.action)) {
+        throw error_(
+          'INDUSTRY_INPUT_GATE7_ROW_BINDING_MISMATCH',
+          'Gate 7 Industry row no longer matches its approved binding.',
+          {
+            expected: expected,
+            actual: acceptanceEntryPublic_(entry)
+          }
+        );
+      }
+    });
+
+    var rows = actual.map(function (entry) {
+      return entry.normalized;
+    });
+    var contentHash = AKORT.Core.sha256(
+      AKORT.Core.canonicalJson(rows)
+    );
+    if (contentHash !== text_(permit.contentHash)) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_CONTENT_HASH_MISMATCH',
+        'Gate 7 Industry normalized rows changed after permit issuance.',
+        {
+          expected: text_(permit.contentHash),
+          actual: contentHash
+        }
+      );
+    }
+
+    return {
+      ready: actual,
+      rows: rows,
+      contentHash: contentHash
+    };
+  }
+
+  function acceptanceSubmit(authorization) {
+    return AKORT.Core.safeRun(
+      'INDUSTRY_INPUT_GATE7_SUBMIT',
+      function () {
+        AKORT.EnvironmentGuard.assertDev();
+        assertAcceptanceRuntimeReady_();
+
+        var permit = assertAcceptancePermit_(
+          authorization,
+          ['OPEN', 'CLAIMED']
+        );
+        var validation = validateInternal_();
+        var exact = assertExactAcceptanceRows_(permit, validation);
+
+        permit.status = 'CLAIMED';
+        permit.claimedAt = permit.claimedAt || now_();
+        writeAcceptancePermit_(permit);
+
+        var queued = AKORT.OperationEngine.enqueue(
+          'RAW_LOAD_V4',
+          {
+            targetTable: 'RAW_INDUSTRY',
+            sourceId:
+              'GATE7_INDUSTRY_ACCEPTANCE_' + permit.executionId,
+            sourceName:
+              'AKORT Gate 7 controlled Industry acceptance',
+            sourceHash: exact.contentHash,
+            rows: exact.rows
+          },
+          {
+            idempotencyKey:
+              'ALPHA74_GATE7_INDUSTRY_' + permit.executionId,
+            priority: 60,
+            maxAttempts: 3
+          }
+        );
+        if (!queued.ok) return queued;
+
+        var operationId = queued.data.operationId;
+        permit.operationId = operationId;
+        permit.status = 'CONSUMED';
+        permit.consumedAt = permit.consumedAt || now_();
+        writeAcceptancePermit_(permit);
+
+        PropertiesService
+          .getScriptProperties()
+          .setProperty(LAST_OPERATION_PROPERTY, operationId);
+
+        validation.sheet.getRange('B3').setValue(operationId);
+        updateInputRows_(
+          validation.sheet,
+          exact.ready.map(function (entry) {
+            return entry.rowNumber;
+          }),
+          {
+            'Статус': STATUS.PROCESSING,
+            'Сообщение':
+              'Gate 7 operation ' + operationId + ' queued.',
+            'operation_id': operationId,
+            'load_id': '',
+            'row_fingerprint': function (index) {
+              return exact.ready[index].fingerprint;
+            },
+            'updated_at': now_()
+          }
+        );
+
+        var run = AKORT.OperationEngine.run(operationId, {
+          maxSteps: 50,
+          executionBudgetMs: 260000,
+          minRemainingMs: 15000
+        });
+        var finalization = finalizeOperation_(operationId);
+
+        if (finalization.terminal &&
+            finalization.status === 'SUCCESS') {
+          permit.status = 'COMPLETE';
+          permit.completedAt = now_();
+          permit.loadId = finalization.result.loadId;
+          writeAcceptancePermit_(permit);
+          return AKORT.Result.success(
+            'Gate 7 Industry load completed.',
+            {
+              operationId: operationId,
+              loadId: finalization.result.loadId,
+              submittedRows: exact.ready.length,
+              operationStatus: finalization.status,
+              finalization: finalization.result
+            }
+          );
+        }
+
+        if (finalization.terminal) {
+          permit.status = 'FAILED';
+          permit.failedAt = now_();
+          permit.errorCode =
+            text_(finalization.operation.error_code);
+          writeAcceptancePermit_(permit);
+          return AKORT.Result.failure(
+            text_(finalization.operation.error_code) ||
+              'INDUSTRY_INPUT_GATE7_OPERATION_FAILED',
+            text_(finalization.operation.error_message) ||
+              'Gate 7 RAW_INDUSTRY operation failed.',
+            {
+              operationId: operationId,
+              operationStatus: finalization.status
+            }
+          );
+        }
+
+        return AKORT.Result.paused(
+          'Gate 7 Industry load can be continued safely.',
+          {
+            operationId: operationId,
+            operationStatus: finalization.status,
+            runResult: run
+          }
+        );
+      },
+      { lock: false, persistLogs: true }
+    );
+  }
+
+  function acceptanceContinue(authorization) {
+    return AKORT.Core.safeRun(
+      'INDUSTRY_INPUT_GATE7_CONTINUE',
+      function () {
+        AKORT.EnvironmentGuard.assertDev();
+        assertAcceptanceRuntimeReady_();
+
+        var permit = assertAcceptancePermit_(
+          authorization,
+          ['CONSUMED', 'COMPLETE']
+        );
+        var operationId = text_(permit.operationId);
+        if (!operationId) {
+          throw error_(
+            'INDUSTRY_INPUT_GATE7_OPERATION_NOT_BOUND',
+            'Gate 7 permit has no bound Industry operation.',
+            {}
+          );
+        }
+
+        if (permit.status === 'COMPLETE') {
+          return AKORT.Result.success(
+            'Gate 7 Industry load is already complete.',
+            {
+              operationId: operationId,
+              loadId: text_(permit.loadId),
+              operationStatus: 'SUCCESS'
+            }
+          );
+        }
+
+        var before = operationPublic_(operationId);
+        if (text_(before.status) !== 'SUCCESS') {
+          AKORT.OperationEngine.resume(operationId, {
+            maxSteps: 50,
+            executionBudgetMs: 260000,
+            minRemainingMs: 15000
+          });
+        }
+
+        var finalization = finalizeOperation_(operationId);
+        if (finalization.terminal &&
+            finalization.status === 'SUCCESS') {
+          permit.status = 'COMPLETE';
+          permit.completedAt = now_();
+          permit.loadId = finalization.result.loadId;
+          writeAcceptancePermit_(permit);
+          return AKORT.Result.success(
+            'Gate 7 Industry load completed.',
+            {
+              operationId: operationId,
+              loadId: finalization.result.loadId,
+              operationStatus: finalization.status,
+              finalization: finalization.result
+            }
+          );
+        }
+
+        if (finalization.terminal) {
+          permit.status = 'FAILED';
+          permit.failedAt = now_();
+          permit.errorCode =
+            text_(finalization.operation.error_code);
+          writeAcceptancePermit_(permit);
+          return AKORT.Result.failure(
+            text_(finalization.operation.error_code) ||
+              'INDUSTRY_INPUT_GATE7_OPERATION_FAILED',
+            text_(finalization.operation.error_message) ||
+              'Gate 7 RAW_INDUSTRY operation failed.',
+            {
+              operationId: operationId,
+              operationStatus: finalization.status
+            }
+          );
+        }
+
+        return AKORT.Result.paused(
+          'Gate 7 Industry load is not terminal yet.',
+          {
+            operationId: operationId,
+            operationStatus: finalization.status,
+            phase: finalization.operation.current_phase
+          }
+        );
+      },
+      { lock: false, persistLogs: true }
+    );
+  }
+
+  function publishIndustryDigest_() {
+    var config = AKORT.Config.load({
+      includeSystemSettings: false
+    });
+    var spreadsheet = SpreadsheetApp.openById(
+      config.resources.publishSpreadsheetId
+    );
+    var sheet = spreadsheet.getSheetByName(
+      'PUBLISH_INDUSTRY'
+    );
+    if (!sheet) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_PUBLISH_SHEET_MISSING',
+        'PUBLISH_INDUSTRY is missing.',
+        {}
+      );
+    }
+
+    var values = sheet.getDataRange().getValues();
+    var header = values.length ? values[0] : [];
+    var body = values.slice(1).map(function (row) {
+      return AKORT.Core.canonicalJson(row);
+    }).sort();
+
+    return {
+      rows: body.length,
+      columns: header.length,
+      fingerprint: AKORT.Core.sha256(
+        AKORT.Core.canonicalJson({
+          header: header,
+          rows: body
+        })
+      )
+    };
+  }
+
+  function acceptanceSnapshot(rows) {
+    return AKORT.Core.safeRun(
+      'INDUSTRY_INPUT_GATE7_SNAPSHOT',
+      function () {
+        AKORT.EnvironmentGuard.assertDev();
+        assertAcceptanceRuntimeReady_();
+
+        rows = rows || [];
+        if (!Array.isArray(rows) ||
+            !rows.length ||
+            rows.length > MAX_ROWS_PER_OPERATION) {
+          throw error_(
+            'INDUSTRY_INPUT_GATE7_SNAPSHOT_ROWS_INVALID',
+            'Gate 7 snapshot requires a bounded non-empty row set.',
+            {
+              rowCount: Array.isArray(rows) ? rows.length : -1,
+              maximum: MAX_ROWS_PER_OPERATION
+            }
+          );
+        }
+
+        var rawState = readLatestRaw_();
+        var raw = rows.map(function (row) {
+          var key = rawBusinessKey_(row);
+          return {
+            businessKey: key,
+            row: rawState.byBusinessKey[key] || null
+          };
+        }).sort(function (left, right) {
+          return left.businessKey < right.businessKey
+            ? -1
+            : left.businessKey > right.businessKey
+              ? 1
+              : 0;
+        });
+
+        var rawFingerprint = AKORT.Core.sha256(
+          AKORT.Core.canonicalJson(raw)
+        );
+        var publish = publishIndustryDigest_();
+
+        return AKORT.Result.success(
+          'Gate 7 Industry snapshot loaded.',
+          {
+            rawFingerprint: rawFingerprint,
+            publishFingerprint: publish.fingerprint,
+            publishRows: publish.rows,
+            publishColumns: publish.columns,
+            snapshotFingerprint: AKORT.Core.sha256(
+              AKORT.Core.canonicalJson({
+                rawFingerprint: rawFingerprint,
+                publishFingerprint: publish.fingerprint,
+                publishRows: publish.rows,
+                publishColumns: publish.columns
+              })
+            ),
+            physicalWrites: false
+          }
+        );
+      },
+      { lock: false, persistLogs: false }
+    );
+  }
+
+  function acceptanceOperationSummary(operationId) {
+    return AKORT.Core.safeRun(
+      'INDUSTRY_INPUT_GATE7_OPERATION_SUMMARY',
+      function () {
+        AKORT.EnvironmentGuard.assertDev();
+        assertAcceptanceRuntimeReady_();
+
+        var operation = operationPublic_(operationId);
+        return AKORT.Result.success(
+          'Gate 7 Industry operation summary loaded.',
+          {
+            operationId: text_(operation.operation_id),
+            operationType: text_(operation.operation_type),
+            status: text_(operation.status),
+            phase: text_(operation.current_phase),
+            loadId: operationLoadId_(operation),
+            rows: JSON.parse(
+              JSON.stringify(submittedRows_(operation))
+            ),
+            errorCode: text_(operation.error_code),
+            errorMessage: text_(operation.error_message)
+          }
+        );
+      },
+      { lock: false, persistLogs: false }
+    );
+  }
+
   function status() {
     return AKORT.Core.safeRun('INDUSTRY_INPUT_STATUS', function () {
       AKORT.EnvironmentGuard.assertDev();
@@ -1248,6 +1910,16 @@ AKORT.IndustryInput = (function () {
     submit: submit,
     continueLatest: continueLatest,
     status: status,
+    Acceptance: Object.freeze({
+      PermitSchema: GATE7_PERMIT_SCHEMA,
+      PermitProperty: GATE7_PERMIT_PROPERTY,
+      inspect: acceptanceInspect,
+      submit: acceptanceSubmit,
+      continueLatest: acceptanceContinue,
+      snapshot: acceptanceSnapshot,
+      operationSummary: acceptanceOperationSummary,
+      permitDigest: acceptancePermitDigest_
+    }),
     Test: Object.freeze({
       parsePeriod: parsePeriod_,
       parseNumber: number_,

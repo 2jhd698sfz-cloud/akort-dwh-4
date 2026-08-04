@@ -63,7 +63,7 @@ function dimension(overrides = {}) {
 
 test('operator form contract is explicit and only two columns are user inputs', () => {
   assert.equal(I.Version, '4.0-alpha74-industry-input-1');
-  assert.equal(I.Release, '4.0.0-alpha.7.4.35');
+  assert.equal(I.Release, '4.0.0-alpha.7.4.36');
   assert.equal(I.SheetName, 'INDUSTRY_INPUT');
   assert.equal(I.LogSheetName, 'INDUSTRY_INPUT_LOG');
   assert.deepEqual(
@@ -161,6 +161,55 @@ test('future periods and incomplete rows are blocked before RAW writes', () => {
     ),
     error => error.code === 'INDUSTRY_INPUT_ROW_INCOMPLETE'
   );
+});
+
+
+test('Gate 7 acceptance API is narrow and exact', () => {
+  assert(I.Acceptance);
+  assert.equal(
+    I.Acceptance.PermitSchema,
+    '4.0-alpha74-gate7-industry-permit-1'
+  );
+  assert.equal(
+    I.Acceptance.PermitProperty,
+    'AKORT_ALPHA74_GATE7_INDUSTRY_PERMIT_V1'
+  );
+  [
+    'inspect',
+    'submit',
+    'continueLatest',
+    'snapshot',
+    'operationSummary',
+    'permitDigest'
+  ].forEach(name => {
+    assert.equal(typeof I.Acceptance[name], 'function');
+  });
+});
+
+test('ordinary Industry submit remains gated by the user pipeline', () => {
+  const source = fs.readFileSync(
+    path.join(root, 'src/27_Alpha74IndustryInput.js'),
+    'utf8'
+  );
+  const start = source.indexOf('function submit()');
+  const end = source.indexOf('function continueLatest()', start);
+  const ordinarySubmit = source.slice(start, end);
+  assert(ordinarySubmit.includes('assertLiveSubmissionReady_();'));
+  assert(source.includes(
+    'INDUSTRY_INPUT_GATE7_USER_PIPELINE_MUST_REMAIN_DISABLED'
+  ));
+});
+
+test('Gate 7 permit binds exact rows and a stable content hash', () => {
+  const source = fs.readFileSync(
+    path.join(root, 'src/27_Alpha74IndustryInput.js'),
+    'utf8'
+  );
+  assert(source.includes('INDUSTRY_INPUT_GATE7_ROW_BINDING_MISMATCH'));
+  assert(source.includes('INDUSTRY_INPUT_GATE7_CONTENT_HASH_MISMATCH'));
+  assert(source.includes("permit.status = 'CLAIMED';"));
+  assert(source.includes("permit.status = 'CONSUMED';"));
+  assert(source.includes("permit.status = 'COMPLETE';"));
 });
 
 let failed = 0;

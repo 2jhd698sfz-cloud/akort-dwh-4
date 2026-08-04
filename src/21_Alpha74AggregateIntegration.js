@@ -9,7 +9,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  */
 AKORT.AggregateIntegration = (function () {
   var VERSION = '4.0-aggregate-integration-7';
-  var RELEASE = '4.0.0-alpha.7.4.35';
+  var RELEASE = '4.0.0-alpha.7.4.36';
   // Invocation-local cache only. Durable truth remains in AGGREGATE_STAGE and
   // publish intents; this cache merely prevents the same 61k-row projection
   // from being downloaded once per bounded batch in a single worker run.
