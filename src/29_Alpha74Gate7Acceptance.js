@@ -12,7 +12,7 @@ AKORT.Alpha74Gate7Acceptance = (function () {
   var VERSION = '4.0-alpha74-gate7-acceptance-1';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate7-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate7-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.37';
+  var RELEASE = '4.0.0-alpha.7.4.38';
 
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE7_STATE_V1';
   var CONTROL_SHEET = 'GATE7_CONTROL_FILES';
@@ -514,6 +514,10 @@ AKORT.Alpha74Gate7Acceptance = (function () {
           matchedCategoryCount: item.matchedCategoryCount,
           ignoredObservationCount: item.ignoredObservationCount,
           ignoredSourceLabelCount: item.ignoredSourceLabelCount,
+          unitCompatibilityConversionCount:
+            item.unitCompatibilityConversionCount,
+          unitCompatibilityTransformIds:
+            clone_(item.unitCompatibilityTransformIds || []),
           issueCount: item.issueCount,
           warningCount: item.warningCount
         };
@@ -610,6 +614,10 @@ AKORT.Alpha74Gate7Acceptance = (function () {
       matchedCategoryCount: item.matchedCategoryCount,
       ignoredObservationCount: item.ignoredObservationCount,
       ignoredSourceLabelCount: item.ignoredSourceLabelCount,
+      unitCompatibilityConversionCount:
+        item.unitCompatibilityConversionCount,
+      unitCompatibilityTransformIds:
+        item.unitCompatibilityTransformIds,
       issueCount: item.issueCount,
       warningCount: item.warningCount,
       infoCount: item.infoCount
@@ -765,6 +773,16 @@ AKORT.Alpha74Gate7Acceptance = (function () {
         Number(monitoringScope.ignoredObservationCount || 0),
       ignoredSourceLabelCount:
         Number(monitoringScope.ignoredSourceLabelCount || 0),
+      unitCompatibilityConversionCount:
+        Number(
+          monitoringScope
+            .unitCompatibilityConversionCount || 0
+        ),
+      unitCompatibilityTransformIds:
+        clone_(
+          monitoringScope
+            .unitCompatibilityTransformIds || []
+        ),
       issueCount: issues.length,
       warningCount: warnings.length,
       infoCount: infos.length
@@ -1118,6 +1136,13 @@ AKORT.Alpha74Gate7Acceptance = (function () {
                   item.ignoredObservationCount,
                 ignoredSourceLabelCount:
                   item.ignoredSourceLabelCount,
+                unitCompatibilityConversionCount:
+                  item.unitCompatibilityConversionCount,
+                unitCompatibilityTransformIds:
+                  clone_(
+                    item.unitCompatibilityTransformIds ||
+                    []
+                  ),
                 issueCount: item.issueCount
               };
             }),

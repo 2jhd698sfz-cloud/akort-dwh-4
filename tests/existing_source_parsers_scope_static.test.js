@@ -108,13 +108,13 @@ test('Gate 7 automatically resets an older preview candidate state', () => {
   ));
 });
 
-test('candidate is .37 and accepted Gate 6 stays outside this patch', () => {
+test('candidate is .38 and accepted Gate 6 remains pinned to .35', () => {
   assert.equal(
     packageJson.version,
-    '4.0.0-alpha.7.4.37'
+    '4.0.0-alpha.7.4.38'
   );
   assert(gate7.includes(
-    "var RELEASE = '4.0.0-alpha.7.4.37';"
+    "var RELEASE = '4.0.0-alpha.7.4.38';"
   ));
 });
 

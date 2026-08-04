@@ -157,6 +157,141 @@ AKORT.Alpha5Tests = (function () {
         });
       }));
 
+      tests.push(test_('legacy_producer_price_unit_compatibility', function () {
+        var values = [
+          ['YEAR', 2099],
+          ['MONTH', 1],
+          [],
+          ['Средние цены производителей'],
+          [],
+          ['product_name', 'unit', 'current_value'],
+          [
+            'Масло подсолнечное и его фракции рафинированные, но не подвергнутые химической модификации',
+            'Тонна;^метрическая тонна (1000 кг)',
+            101289.08
+          ]
+        ];
+        var allowedReference = {
+          products: [{
+            category_id:
+              'ROS_W_099A0FC24FAB',
+            product_name:
+              'Масло подсолнечное и его фракции рафинированные, но не подвергнутые химической модификации, л',
+            unit: 'л',
+            is_active: 1
+          }],
+          mappings: [{
+            dataset_code: 'ROSSTAT_MONTHLY',
+            source_product_name:
+              'Масло подсолнечное и его фракции рафинированные, но не подвергнутые химической модификации',
+            category_id:
+              'ROS_W_099A0FC24FAB',
+            source_file_type:
+              'PPI_INDUSTRIAL',
+            value_type: 'производитель',
+            valid_from: '2024-01-01',
+            valid_to: '',
+            is_active: 1
+          }]
+        };
+        var accepted =
+          AKORT.ExistingSourceParsers.parseMatrix(
+            'ROSSTAT_MONTHLY_PRODUCER_PRICES_INDUSTRY_M00',
+            values,
+            { referenceData: allowedReference }
+          );
+        var compatibilityInfo =
+          accepted.issues.filter(function (issue) {
+            return issue.issueCode ===
+              'LEGACY_UNIT_COMPATIBILITY_APPLIED';
+          });
+        var blocking =
+          accepted.issues.filter(function (issue) {
+            return issue.severity === 'ERROR';
+          });
+
+        require_(
+          accepted.rows.length === 1 &&
+            Math.abs(
+              Number(accepted.rows[0].row.value) -
+              101.28908
+            ) < 1e-9 &&
+            accepted.monitoringScope
+              .unitCompatibilityConversionCount === 1 &&
+            accepted.monitoringScope
+              .unitCompatibilityTransformIds[0] ===
+              'LEGACY_PPI_INDUSTRIAL_TONNE_DIV_1000' &&
+            compatibilityInfo.length === 1 &&
+            blocking.length === 0,
+          'LEGACY_UNIT_COMPATIBILITY_FAILED',
+          'Verified 3.1.7 producer-price unit transform was not reproduced exactly.',
+          accepted
+        );
+
+        var deniedReference = {
+          products: [{
+            category_id: 'TEST_LITER',
+            product_name: 'Тестовая жидкость, л',
+            unit: 'л',
+            is_active: 1
+          }],
+          mappings: [{
+            dataset_code: 'ROSSTAT_MONTHLY',
+            source_product_name:
+              'Тестовая жидкость',
+            category_id: 'TEST_LITER',
+            source_file_type:
+              'PPI_INDUSTRIAL',
+            value_type: 'производитель',
+            valid_from: '2024-01-01',
+            valid_to: '',
+            is_active: 1
+          }]
+        };
+        var denied =
+          AKORT.ExistingSourceParsers.parseMatrix(
+            'ROSSTAT_MONTHLY_PRODUCER_PRICES_INDUSTRY_M00',
+            [
+              ['YEAR', 2099],
+              ['MONTH', 1],
+              [],
+              ['Средние цены производителей'],
+              [],
+              ['product_name', 'unit', 'current_value'],
+              [
+                'Тестовая жидкость',
+                'Тонна;^метрическая тонна (1000 кг)',
+                1000
+              ]
+            ],
+            { referenceData: deniedReference }
+          );
+        var deniedBlocked =
+          denied.issues.some(function (issue) {
+            return issue.severity === 'ERROR' &&
+              issue.issueCode ===
+                'UNIT_CONVERSION_NOT_SUPPORTED';
+          });
+
+        require_(
+          denied.rows.length === 0 &&
+            deniedBlocked,
+          'GENERIC_TONNE_TO_LITER_NOT_BLOCKED',
+          'Generic tonne-to-liter conversion must remain fail closed.',
+          denied
+        );
+
+        return {
+          acceptedValue:
+            accepted.rows[0].row.value,
+          transformId:
+            accepted.monitoringScope
+              .unitCompatibilityTransformIds[0],
+          genericConversionBlocked:
+            deniedBlocked
+        };
+      }));
+
       tests.push(test_('one_to_many_mapping', function () {
         var values = [['YEAR', 2099], [], ['Еженедельные средние потребительские цены Росстат'], [], ['product_name / observation_date', 'на 5 января'], ['Капуста белокочанная свежая, кг', 100]];
         var result = AKORT.ExistingSourceParsers.parseMatrix('ROSSTAT_WEEKLY_RETAIL_PRICES', values, { referenceData: ref_('AVG_PRICE', 'розница', true) });

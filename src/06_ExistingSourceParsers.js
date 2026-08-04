@@ -24,6 +24,26 @@ AKORT.ExistingSourceParsers = (function () {
     ]
   };
 
+  var DEFAULT_UNIT_COMPATIBILITY = Object.freeze([
+    Object.freeze({
+      transformId:
+        'LEGACY_PPI_INDUSTRIAL_TONNE_DIV_1000',
+      datasetCode: 'ROSSTAT_MONTHLY',
+      sourceFileType: 'PPI_INDUSTRIAL',
+      valueType: 'производитель',
+      categoryIds: Object.freeze([
+        'ROS_M_2917D5652F4E',
+        'ROS_W_099A0FC24FAB',
+        'ROS_W_B97F94BAEE84'
+      ]),
+      sourceUnit: 'tonne',
+      targetUnit: 'liter',
+      operation: 'DIVIDE',
+      factor: 1000,
+      basis: 'VERIFIED_BASELINE_3_1_7'
+    })
+  ]);
+
   var SETTINGS = {
     PARSER_SCHEMA_VERSION: {
       value: '4.0-parser-1', type: 'STRING',
@@ -44,6 +64,12 @@ AKORT.ExistingSourceParsers = (function () {
     PARSER_TEMP_CONVERSION_ENABLED: {
       value: true, type: 'BOOLEAN',
       description: 'Allow temporary XLSX to Google Sheets conversion in DEV'
+    },
+    PARSER_UNIT_COMPATIBILITY: {
+      value: JSON.stringify(DEFAULT_UNIT_COMPATIBILITY),
+      type: 'JSON',
+      description:
+        'Explicit baseline-compatible source-unit transforms; no generic mass-to-volume conversion'
     },
     PARSER_STAGE_BATCH_SIZE: {
       value: 500, type: 'NUMBER',
@@ -192,13 +218,22 @@ AKORT.ExistingSourceParsers = (function () {
 
   function runtimeSettings_() {
     var settings = AKORT.Config.readSystemSettings();
+    var unitCompatibility =
+      settings.PARSER_UNIT_COMPATIBILITY;
+
+    if (!Array.isArray(unitCompatibility)) {
+      unitCompatibility =
+        clone_(DEFAULT_UNIT_COMPATIBILITY);
+    }
+
     return {
       schemaVersion: String(settings.PARSER_SCHEMA_VERSION || AKORT.Release.parserSchemaVersion),
       minScore: Number(settings.PARSER_PROFILE_MIN_SCORE || 60),
       minMargin: Number(settings.PARSER_PROFILE_MIN_MARGIN || 15),
       failOnUnmapped: settings.PARSER_FAIL_ON_UNMAPPED === undefined ? true : Boolean(settings.PARSER_FAIL_ON_UNMAPPED),
       tempConversionEnabled: settings.PARSER_TEMP_CONVERSION_ENABLED === undefined ? true : Boolean(settings.PARSER_TEMP_CONVERSION_ENABLED),
-      stageBatchSize: Number(settings.PARSER_STAGE_BATCH_SIZE || 500)
+      stageBatchSize: Number(settings.PARSER_STAGE_BATCH_SIZE || 500),
+      unitCompatibility: clone_(unitCompatibility)
     };
   }
 
@@ -641,14 +676,118 @@ AKORT.ExistingSourceParsers = (function () {
     return '';
   }
 
-  function convertUnit_(value, sourceUnit, targetUnit) {
-    var source = unitKey_(sourceUnit), target = unitKey_(targetUnit);
-    if (!source || !target) return { error: 'UNIT_NOT_RECOGNIZED', sourceUnit: sourceUnit, targetUnit: targetUnit };
-    if (source === target) return { value: Number(value) };
-    if (source === 'tonne' && target === 'kg') return { value: Number(value) / 1000 };
-    if (source === 'thousand_pieces' && target === 'ten_pieces') return { value: Number(value) / 100 };
-    if (source === 'thousand_m3' && target === 'm3') return { value: Number(value) / 1000 };
-    return { error: 'UNIT_CONVERSION_NOT_SUPPORTED', sourceUnit: sourceUnit, targetUnit: targetUnit };
+  function compatibilityUnitTransform_(
+    value,
+    source,
+    target,
+    context
+  ) {
+    context = context || {};
+
+    var profile = context.profile || {};
+    var mapping = context.mapping || {};
+    var transforms =
+      context.unitCompatibility || [];
+
+    for (var i = 0; i < transforms.length; i += 1) {
+      var transform = transforms[i] || {};
+      var categoryIds =
+        transform.categoryIds || [];
+
+      if (
+        text_(transform.datasetCode) !==
+          text_(profile.datasetCode) ||
+        text_(transform.sourceFileType) !==
+          text_(profile.sourceFileType) ||
+        norm_(transform.valueType) !==
+          norm_(profile.valueType) ||
+        categoryIds.indexOf(
+          text_(mapping.category_id)
+        ) < 0 ||
+        text_(transform.sourceUnit) !== source ||
+        text_(transform.targetUnit) !== target
+      ) {
+        continue;
+      }
+
+      var factor = Number(transform.factor);
+      if (
+        text_(transform.operation) !== 'DIVIDE' ||
+        !isFinite(factor) ||
+        factor <= 0
+      ) {
+        return {
+          error:
+            'UNIT_COMPATIBILITY_CONTRACT_INVALID',
+          transformId:
+            text_(transform.transformId),
+          factor: transform.factor
+        };
+      }
+
+      return {
+        value: Number(value) / factor,
+        transformId:
+          text_(transform.transformId),
+        compatibilityBasis:
+          text_(transform.basis),
+        operation: 'DIVIDE',
+        factor: factor
+      };
+    }
+
+    return null;
+  }
+
+  function convertUnit_(
+    value,
+    sourceUnit,
+    targetUnit,
+    context
+  ) {
+    var source = unitKey_(sourceUnit);
+    var target = unitKey_(targetUnit);
+
+    if (!source || !target) {
+      return {
+        error: 'UNIT_NOT_RECOGNIZED',
+        sourceUnit: sourceUnit,
+        targetUnit: targetUnit
+      };
+    }
+    if (source === target) {
+      return { value: Number(value) };
+    }
+    if (source === 'tonne' && target === 'kg') {
+      return { value: Number(value) / 1000 };
+    }
+    if (
+      source === 'thousand_pieces' &&
+      target === 'ten_pieces'
+    ) {
+      return { value: Number(value) / 100 };
+    }
+    if (
+      source === 'thousand_m3' &&
+      target === 'm3'
+    ) {
+      return { value: Number(value) / 1000 };
+    }
+
+    var compatibility =
+      compatibilityUnitTransform_(
+        value,
+        source,
+        target,
+        context
+      );
+    if (compatibility) return compatibility;
+
+    return {
+      error: 'UNIT_CONVERSION_NOT_SUPPORTED',
+      sourceUnit: sourceUnit,
+      targetUnit: targetUnit
+    };
   }
 
   function issue_(severity, code, observation, details) {
@@ -671,6 +810,7 @@ AKORT.ExistingSourceParsers = (function () {
       reference.mappings || [],
       period
     );
+    var runtime = runtimeSettings_();
 
     var configuredCategoryIds = {};
     if (profile.datasetCode.indexOf('AKORT_') === 0) {
@@ -687,6 +827,7 @@ AKORT.ExistingSourceParsers = (function () {
     var matchedObservationCount = 0;
     var ignoredObservationCount = 0;
     var ignoredSourceLabels = {};
+    var unitCompatibilityCounts = {};
 
     if (!Object.keys(configuredCategoryIds).length) {
       issues.push(issue_(
@@ -772,7 +913,13 @@ AKORT.ExistingSourceParsers = (function () {
           converted = convertUnit_(
             observation.value,
             sourceUnit,
-            product.unit
+            product.unit,
+            {
+              profile: profile,
+              mapping: mapping,
+              unitCompatibility:
+                runtime.unitCompatibility
+            }
           );
           if (converted.error) {
             issues.push(issue_(
@@ -782,10 +929,24 @@ AKORT.ExistingSourceParsers = (function () {
               {
                 sourceUnit: sourceUnit,
                 targetUnit: product.unit,
-                categoryId: product.category_id
+                categoryId: product.category_id,
+                transformId:
+                  converted.transformId || '',
+                factor:
+                  converted.factor || ''
               }
             ));
             return;
+          }
+
+          if (converted.transformId) {
+            unitCompatibilityCounts[
+              converted.transformId
+            ] = (
+              unitCompatibilityCounts[
+                converted.transformId
+              ] || 0
+            ) + 1;
           }
         }
 
@@ -836,7 +997,39 @@ AKORT.ExistingSourceParsers = (function () {
       });
     });
 
-    var ignoredLabels = Object.keys(ignoredSourceLabels).sort();
+    var ignoredLabels =
+      Object.keys(ignoredSourceLabels).sort();
+    var unitCompatibilityTransformIds =
+      Object.keys(unitCompatibilityCounts).sort();
+    var unitCompatibilityConversionCount =
+      unitCompatibilityTransformIds.reduce(
+        function (sum, transformId) {
+          return sum +
+            Number(
+              unitCompatibilityCounts[
+                transformId
+              ] || 0
+            );
+        },
+        0
+      );
+
+    if (unitCompatibilityConversionCount) {
+      issues.push(issue_(
+        'INFO',
+        'LEGACY_UNIT_COMPATIBILITY_APPLIED',
+        null,
+        {
+          transformIds:
+            unitCompatibilityTransformIds,
+          conversionCount:
+            unitCompatibilityConversionCount,
+          basis:
+            'VERIFIED_BASELINE_3_1_7'
+        }
+      ));
+    }
+
     if (ignoredObservationCount) {
       issues.push(issue_(
         'INFO',
@@ -899,7 +1092,11 @@ AKORT.ExistingSourceParsers = (function () {
         matchedObservationCount: matchedObservationCount,
         ignoredObservationCount: ignoredObservationCount,
         ignoredSourceLabelCount: ignoredLabels.length,
-        ignoredSourceLabelsSample: ignoredLabels.slice(0, 20)
+        ignoredSourceLabelsSample: ignoredLabels.slice(0, 20),
+        unitCompatibilityConversionCount:
+          unitCompatibilityConversionCount,
+        unitCompatibilityTransformIds:
+          unitCompatibilityTransformIds
       }
     };
   }
