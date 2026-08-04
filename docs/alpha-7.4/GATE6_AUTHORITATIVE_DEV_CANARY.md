@@ -1,5 +1,12 @@
 # Alpha.7.4 — Gate 6 Authoritative DEV Canary
 
+## Статус
+
+`ACCEPTED_AND_CLOSED` 4 августа 2026 года на release
+`4.0.0-alpha.7.4.35`. Execution:
+`A74_GATE6_37FAED6EF952F9BB5FD4`. Принятый результат и row-count checkpoints:
+`GATE6_ACCEPTANCE_RESULT.md`.
+
 ## Назначение
 
 Gate 6 впервые проверяет Alpha.7.4 на рабочей DEV-инфраструктуре, к которой
@@ -251,6 +258,7 @@ Gate 6 закрывается только при:
 - `PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED=TRUE`;
 - `PUBLISH_USER_PIPELINE_ENABLED=FALSE`.
 
-После PASS начинается Gate 7: independent final review, проверка evidence,
-release package/commit/tag и только затем отдельное разрешение пользовательской
-Beta 2.
+После PASS начинается Gate 7: independent final review, сокращённая матрица
+всех утверждённых profiles и Industry, проверка evidence и accepted package.
+User pipeline разрешается только после Gate 7, обязательной Beta.1 и Beta.2
+go-live checks.

@@ -1,93 +1,78 @@
-# Installation — v4.0.0-alpha.1
+# AKORT DWH 4.0 — установка DEV release
 
-## 1. Copy the package into the local GitHub repository
+## Граница инструкции
 
-Copy all package files into the root of the local `akort-dwh-4` repository and allow replacement of existing files. The file `src/99_LocalConfig.js` is intentionally present locally but excluded from Git.
+Инструкция относится к текущему DEV release `4.0.0-alpha.7.4.35`. Она не
+разрешает production cutover и не включает user pipeline.
 
-Expected local structure:
+## 1. Локальная проверка
 
-```text
-akort-dwh-4/
-├── .git/
-├── .clasp.json
-├── .gitignore
-├── package.json
-├── src/
-├── docs/
-├── scripts/
-└── releases/
+```bash
+git status --short --branch
+git diff --check
+npm test
 ```
 
-## 2. Verify GitHub Desktop
+Проверить, что `.clasp.json` и `src/99_LocalConfig.js` не попали в Git.
 
-The Changes list should show the public source and documentation files. It must **not** show:
-
-- `.clasp.json`
-- `src/99_LocalConfig.js`
-
-Commit on branch `feature/alpha-1-foundation` with message:
-
-```text
-feat: add v4.0.0-alpha.1 DEV foundation and baseline harness
-```
-
-Then click `Push origin`.
-
-## 3. Deploy to DEV Apps Script
-
-Open Terminal from GitHub Desktop: `Repository → Open in Terminal`.
-
-Run:
+## 2. Deploy в DEV Apps Script
 
 ```bash
 npm run status:dev
 npm run deploy:dev
 ```
 
-The deploy script compares the Script ID in `.clasp.json` with the local DEV configuration before running `clasp push`.
+`deploy:dev` должен остановиться при несовпадении DEV Script ID.
 
-## 4. Authorize and run the smoke test
+## 3. Read-only проверка после deploy
 
-Open the Apps Script project and run:
+В Apps Script выполнить последовательно:
 
-```text
-AKORT_alpha1SmokeTest
+```javascript
+AKORT_alpha74Install()
+AKORT_alpha74SmokeTest()
+AKORT_alpha74ReadOnlyContractScan()
+AKORT_alpha74Gate6Status()
 ```
 
-Approve Google Drive and Google Sheets permissions. Expected result: `status = SUCCESS` and every test is `PASS`.
+Ожидается:
 
-## 5. Build the baseline snapshot
+- release `.35`;
+- smoke и contract scan: `SUCCESS`;
+- Gate 6: `SUCCESS / SUCCESS`;
+- regular pipeline: `TRUE`;
+- user pipeline: `FALSE`.
 
-Run:
+Повторно запускать Gate 6 не нужно.
 
-```text
-AKORT_alpha1StartBaseline
+## 4. Industry form
+
+```javascript
+AKORT_alpha74IndustryInputInstall()
+AKORT_alpha74IndustryInputStatus()
+AKORT_alpha74IndustryInputValidate()
 ```
 
-The scanner uses checkpoints. If the result is `PAUSED`, run:
+Install/Status/Validate не открывают пользовательскую физическую загрузку.
+`Submit` разрешается только в контролируемой Gate 7/Beta acceptance либо после
+отдельного включения user pipeline в Beta.2 go-live.
+
+## 5. Feature flags
+
+После принятого Gate 6 и до Beta.2:
 
 ```text
-AKORT_alpha1ContinueBaseline
+PUBLISH_ENGINE_ENABLED = TRUE
+PUBLISH_AGGREGATE_EXECUTION_ENABLED = TRUE
+PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED = TRUE
+PUBLISH_USER_PIPELINE_ENABLED = FALSE
 ```
 
-Repeat until the result is `SUCCESS` or `FAILED`. Current status is available through:
+User flag включается последним действием go-live после PASS Gate 7,
+Beta.1.1–Beta.1.6 и Beta.2 preflight.
 
-```text
-AKORT_alpha1BaselineStatus
-```
+## 6. Перед Beta.2
 
-The report is created in `07_Разработка системы 4.0/03_Результаты тестов`.
-
-## 6. Acceptance criterion
-
-The report must show `PASS` for:
-
-- 27,899 RAW observation rows;
-- 35,434 non-aggregate Publish rows;
-- 61,636 aggregate rows;
-- 157 weekly latest flags;
-- 378 monthly latest flags;
-- 1,364 aggregate latest flags;
-- all required table schemas.
-
-Do not merge the branch into `main` before these checks pass.
+Следовать `docs/BETA2_LAUNCH_PLAN_2026-08-07.md`. Установка `.35` сама по себе
+не является установкой Beta.1/Beta.2: эти packages и их entrypoints должны быть
+реализованы, протестированы и приняты отдельно.

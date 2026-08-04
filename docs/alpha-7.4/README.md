@@ -2,9 +2,9 @@
 
 ## Статус
 
-`GATE 5 ACCEPTED / GATE 6 ALPHA74.35 EVIDENCE FINALIZATION RECOVERY READY / USER PIPELINE PROHIBITED`
+`GATE 6 ACCEPTED / GATE 7 IN PROGRESS / USER PIPELINE DISABLED UNTIL BETA.2 GO-LIVE`
 
-Дата фиксации: 3 августа 2026 года.
+Дата фиксации: 4 августа 2026 года.
 
 Активная GitHub-ветка: `codex/alpha-7.4-integration-reset`.
 
@@ -47,6 +47,12 @@
 - `GATE5_ACCEPTANCE_HARNESS.md` — full build, sequential replay, exact reconciliation, quota и automatic continuation contract.
 - `GATE6_AUTHORITATIVE_DEV_CANARY.md` — recovery copies, live canary,
   standard reversal, deterministic restore, read-back и evidence contract.
+- `GATE6_ACCEPTANCE_RESULT.md` — принятый результат `.35`, execution,
+  row counts и точные rollback/restore checkpoints.
+- `GATE7_SIMPLIFIED_ACCEPTANCE.md` — единая сокращённая приёмка всех
+  утверждённых profiles и Industry без повторения Gate 6 на каждом шаблоне.
+- `../BETA2_LAUNCH_PLAN_2026-08-07.md` — критический путь Gate 7 → Beta.1 →
+  Beta.2 и go/no-go на 7 августа.
 - `GATE6_BOUNDED_AGGREGATE_PHASES_HOTFIX.md` — обязательный bounded-work
   контракт всех тяжёлых aggregate phases и exact продолжение остановленного
   `.22 / STAGING_AGGREGATE_ROWS` checkpoint без повторного расчёта.
@@ -290,6 +296,9 @@ Gate 5 закрыт 2 августа 2026 года. Execution
 `A74_GATE5_020B82D95A2DCC39C17D` завершился `SUCCESS`; все четыре
 артефакта содержат 61 636 строк по 29 колонок и имеют одинаковый
 row-multiset digest. DEV Publish не изменялась.
+
+Следующие записи `.18`–`.35` являются историей Gate 6; действующий итог —
+`GATE6_ACCEPTANCE_RESULT.md`.
 
 Release `4.0.0-alpha.7.4.20` подготавливает Gate 6: две recovery-копии,
 durable digest четырёх Publish-листов, новый weekly/monthly

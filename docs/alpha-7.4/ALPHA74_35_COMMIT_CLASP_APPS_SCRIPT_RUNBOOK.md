@@ -1,5 +1,9 @@
 # Alpha.7.4.35 — commit, clasp push и завершение Gate 6 evidence
 
+> Историческая инструкция: выполнена 4 августа 2026 года. Gate 6 имеет
+> `SUCCESS / SUCCESS`. Повторно recovery-функцию и старые Gate 6 entrypoints
+> не запускать. Действующий итог: `GATE6_ACCEPTANCE_RESULT.md`.
+
 ## 1. Что исправлено
 
 Gate 6 выполнил весь authoritative DEV cycle:
@@ -117,6 +121,6 @@ AKORT_alpha74Gate6Status()
 - aggregate contract scan `ok=true`;
 - duplicate logical rows, latest failures и future rows отсутствуют;
 - regular pipeline `TRUE`;
-- user pipeline `FALSE` до Gate 7.
+- user pipeline `FALSE` до Gate 7, обязательной Beta.1 и Beta.2 go-live.
 
 Ориентировочное время recovery и финальной проверки: 2–5 минут.

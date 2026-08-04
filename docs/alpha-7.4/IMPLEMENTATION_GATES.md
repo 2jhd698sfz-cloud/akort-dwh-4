@@ -143,12 +143,18 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 ## Gate 6 — Authoritative DEV
 
 - [x] Fail-closed Gate 6 harness и static regression suite реализованы.
-- [ ] Immutable backup.
-- [ ] Authoritative DEV canary.
-- [ ] Read-back and reconciliation PASS.
-- [ ] Regular aggregate pipeline enabled.
-- [ ] Несколько регулярных DEV cycles без intervention.
-- [ ] Recovery/rollback protocol проверен.
+- [x] Immutable backup.
+- [x] Authoritative DEV canary.
+- [x] Read-back and reconciliation PASS.
+- [x] Regular aggregate pipeline enabled.
+- [x] Три регулярных DEV cycles без intervention: canary, rollback, restore.
+- [x] Recovery/rollback protocol проверен.
+
+Gate 6 закрыт 4 августа 2026 года на release `4.0.0-alpha.7.4.35`.
+Execution `A74_GATE6_37FAED6EF952F9BB5FD4` завершён `SUCCESS / SUCCESS`.
+Rollback digests точно совпали с baseline, final digests — с post-canary для
+Weekly, Monthly, Industry и Aggregates. Итоговый aggregate contract scan
+прошёл. Regular pipeline включён, user pipeline выключен.
 
 Release `4.0.0-alpha.7.4.35` устраняет финальный `.34 / SAVE_EVIDENCE`
 incident после уже успешных canary, exact rollback, restore и final contract
@@ -301,3 +307,8 @@ Recovery начинает с первой незавершённой observation
 - [x] Machine-readable evidence сохранены.
 - [ ] Accepted commit/tag созданы.
 - [ ] Alpha.7.4 = `ACCEPTED_AND_CLOSED`.
+
+Gate 7 выполняется по `GATE7_SIMPLIFIED_ACCEPTANCE.md`: read-only preview
+каждого утверждённого profile и только репрезентативные weekly, monthly и
+Industry physical E2E. Полный canary/rollback/restore для каждого шаблона не
+повторяется, поскольку общий data-plane contract принят Gate 6.

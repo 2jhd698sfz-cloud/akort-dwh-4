@@ -81,4 +81,5 @@ ID и hash хранятся только во внутреннем `SYSTEM_SETTI
 5. Gate 6 harness сам включает
    `PUBLISH_AGGREGATE_REGULAR_PIPELINE_ENABLED` только после recovery-копий и
    baseline scan; при ошибке выключает его fail-closed. После PASS флаг
-   остаётся `TRUE`, а `PUBLISH_USER_PIPELINE_ENABLED` — `FALSE` до Gate 7.
+   остаётся `TRUE`, а `PUBLISH_USER_PIPELINE_ENABLED` — `FALSE` до Gate 7,
+   обязательной Beta.1 и Beta.2 go-live.

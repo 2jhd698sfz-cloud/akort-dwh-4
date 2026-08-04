@@ -6,7 +6,7 @@ Apps Script data pipeline for the AKORT analytical system.
 
 Active milestone: **Alpha.7.4 — Aggregate Integration into Existing Operation Engine**.
 
-Status: `GATE 5 ACCEPTED / GATE 6 ALPHA74.35 EVIDENCE FINALIZATION RECOVERY READY / USER PIPELINE PROHIBITED`.
+Status: `GATE 6 ACCEPTED / GATE 7 IN PROGRESS / USER PIPELINE DISABLED UNTIL BETA.2 GO-LIVE`.
 
 Accepted base:
 
@@ -33,16 +33,23 @@ Yandex DataLens is an external consumer of the Publish spreadsheet and manages i
 
 See [`docs/alpha-7.4/README.md`](docs/alpha-7.4/README.md).
 
-The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 5 is accepted with exact 61,636-row parity across baseline, live snapshot, full build and sequential replay. Gate 6 adds recovery copies and a fail-closed three-cycle authoritative DEV canary using one new weekly/monthly source file: source-file load, standard logical reversal and source-file restore. Acceptance requires a real change in `PUBLISH_PRICE_AGGREGATES`.
+The local Alpha.7.4 implementation includes durable staging, bounded calculation checkpoints, logical-series replacement, atomic Sheets API publication, lost-response recovery and reconciliation. Gate 5 is accepted with exact 61,636-row parity across baseline, live snapshot, full build and sequential replay. Gate 6 is accepted on release `4.0.0-alpha.7.4.35`: source-file canary, standard logical reversal and source-file restore completed successfully, with exact four-target rollback/restore digests and a passing final aggregate contract scan.
 
-Gate 6 may enable the regular aggregate pipeline only inside its controlled harness. General operator submission remains prohibited until Gate 7 through `PUBLISH_USER_PIPELINE_ENABLED=FALSE`.
+The regular aggregate pipeline is enabled after Gate 6. General operator submission remains prohibited through `PUBLISH_USER_PIPELINE_ENABLED=FALSE` until Gate 7, all mandatory Beta.1 protections and the Beta.2 go-live preflight pass.
 
-Release `4.0.0-alpha.7.4.35` fixes the final evidence lifecycle check after
-the accepted three-cycle Gate 6 run. Canary, exact rollback, restore, final
-digests and aggregate contract scan have already passed; the canary RAW load
-is correctly `REVERSED`. Exact recovery creates evidence and closes Gate 6
-without replaying parser, RAW, Publish or aggregate operations. Runbook:
+Release `4.0.0-alpha.7.4.35` fixed the final evidence lifecycle check after
+the accepted three-cycle Gate 6 run. Exact recovery created evidence and
+closed Gate 6 without replaying parser, RAW, Publish or aggregate operations.
+Accepted result:
+[`GATE6_ACCEPTANCE_RESULT.md`](docs/alpha-7.4/GATE6_ACCEPTANCE_RESULT.md).
+Historical recovery runbook:
 [`ALPHA74_35_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`](docs/alpha-7.4/ALPHA74_35_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md).
+
+Current launch plan:
+[`BETA2_LAUNCH_PLAN_2026-08-07.md`](docs/BETA2_LAUNCH_PLAN_2026-08-07.md).
+Gate 7 uses one parser/preview matrix for all approved profiles and only
+representative weekly, monthly and Industry physical E2E runs; the full Gate 6
+rollback/restore cycle is not repeated per template.
 
 Release `4.0.0-alpha.7.4.34` fixes the confirmed `.33` RAW-lineage incident:
 the second W27 canary revised 50 observations from an older load already marked

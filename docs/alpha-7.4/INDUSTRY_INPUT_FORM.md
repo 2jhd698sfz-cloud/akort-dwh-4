@@ -73,8 +73,9 @@ Append-only журнал успешно подтверждённых строк.
 последнего периода и значения остаётся authoritative результат. Можно вводить
 следующий доступный период.
 
-До закрытия Gate 7 шаги 4–6 ещё не являются пользовательским режимом:
-физические `Submit` и `Continue` заблокированы. Gate 6 не использует эту
+До закрытия Gate 7 и обязательной Beta.1 шаги 4–6 не являются регулярным
+пользовательским режимом: физические `Submit` и `Continue` заблокированы,
+кроме явно контролируемого Gate 7 acceptance run. Gate 6 не использовал эту
 форму, потому что `RAW_INDUSTRY` не влияет на `PUBLISH_PRICE_AGGREGATES`.
 
 ## Типы изменений
@@ -132,7 +133,7 @@ INDUSTRY_INPUT
 7. открыть `АКОРТ — DWH TECH 4.0 DEV` и проверить листы
    `INDUSTRY_INPUT` и `INDUSTRY_INPUT_LOG`.
 
-Установка формы не изменяет RAW или Publish. Функция Submit остаётся
-fail-closed заблокированной до Gate 7. Gate 6 использует отдельный лист
-`GATE6_CANARY_INPUT` и новый weekly/monthly source file; нормативный процесс
-описан в `GATE6_AUTHORITATIVE_DEV_CANARY.md`.
+Установка формы не изменяет RAW или Publish. Regular Submit остаётся
+fail-closed заблокированным до Gate 7, Beta.1 и Beta.2 go-live. Gate 6
+использовал отдельный лист `GATE6_CANARY_INPUT`; его принятый результат описан
+в `GATE6_ACCEPTANCE_RESULT.md`.

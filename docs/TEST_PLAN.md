@@ -1,42 +1,70 @@
-# Test plan — v4.0.0-alpha.1
+# AKORT DWH 4.0 — актуальный test plan
 
-## T01 — deployment target
+## 1. Локальная регрессия
 
-`npm run deploy:dev` must stop when `.clasp.json` and `src/99_LocalConfig.js` contain different Script IDs.
+Обязательный запуск:
 
-## T02 — environment guard
+```bash
+npm test
+```
 
-`AKORT_alpha1EnvironmentCheck` must confirm:
+Suite проверяет private Apps Script references, frozen Alpha.7.1–7.3
+contracts, Alpha.7.4 integration, Gates 3–6, Industry form, bounded RAW
+reversal и fast incremental update.
 
-- environment is DEV;
-- Script ID is the approved DEV project;
-- DWH and Publish names match DEV copies;
-- development folders are accessible;
-- no active resource equals a blocked production resource.
+## 2. Принятые gates
 
-## T03 — smoke test
+- Gates 0–4: architecture/read-only/isolated physical acceptance — PASS.
+- Gate 5: full build = sequential replay = accepted baseline — PASS.
+- Gate 6: authoritative DEV canary, exact rollback/restore и aggregate scan —
+  PASS на `.35`.
 
-`AKORT_alpha1SmokeTest` must return `SUCCESS`.
+Принятые gates не повторяются без изменения их frozen contract или
+подтверждённого regression risk.
 
-## T04 — resumability
+## 3. Gate 7
 
-Start a baseline scan. When it returns `PAUSED`, run `AKORT_alpha1ContinueBaseline`. Previously written chunk rows must not be duplicated.
+Используется `docs/alpha-7.4/GATE7_SIMPLIFIED_ACCEPTANCE.md`:
 
-## T05 — baseline controls
+- read-only preview всех утверждённых profiles;
+- один representative E2E weekly;
+- один representative E2E monthly;
+- один representative Industry Submit;
+- duplicate/no-change check;
+- final quick audit и contract scan;
+- independent review и accepted package.
 
-The completed report must match the verified baseline of 10 July 2026:
+Полный rollback/restore не выполняется на каждом шаблоне: общий механизм уже
+доказан Gate 6.
 
-- RAW rows: 27,899;
-- Publish main rows: 35,434;
-- aggregate rows: 61,636;
-- weekly latest rows: 157;
-- monthly latest rows: 378;
-- aggregate latest rows: 1,364.
+## 4. Beta.1
 
-## T06 — schema controls
+Каждый обязательный subrelease имеет отдельный PASS:
 
-The exact headers of the seven critical RAW/Publish sheets must pass.
+1. Daily Backup: pair, registry, hashes, PARTIAL retry, restore rehearsal.
+2. Rollback Any load_id: preview, reason, checkpoints, recalculation, audit.
+3. Failure Injection: timeout/lost response/service error/trigger/conflict/
+   partial backup/rollback fault без ложного SUCCESS.
+4. Operational Hardening: retry/backoff/watchdog/stale/maintenance/runbook.
+5. Quality/Observability: status/freshness/issues/triggers/quota/backup/health.
+6. Full Audit/Retention: resume, reports, failed-check retry, dry-run purge.
 
-## T07 — production isolation
+## 5. Beta.2
 
-No production file may have a modified timestamp caused by alpha.1 testing. Alpha.1 contains no production-writing entry point.
+- Control Center открывается без full RAW/Publish scan;
+- approved-template user workflow проходит E2E;
+- operations Backup/Audit/Rollback доступны с безопасными подтверждениями;
+- одна intake folder обрабатывается только одним Beta trigger;
+- DataLens подключён к Beta Publish и сверяет контрольные значения;
+- go-live preflight и hypercare не имеют P0/P1.
+
+## 6. Общие критерии качества данных
+
+- exact headers/schema;
+- no duplicate business/logical keys;
+- exactly one latest per publishable series;
+- no future periods;
+- RAW/Publish affected scope reconciled;
+- aggregate contract: 29 columns;
+- repeat input is idempotent;
+- status cannot be `SUCCESS` before read-back and audit.
