@@ -30,30 +30,34 @@ function test(name, fn) {
 }
 
 test('Gate 7 candidate release is exact', () => {
-  assert(release.includes("version: '4.0.0-alpha.7.4.40'"));
-  assert(integration.includes("var RELEASE = '4.0.0-alpha.7.4.40';"));
-  assert(industry.includes("var RELEASE = '4.0.0-alpha.7.4.40';"));
-  assert.equal(packageJson.version, '4.0.0-alpha.7.4.40');
+  assert(release.includes("version: '4.0.0-alpha.7.4.41'"));
+  assert(integration.includes("var RELEASE = '4.0.0-alpha.7.4.41';"));
+  assert(industry.includes("var RELEASE = '4.0.0-alpha.7.4.41';"));
+  assert.equal(packageJson.version, '4.0.0-alpha.7.4.41');
 });
 
 test('Accepted Gate 6 evidence remains pinned to .35', () => {
   assert(gate6.includes("var RELEASE = '4.0.0-alpha.7.4.35';"));
-  assert(!gate6.includes("var RELEASE = '4.0.0-alpha.7.4.40';"));
+  assert(!gate6.includes("var RELEASE = '4.0.0-alpha.7.4.41';"));
 });
 
 test('Gate 7 metadata and state contracts are exact', () => {
   [
-    "var VERSION = '4.0-alpha74-gate7-acceptance-3';",
+    "var VERSION = '4.0-alpha74-gate7-acceptance-4';",
     "var EVIDENCE_SCHEMA = '4.0-alpha74-gate7-evidence-1';",
-    "var STATE_SCHEMA = '4.0-alpha74-gate7-state-3';",
+    "var STATE_SCHEMA = '4.0-alpha74-gate7-state-4';",
     "'4.0-alpha74-gate7-industry-state-1'",
     "'4.0-alpha74-gate7-industry-permit-1'",
     "var EXPECTED_PROFILE_COUNT = 12;",
     "var PREVIEW_BATCH_SIZE = 1;",
     "var PREVIEW_ITEM_ENCODING = 'ARRAY_V1';",
-    "var LEGACY_PREVIEW_RELEASE = '4.0.0-alpha.7.4.39';",
-    "'4.0-alpha74-gate7-acceptance-2'",
-    "'4.0-alpha74-gate7-state-2'"
+    'var LEGACY_PREVIEW_CONTRACTS = Object.freeze([',
+    "release: '4.0.0-alpha.7.4.39'",
+    "version: '4.0-alpha74-gate7-acceptance-2'",
+    "schemaVersion: '4.0-alpha74-gate7-state-2'",
+    "release: '4.0.0-alpha.7.4.40'",
+    "version: '4.0-alpha74-gate7-acceptance-3'",
+    "schemaVersion: '4.0-alpha74-gate7-state-3'"
   ].forEach(marker => assert(gate7.includes(marker), marker));
 });
 

@@ -9,18 +9,25 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * RAW, Publish and Industry data-plane writes remain unavailable here.
  */
 AKORT.Alpha74Gate7Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate7-acceptance-3';
+  var VERSION = '4.0-alpha74-gate7-acceptance-4';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate7-evidence-1';
-  var STATE_SCHEMA = '4.0-alpha74-gate7-state-3';
-  var RELEASE = '4.0.0-alpha.7.4.40';
+  var STATE_SCHEMA = '4.0-alpha74-gate7-state-4';
+  var RELEASE = '4.0.0-alpha.7.4.41';
 
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE7_STATE_V1';
   var PREVIEW_ITEM_ENCODING = 'ARRAY_V1';
-  var LEGACY_PREVIEW_RELEASE = '4.0.0-alpha.7.4.39';
-  var LEGACY_PREVIEW_VERSION =
-    '4.0-alpha74-gate7-acceptance-2';
-  var LEGACY_PREVIEW_STATE_SCHEMA =
-    '4.0-alpha74-gate7-state-2';
+  var LEGACY_PREVIEW_CONTRACTS = Object.freeze([
+    Object.freeze({
+      release: '4.0.0-alpha.7.4.39',
+      version: '4.0-alpha74-gate7-acceptance-2',
+      schemaVersion: '4.0-alpha74-gate7-state-2'
+    }),
+    Object.freeze({
+      release: '4.0.0-alpha.7.4.40',
+      version: '4.0-alpha74-gate7-acceptance-3',
+      schemaVersion: '4.0-alpha74-gate7-state-3'
+    })
+  ]);
   var CONTROL_SHEET = 'GATE7_CONTROL_FILES';
   var EXPECTED_PROFILE_COUNT = 12;
   var PREVIEW_BATCH_SIZE = 1;
@@ -955,30 +962,48 @@ AKORT.Alpha74Gate7Acceptance = (function () {
     );
   }
 
+  function legacyPreviewContract_(state) {
+    if (!state ||
+        text_(state.itemEncoding) !== PREVIEW_ITEM_ENCODING ||
+        (
+          text_(state.status) !== 'PREVIEW_RUNNING' &&
+          text_(state.status) !== 'PREVIEW_ACCEPTED'
+        )) {
+      return null;
+    }
+
+    for (var index = 0;
+         index < LEGACY_PREVIEW_CONTRACTS.length;
+         index += 1) {
+      var contract = LEGACY_PREVIEW_CONTRACTS[index];
+      if (
+        text_(state.release) === contract.release &&
+        text_(state.version) === contract.version &&
+        text_(state.schemaVersion) ===
+          contract.schemaVersion
+      ) {
+        return contract;
+      }
+    }
+
+    return null;
+  }
+
   function legacyPreviewContractMatches_(state) {
-    return Boolean(
-      state &&
-      text_(state.schemaVersion) ===
-        LEGACY_PREVIEW_STATE_SCHEMA &&
-      text_(state.release) === LEGACY_PREVIEW_RELEASE &&
-      text_(state.version) === LEGACY_PREVIEW_VERSION &&
-      text_(state.itemEncoding) === PREVIEW_ITEM_ENCODING &&
-      (
-        text_(state.status) === 'PREVIEW_RUNNING' ||
-        text_(state.status) === 'PREVIEW_ACCEPTED'
-      )
-    );
+    return Boolean(legacyPreviewContract_(state));
   }
 
   function adoptLegacyPreviewState_(state, control) {
-    if (!legacyPreviewContractMatches_(state)) return state;
+    var legacy = legacyPreviewContract_(state);
+    if (!legacy) return state;
 
     assert_(
       text_(state.controlFingerprint) ===
         text_(control && control.fingerprint),
       'ALPHA74_GATE7_LEGACY_CONTROL_MISMATCH',
-      'The resumable .39 preview state belongs to another control inventory.',
+      'The resumable preview state belongs to another control inventory.',
       {
+        legacyRelease: legacy.release,
         stateFingerprint: text_(state.controlFingerprint),
         controlFingerprint: text_(control && control.fingerprint)
       }
@@ -989,8 +1014,9 @@ AKORT.Alpha74Gate7Acceptance = (function () {
         Number(state.cursor || 0) === state.items.length &&
         state.items.length <= EXPECTED_PROFILE_COUNT,
       'ALPHA74_GATE7_LEGACY_STATE_INVALID',
-      'The resumable .39 preview state has an invalid durable cursor.',
+      'The resumable preview state has an invalid durable cursor.',
       {
+        legacyRelease: legacy.release,
         cursor: Number(state.cursor || 0),
         itemCount: Array.isArray(state.items)
           ? state.items.length
@@ -999,9 +1025,9 @@ AKORT.Alpha74Gate7Acceptance = (function () {
     );
 
     state.migratedFrom = {
-      release: LEGACY_PREVIEW_RELEASE,
-      version: LEGACY_PREVIEW_VERSION,
-      schemaVersion: LEGACY_PREVIEW_STATE_SCHEMA,
+      release: legacy.release,
+      version: legacy.version,
+      schemaVersion: legacy.schemaVersion,
       migratedAt: now_()
     };
 

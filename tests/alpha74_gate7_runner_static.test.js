@@ -36,11 +36,11 @@ function test(name, fn) {
   }
 }
 
-test('candidate .40 and accepted Gate 6 pin are exact', () => {
-  assert(release.includes("version: '4.0.0-alpha.7.4.40'"));
-  assert.equal(packageJson.version, '4.0.0-alpha.7.4.40');
+test('candidate .41 and accepted Gate 6 pin are exact', () => {
+  assert(release.includes("version: '4.0.0-alpha.7.4.41'"));
+  assert.equal(packageJson.version, '4.0.0-alpha.7.4.41');
   assert(gate6.includes("var RELEASE = '4.0.0-alpha.7.4.35';"));
-  assert(!gate6.includes("4.0.0-alpha.7.4.40"));
+  assert(!gate6.includes("4.0.0-alpha.7.4.41"));
 });
 
 test('preview executes exactly one profile per invocation', () => {
@@ -49,11 +49,15 @@ test('preview executes exactly one profile per invocation', () => {
   assert(gate7.includes('saveState_(state);'));
 });
 
-test('exact .39 preview cursor is adopted rather than replayed', () => {
+test('exact .39 and .40 preview cursors are adopted rather than replayed', () => {
   [
-    "var LEGACY_PREVIEW_RELEASE = '4.0.0-alpha.7.4.39';",
-    "'4.0-alpha74-gate7-acceptance-2'",
-    "'4.0-alpha74-gate7-state-2'",
+    'var LEGACY_PREVIEW_CONTRACTS = Object.freeze([',
+    "release: '4.0.0-alpha.7.4.39'",
+    "version: '4.0-alpha74-gate7-acceptance-2'",
+    "schemaVersion: '4.0-alpha74-gate7-state-2'",
+    "release: '4.0.0-alpha.7.4.40'",
+    "version: '4.0-alpha74-gate7-acceptance-3'",
+    "schemaVersion: '4.0-alpha74-gate7-state-3'",
     'legacyPreviewContractMatches_',
     'adoptLegacyPreviewState_(state, control)',
     'ALPHA74_GATE7_LEGACY_CONTROL_MISMATCH',
@@ -128,6 +132,17 @@ test('one-button public entrypoints are complete', () => {
     entrypoints.includes('function ' + name + '('),
     name
   ));
+});
+
+test('runner status is compact and stale runner state is rejected', () => {
+  [
+    'compactGateStatus_',
+    'runnerStateContractMatches_',
+    'latestProfile:',
+    'gate7: compactGateStatus_(gateStatus_())',
+    "existing.status === 'RUNNING' &&",
+    'runnerStateContractMatches_(existing)'
+  ].forEach(marker => assert(runner.includes(marker), marker));
 });
 
 test('runner test is wired into full regression', () => {

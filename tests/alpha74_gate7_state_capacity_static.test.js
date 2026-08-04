@@ -150,13 +150,13 @@ function fullItem(itemProfile, index) {
 test('candidate and compact state contracts are exact', () => {
   assert.equal(
     packageJson.version,
-    '4.0.0-alpha.7.4.40'
+    '4.0.0-alpha.7.4.41'
   );
   assert(source.includes(
-    "var VERSION = '4.0-alpha74-gate7-acceptance-3';"
+    "var VERSION = '4.0-alpha74-gate7-acceptance-4';"
   ));
   assert(source.includes(
-    "var STATE_SCHEMA = '4.0-alpha74-gate7-state-3';"
+    "var STATE_SCHEMA = '4.0-alpha74-gate7-state-4';"
   ));
   assert(source.includes(
     "var PREVIEW_ITEM_ENCODING = 'ARRAY_V1';"
@@ -205,9 +205,9 @@ test('twelve-profile durable state stays below frozen capacity', () => {
   );
 
   const common = {
-    schemaVersion: '4.0-alpha74-gate7-state-3',
-    release: '4.0.0-alpha.7.4.40',
-    version: '4.0-alpha74-gate7-acceptance-3',
+    schemaVersion: '4.0-alpha74-gate7-state-4',
+    release: '4.0.0-alpha.7.4.41',
+    version: '4.0-alpha74-gate7-acceptance-4',
     itemEncoding: 'ARRAY_V1',
     status: 'PREVIEW_ACCEPTED',
     controlFingerprint: 'c'.repeat(64),

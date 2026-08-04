@@ -41,6 +41,23 @@ AKORT.ExistingSourceParsers = (function () {
       operation: 'DIVIDE',
       factor: 1000,
       basis: 'VERIFIED_BASELINE_3_1_7'
+    }),
+    Object.freeze({
+      transformId:
+        'LEGACY_PURCHASE_PRICE_TONNE_DIV_1000',
+      datasetCode: 'ROSSTAT_MONTHLY',
+      sourceFileType: 'PURCHASE_INDEX',
+      valueType: 'закупка',
+      categoryIds: Object.freeze([
+        'ROS_M_2917D5652F4E',
+        'ROS_W_099A0FC24FAB',
+        'ROS_W_B97F94BAEE84'
+      ]),
+      sourceUnit: 'tonne',
+      targetUnit: 'liter',
+      operation: 'DIVIDE',
+      factor: 1000,
+      basis: 'VERIFIED_BASELINE_3_1_7'
     })
   ]);
 
@@ -216,15 +233,36 @@ AKORT.ExistingSourceParsers = (function () {
   function saveObject_(table, object) { table.sheet.getRange(object.__row, 1, 1, table.headers.length).setValues([rowValues_(table.headers, object)]); return object; }
   function deleteRows_(sheet, rows) { rows.sort(function (a, b) { return b - a; }); rows.forEach(function (row) { sheet.deleteRow(row); }); return rows.length; }
 
+  function mergeUnitCompatibility_(configured) {
+    var merged = [];
+    var seen = {};
+
+    function append_(transform) {
+      transform = transform || {};
+      var transformId = text_(transform.transformId);
+      var key = transformId ||
+        AKORT.Core.sha256(
+          AKORT.Core.canonicalJson(transform)
+        );
+
+      if (seen[key]) return;
+      seen[key] = true;
+      merged.push(clone_(transform));
+    }
+
+    DEFAULT_UNIT_COMPATIBILITY.forEach(append_);
+    (Array.isArray(configured) ? configured : [])
+      .forEach(append_);
+
+    return merged;
+  }
+
   function runtimeSettings_() {
     var settings = AKORT.Config.readSystemSettings();
     var unitCompatibility =
-      settings.PARSER_UNIT_COMPATIBILITY;
-
-    if (!Array.isArray(unitCompatibility)) {
-      unitCompatibility =
-        clone_(DEFAULT_UNIT_COMPATIBILITY);
-    }
+      mergeUnitCompatibility_(
+        settings.PARSER_UNIT_COMPATIBILITY
+      );
 
     return {
       schemaVersion: String(settings.PARSER_SCHEMA_VERSION || AKORT.Release.parserSchemaVersion),
@@ -1403,6 +1441,7 @@ AKORT.ExistingSourceParsers = (function () {
       clearOperationStage: clearOperationStage_,
       unitKey: unitKey_,
       convertUnit: convertUnit_,
+      mergeUnitCompatibility: mergeUnitCompatibility_,
       canonicalName: canonicalName_
     }
   };

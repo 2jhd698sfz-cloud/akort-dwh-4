@@ -8,9 +8,9 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * One worker invocation performs one bounded transition.
  */
 AKORT.Alpha74Gate7Runner = (function () {
-  var VERSION = '4.0-alpha74-gate7-runner-1';
-  var STATE_SCHEMA = '4.0-alpha74-gate7-runner-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.40';
+  var VERSION = '4.0-alpha74-gate7-runner-2';
+  var STATE_SCHEMA = '4.0-alpha74-gate7-runner-state-2';
+  var RELEASE = '4.0.0-alpha.7.4.41';
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE7_RUNNER_STATE_V1';
   var WORKER_HANDLER = 'AKORT_alpha74Gate7Worker';
   var TRIGGER_DELAY_MS = 15000;
@@ -164,6 +164,58 @@ AKORT.Alpha74Gate7Runner = (function () {
       AKORT.Alpha74Gate7Acceptance.status(),
       'ALPHA74_GATE7_RUNNER_STATUS_FAILED',
       'Gate 7 status could not be loaded.'
+    );
+  }
+
+  function compactGateStatus_(gate) {
+    gate = gate || {};
+    var preview = gate.previewState || {};
+    var profiles = preview.profiles || [];
+    var latestProfile = profiles.length
+      ? profiles[profiles.length - 1]
+      : null;
+    var industry = gate.industryState || {};
+
+    return {
+      release: text_(gate.release),
+      version: text_(gate.version),
+      implementationStatus:
+        text_(gate.implementationStatus),
+      previewAccepted: gate.previewAccepted === true,
+      previewCursor: Number(preview.cursor || 0),
+      completedProfiles:
+        Number(preview.completedProfiles || 0),
+      expectedProfiles:
+        Number(preview.expectedProfiles || 12),
+      latestProfile: latestProfile
+        ? {
+            profileId: text_(latestProfile.profileId),
+            fileName: text_(latestProfile.fileName),
+            normalizedRowCount:
+              Number(latestProfile.normalizedRowCount || 0),
+            issueCount:
+              Number(latestProfile.issueCount || 0)
+          }
+        : null,
+      industryInputInstalled:
+        gate.industryInputInstalled === true,
+      industryStatus: text_(industry.status),
+      industryPhase: text_(industry.phase),
+      industryAccepted: gate.industryAccepted === true,
+      gate7Accepted: gate.gate7Accepted === true,
+      readyToStartIndustry:
+        gate.readyToStartIndustry === true,
+      readyToFinalize: gate.readyToFinalize === true,
+      physicalWrites: gate.physicalWrites === true
+    };
+  }
+
+  function runnerStateContractMatches_(state) {
+    return Boolean(
+      state &&
+      text_(state.schemaVersion) === STATE_SCHEMA &&
+      text_(state.release) === RELEASE &&
+      text_(state.version) === VERSION
     );
   }
 
@@ -369,7 +421,9 @@ AKORT.Alpha74Gate7Runner = (function () {
           );
         }
 
-        var state = existing && existing.status === 'RUNNING'
+        var state = existing &&
+          existing.status === 'RUNNING' &&
+          runnerStateContractMatches_(existing)
           ? existing
           : freshState_();
 
@@ -479,7 +533,7 @@ AKORT.Alpha74Gate7Runner = (function () {
                 }
               ).length,
             state: publicState_(state),
-            gate7: gateStatus_()
+            gate7: compactGateStatus_(gateStatus_())
           }
         );
       },
@@ -523,6 +577,9 @@ AKORT.Alpha74Gate7Runner = (function () {
     stop: stop,
     Test: Object.freeze({
       publicState: publicState_,
+      compactGateStatus: compactGateStatus_,
+      runnerStateContractMatches:
+        runnerStateContractMatches_,
       freshState: freshState_
     })
   });

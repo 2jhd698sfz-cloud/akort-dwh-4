@@ -292,6 +292,114 @@ AKORT.Alpha5Tests = (function () {
         };
       }));
 
+      tests.push(test_('legacy_purchase_price_unit_compatibility', function () {
+        var values = [
+          ['YEAR', 2099],
+          ['MONTH', 1],
+          [],
+          ['Средние цены приобретения'],
+          [],
+          ['product_name', 'unit', 'current_value'],
+          [
+            'Масло подсолнечное и его фракции нерафинированные',
+            'Тонна;^метрическая тонна (1000 кг)',
+            145364.33
+          ]
+        ];
+        var reference = {
+          products: [{
+            category_id: 'ROS_M_2917D5652F4E',
+            product_name:
+              'Масло подсолнечное и его фракции нерафинированные, л',
+            unit: 'л',
+            is_active: 1
+          }],
+          mappings: [{
+            dataset_code: 'ROSSTAT_MONTHLY',
+            source_product_name:
+              'Масло подсолнечное и его фракции нерафинированные',
+            category_id: 'ROS_M_2917D5652F4E',
+            source_file_type: 'PURCHASE_INDEX',
+            value_type: 'закупка',
+            valid_from: '2024-01-01',
+            valid_to: '',
+            is_active: 1
+          }]
+        };
+        var accepted =
+          AKORT.ExistingSourceParsers.parseMatrix(
+            'ROSSTAT_MONTHLY_PURCHASE_PRICES_M00',
+            values,
+            { referenceData: reference }
+          );
+        var transforms =
+          accepted.monitoringScope
+            .unitCompatibilityTransformIds || [];
+        var blocking = accepted.issues.filter(
+          function (issue) {
+            return issue.severity === 'ERROR';
+          }
+        );
+
+        require_(
+          accepted.rows.length === 1 &&
+            Math.abs(
+              Number(accepted.rows[0].row.value) -
+              145.36433
+            ) < 1e-9 &&
+            transforms.length === 1 &&
+            transforms[0] ===
+              'LEGACY_PURCHASE_PRICE_TONNE_DIV_1000' &&
+            blocking.length === 0,
+          'LEGACY_PURCHASE_UNIT_COMPATIBILITY_FAILED',
+          'Verified 3.1.7 purchase-price unit transform was not reproduced exactly.',
+          accepted
+        );
+
+        var staleConfigured = [{
+          transformId:
+            'LEGACY_PPI_INDUSTRIAL_TONNE_DIV_1000',
+          datasetCode: 'ROSSTAT_MONTHLY',
+          sourceFileType: 'PPI_INDUSTRIAL',
+          valueType: 'производитель',
+          categoryIds: [
+            'ROS_M_2917D5652F4E',
+            'ROS_W_099A0FC24FAB',
+            'ROS_W_B97F94BAEE84'
+          ],
+          sourceUnit: 'tonne',
+          targetUnit: 'liter',
+          operation: 'DIVIDE',
+          factor: 1000,
+          basis: 'VERIFIED_BASELINE_3_1_7'
+        }];
+        var merged =
+          AKORT.ExistingSourceParsers.Test
+            .mergeUnitCompatibility(staleConfigured);
+        var mergedIds = merged.map(function (item) {
+          return item.transformId;
+        });
+
+        require_(
+          mergedIds.indexOf(
+            'LEGACY_PPI_INDUSTRIAL_TONNE_DIV_1000'
+          ) >= 0 &&
+            mergedIds.indexOf(
+              'LEGACY_PURCHASE_PRICE_TONNE_DIV_1000'
+            ) >= 0 &&
+            mergedIds.length === 2,
+          'STALE_UNIT_COMPATIBILITY_NOT_MIGRATED',
+          'The stale .38 unit-compatibility setting did not inherit the mandatory purchase transform.',
+          merged
+        );
+
+        return {
+          acceptedValue: accepted.rows[0].row.value,
+          transformId: transforms[0],
+          mergedTransformIds: mergedIds
+        };
+      }));
+
       tests.push(test_('one_to_many_mapping', function () {
         var values = [['YEAR', 2099], [], ['Еженедельные средние потребительские цены Росстат'], [], ['product_name / observation_date', 'на 5 января'], ['Капуста белокочанная свежая, кг', 100]];
         var result = AKORT.ExistingSourceParsers.parseMatrix('ROSSTAT_WEEKLY_RETAIL_PRICES', values, { referenceData: ref_('AVG_PRICE', 'розница', true) });
