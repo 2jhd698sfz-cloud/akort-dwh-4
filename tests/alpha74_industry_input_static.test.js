@@ -63,7 +63,7 @@ function dimension(overrides = {}) {
 
 test('operator form contract is explicit and only two columns are user inputs', () => {
   assert.equal(I.Version, '4.0-alpha74-industry-input-2');
-  assert.equal(I.Release, '4.0.0-alpha.7.4.41');
+  assert.equal(I.Release, '4.0.0-alpha.7.4.42');
   assert.equal(I.SheetName, 'INDUSTRY_INPUT');
   assert.equal(I.LogSheetName, 'INDUSTRY_INPUT_LOG');
   assert.deepEqual(

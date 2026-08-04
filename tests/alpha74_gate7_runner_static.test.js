@@ -37,10 +37,10 @@ function test(name, fn) {
 }
 
 test('candidate .41 and accepted Gate 6 pin are exact', () => {
-  assert(release.includes("version: '4.0.0-alpha.7.4.41'"));
-  assert.equal(packageJson.version, '4.0.0-alpha.7.4.41');
+  assert(release.includes("version: '4.0.0-alpha.7.4.42'"));
+  assert.equal(packageJson.version, '4.0.0-alpha.7.4.42');
   assert(gate6.includes("var RELEASE = '4.0.0-alpha.7.4.35';"));
-  assert(!gate6.includes("4.0.0-alpha.7.4.41"));
+  assert(!gate6.includes("4.0.0-alpha.7.4.42"));
 });
 
 test('preview executes exactly one profile per invocation', () => {

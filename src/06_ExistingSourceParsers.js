@@ -1222,6 +1222,61 @@ AKORT.ExistingSourceParsers = (function () {
     return null;
   }
 
+  function isoWeekParts_(value) {
+    if (!value || Object.prototype.toString.call(value) !== '[object Date]' || isNaN(value.getTime())) return null;
+    var date = new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate(), 12));
+    var day = date.getUTCDay() || 7;
+    date.setUTCDate(date.getUTCDate() + 4 - day);
+    var isoYear = date.getUTCFullYear();
+    var yearStart = new Date(Date.UTC(isoYear, 0, 1, 12));
+    return { year: isoYear, week: Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7) };
+  }
+
+  function dateFromFileName_(fileName) {
+    var match = text_(fileName).match(/(?:^|[_\s-])(\d{1,2})[.](\d{1,2})[.]((?:19|20)\d{2})(?:\D|$)/);
+    if (!match) return null;
+    var day = Number(match[1]), month = Number(match[2]), year = Number(match[3]);
+    var date = new Date(Date.UTC(year, month - 1, day, 12));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? date : null;
+  }
+
+  function weeklyAxisDates_(values, year) {
+    var header = findHeader_(values, 'product_name / observation_date');
+    if (header < 0) return [];
+    var unique = {}, result = [], row = values[header] || [];
+    for (var column = 1; column < row.length; column += 1) {
+      var date = russianDate_(row[column], year);
+      if (!date || isNaN(date.getTime())) continue;
+      var key = [date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate()].join('-');
+      if (!unique[key]) { unique[key] = true; result.push(date); }
+    }
+    return result.sort(function (a, b) { return a.getTime() - b.getTime(); });
+  }
+
+  function sameUtcDate_(left, right) {
+    return Boolean(left && right && left.getUTCFullYear() === right.getUTCFullYear() && left.getUTCMonth() === right.getUTCMonth() && left.getUTCDate() === right.getUTCDate());
+  }
+
+  function resolveWeeklyWideOptions_(workbook, resolved) {
+    var values = dataSheet_(workbook).values;
+    if (findHeader_(values, 'product_name / observation_date') < 0) return resolved;
+    var calendarYear = inferYear_(workbook.fileName, values) || Number(resolved.year || 0);
+    var fileDate = dateFromFileName_(workbook.fileName);
+    var axisDates = weeklyAxisDates_(values, calendarYear);
+    if (fileDate && axisDates.length === 1 && !sameUtcDate_(fileDate, axisDates[0])) {
+      throw AKORT.Core.error('WEEKLY_PERIOD_SOURCE_MISMATCH', 'Weekly file-name date and header date do not match.', { fileName: workbook.fileName, fileDate: fileDate.toISOString(), headerDate: axisDates[0].toISOString() });
+    }
+    var exactDate = axisDates.length === 1 ? axisDates[0] : fileDate;
+    var iso = isoWeekParts_(exactDate);
+    if (!iso) return resolved;
+    if (resolved.week && Number(resolved.week) !== Number(iso.week)) {
+      throw AKORT.Core.error('WEEKLY_PERIOD_OVERRIDE_MISMATCH', 'Explicit weekly period does not match the source date.', { fileName: workbook.fileName, explicitWeek: Number(resolved.week), inferredIsoYear: iso.year, inferredIsoWeek: iso.week });
+    }
+    resolved.year = iso.year;
+    resolved.week = iso.week;
+    return resolved;
+  }
+
   function resolveOptions_(workbook, options) {
     var resolved = clone_(options || {}) || {};
     var values = dataSheet_(workbook).values;
@@ -1234,7 +1289,7 @@ AKORT.ExistingSourceParsers = (function () {
       var monthMatch = String(workbook.fileName || '').match(/(?:^|[-_\s])M[-_\s]*0?(\d{1,2})(?:\D|$)/i);
       if (monthMatch && Number(monthMatch[1]) >= 1 && Number(monthMatch[1]) <= 12) resolved.month = Number(monthMatch[1]);
     }
-    return resolved;
+    return resolveWeeklyWideOptions_(workbook, resolved);
   }
 
   function inspectFile(fileId, options) {
@@ -1442,6 +1497,8 @@ AKORT.ExistingSourceParsers = (function () {
       unitKey: unitKey_,
       convertUnit: convertUnit_,
       mergeUnitCompatibility: mergeUnitCompatibility_,
+      isoWeekParts: isoWeekParts_,
+      resolveOptions: resolveOptions_,
       canonicalName: canonicalName_
     }
   };

@@ -8,9 +8,9 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * One worker invocation performs one bounded transition.
  */
 AKORT.Alpha74Gate7Runner = (function () {
-  var VERSION = '4.0-alpha74-gate7-runner-2';
-  var STATE_SCHEMA = '4.0-alpha74-gate7-runner-state-2';
-  var RELEASE = '4.0.0-alpha.7.4.41';
+  var VERSION = '4.0-alpha74-gate7-runner-3';
+  var STATE_SCHEMA = '4.0-alpha74-gate7-runner-state-3';
+  var RELEASE = '4.0.0-alpha.7.4.42';
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE7_RUNNER_STATE_V1';
   var WORKER_HANDLER = 'AKORT_alpha74Gate7Worker';
   var TRIGGER_DELAY_MS = 15000;

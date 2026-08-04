@@ -9,10 +9,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * RAW, Publish and Industry data-plane writes remain unavailable here.
  */
 AKORT.Alpha74Gate7Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate7-acceptance-4';
+  var VERSION = '4.0-alpha74-gate7-acceptance-5';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate7-evidence-1';
-  var STATE_SCHEMA = '4.0-alpha74-gate7-state-4';
-  var RELEASE = '4.0.0-alpha.7.4.41';
+  var STATE_SCHEMA = '4.0-alpha74-gate7-state-5';
+  var RELEASE = '4.0.0-alpha.7.4.42';
 
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE7_STATE_V1';
   var PREVIEW_ITEM_ENCODING = 'ARRAY_V1';
@@ -26,6 +26,11 @@ AKORT.Alpha74Gate7Acceptance = (function () {
       release: '4.0.0-alpha.7.4.40',
       version: '4.0-alpha74-gate7-acceptance-3',
       schemaVersion: '4.0-alpha74-gate7-state-3'
+    }),
+    Object.freeze({
+      release: '4.0.0-alpha.7.4.41',
+      version: '4.0-alpha74-gate7-acceptance-4',
+      schemaVersion: '4.0-alpha74-gate7-state-4'
     })
   ]);
   var CONTROL_SHEET = 'GATE7_CONTROL_FILES';
