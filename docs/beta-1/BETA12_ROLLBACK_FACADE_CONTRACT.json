@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "4.0-beta12-rollback-facade-contract-3",
+  "packageVersion": "4.0.0-beta.1.2.4",
+  "contractVersion": "4.0-beta12-rollback-facade-3",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "439caaa163834dfe8633fdc4c871d530a4bc0ed8",
+  "requirementId": "BETA1.2-ARBITRARY-ROLLBACK",
+  "mode": "DEV_OPERATIONAL_FACADE",
+  "dataPlane": {
+    "operationType": "RAW_REVERSAL_V4",
+    "executor": "AKORT.OperationEngine",
+    "rawStore": "AKORT.RawStore",
+    "publish": "AKORT.IncrementalPublish",
+    "aggregates": "AKORT.AggregateIntegration",
+    "newQueue": false,
+    "newExecutor": false,
+    "newRawSchema": false,
+    "newPublishSchema": false,
+    "newAggregateSchema": false
+  },
+  "publicApi": [
+    "AKORT_beta12RollbackPreview(targetLoadId, reason)",
+    "AKORT_beta12RollbackSubmit(targetLoadId, reason, confirmationToken)",
+    "AKORT_beta12RollbackStatus(operationId)"
+  ],
+  "reasonContract": {
+    "required": true,
+    "normalization": "trim and collapse whitespace",
+    "minimumCharacters": 12,
+    "maximumCharacters": 500,
+    "storedInOperationInput": true,
+    "boundByHash": true
+  },
+  "eligibility": {
+    "requiredLoadStatus": "COMMITTED",
+    "requiresPhysicalRawRows": true,
+    "blocksLaterNonReversedRevision": true,
+    "blocksAnyExistingReversalRecord": true,
+    "blocksActiveReversalOperation": true,
+    "protectsAcceptedEvidenceLoads": true,
+    "invalidCheckpointBehavior": "FAIL_CLOSED",
+    "policy": "LATEST_LOAD_ONLY",
+    "previewWrites": false
+  },
+  "confirmation": {
+    "algorithm": "sha256(canonicalJson(binding))",
+    "revalidatedAtSubmit": true,
+    "boundFields": [
+      "targetLoadId",
+      "targetTable",
+      "loadStatus",
+      "sourceHash",
+      "targetRowCount",
+      "restoredRowCount",
+      "unrestoredRowCount",
+      "impactFingerprint",
+      "lineageFingerprint",
+      "reasonHash"
+    ],
+    "driftBehavior": "FAIL_CLOSED_BEFORE_ENQUEUE"
+  },
+  "submission": {
+    "idempotencyKey": "BETA12_ROLLBACK_<confirmationToken>",
+    "operationInputStoresConfirmation": true,
+    "existingOperationLookupBeforePreview": true,
+    "activeOperationAdoption": true,
+    "terminalOperationAdoption": true,
+    "secondLookupOnEligibilityRace": true,
+    "existingOperationIdentityChecks": [
+      "idempotencyKey",
+      "confirmationToken",
+      "targetLoadId",
+      "reasonHash"
+    ],
+    "duplicateIdempotencyRowsBehavior": "FAIL_CLOSED",
+    "repeatedSubmitReturnsSameOperation": true,
+    "terminalFailureIsNeverReportedAsSuccess": true,
+    "pausedOperationIsReportedAsPaused": true,
+    "runUsesAcceptedOperationEngine": true,
+    "createsTrigger": false
+  },
+  "compactStatus": {
+    "reads": [
+      "OPERATION_QUEUE",
+      "RAW_LOAD_REGISTRY",
+      "RAW_REVERSAL_LOG"
+    ],
+    "doesNotReadOperationSteps": true,
+    "includes": [
+      "operation identity and terminal state",
+      "target and reversal load identity",
+      "reversed row count",
+      "Publish completion",
+      "aggregate status",
+      "quick audit completion",
+      "reason and confirmation fingerprints",
+      "errors and next action"
+    ]
+  },
+  "safety": {
+    "environment": "DEV",
+    "productionWrite": false,
+    "generalUserPipelineEnablement": false,
+    "newTrigger": false,
+    "automaticRollback": false,
+    "previewOnlyUntilExplicitSubmit": true
+  }
+}
