@@ -12,10 +12,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * it has no aggregate impact under the frozen Alpha.7.4 contract.
  */
 AKORT.Alpha74Gate6Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate6-acceptance-16';
+  var VERSION = '4.0-alpha74-gate6-acceptance-17';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate6-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate6-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.34';
+  var RELEASE = '4.0.0-alpha.7.4.35';
   var BASELINE_HEADER_INCIDENT_RELEASE = '4.0.0-alpha.7.4.19';
   var RUNTIME_CONTEXT_INCIDENT_RELEASE = '4.0.0-alpha.7.4.20';
   var MONOLITHIC_STAGE_INCIDENT_RELEASE = '4.0.0-alpha.7.4.22';
@@ -25,6 +25,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
   var WEEKLY_ROLLBACK_PERIOD_INCIDENT_RELEASE = '4.0.0-alpha.7.4.30';
   var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RELEASE = '4.0.0-alpha.7.4.32';
   var REVERSED_PREDECESSOR_INCIDENT_RELEASE = '4.0.0-alpha.7.4.33';
+  var EVIDENCE_FINALIZATION_INCIDENT_RELEASE = '4.0.0-alpha.7.4.34';
   var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_EXECUTION_ID = 'A74_GATE6_37FAED6EF952F9BB5FD4';
   var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_CANARY_OPERATION_ID = 'OP_SOURCE_FILE_LOAD_V_20260803T123050299Z_BAD1844BD339';
   var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_OPERATION_ID = 'OP_RAW_REVERSAL_V4_20260803T133248118Z_82520905BF9A';
@@ -34,6 +35,9 @@ AKORT.Alpha74Gate6Acceptance = (function () {
   var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RAW_ROWS = 50;
   var REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_STAGE_ROWS = 392;
   var REVERSED_PREDECESSOR_INCIDENT_PREVIOUS_LOAD_ID = 'LOAD_20260802T123559854Z_EFB27B040FBC';
+  var EVIDENCE_FINALIZATION_INCIDENT_REVERSAL_OPERATION_ID = 'OP_RAW_REVERSAL_V4_20260803T173434397Z_DCC49C04030A';
+  var EVIDENCE_FINALIZATION_INCIDENT_RESTORE_OPERATION_ID = 'OP_SOURCE_FILE_LOAD_V_20260803T193851648Z_4ECDB96C4D0F';
+  var EVIDENCE_FINALIZATION_INCIDENT_RESTORE_LOAD_ID = 'LOAD_20260803T193958095Z_6EADF4F3F0AC';
   var WEEKLY_ROLLBACK_PERIOD_INCIDENT_CANARY_OPERATION_ID = 'OP_SOURCE_FILE_LOAD_V_20260802T123451298Z_64F56FCB57D9';
   var WEEKLY_ROLLBACK_PERIOD_INCIDENT_BASELINE_ROWS = 61636;
   var WEEKLY_ROLLBACK_PERIOD_INCIDENT_POST_CANARY_ROWS = 62028;
@@ -919,18 +923,31 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     return summary;
   }
 
-  function assertOperationAccepted_(operation, expectedType) {
+  function reversedCanaryAuditAccepted_(audit) {
+    return !!audit && text_(audit.loadStatus) === 'REVERSED' &&
+      Number(audit.staged || 0) === Number(audit.expectedCommitted || 0) &&
+      Number(audit.committedStages || 0) === Number(audit.expectedCommitted || 0) &&
+      (audit.latestConflicts || []).length === 0;
+  }
+
+  function assertOperationAccepted_(operation, expectedType, options) {
+    options = options || {};
     var summary = operationSummary_(operation, expectedType);
     assert_(summary.accepted, 'ALPHA74_GATE6_OPERATION_NOT_ACCEPTED', 'A Gate 6 operation did not complete the full regular pipeline.', summary);
     assert_(summary.loadId, 'ALPHA74_GATE6_OPERATION_LOAD_MISSING', 'A Gate 6 operation has no durable RAW load ID.', summary);
     var audit = AKORT.RawStore.auditLoad(summary.loadId);
-    assert_(audit && audit.ok === true, 'ALPHA74_GATE6_RAW_AUDIT_FAILED', 'Gate 6 RAW read-back audit failed.', {
+    var expectedFinalLoadStatus = text_(options.expectedFinalLoadStatus);
+    var lifecycleAccepted = expectedFinalLoadStatus === 'REVERSED' ? reversedCanaryAuditAccepted_(audit) : audit && audit.ok === true;
+    assert_(lifecycleAccepted, 'ALPHA74_GATE6_RAW_AUDIT_FAILED', 'Gate 6 RAW read-back audit failed.', {
       operationId: summary.operationId,
       operationType: expectedType,
+      expectedFinalLoadStatus: expectedFinalLoadStatus || 'COMMITTED',
       audit: audit
     });
     summary.rawAudit = clone_(audit);
-    summary.rawAuditOk = true;
+    summary.rawAuditOk = audit && audit.ok === true;
+    summary.rawLifecycleAccepted = true;
+    summary.expectedFinalLoadStatus = expectedFinalLoadStatus || 'COMMITTED';
     return summary;
   }
 
@@ -1100,6 +1117,12 @@ AKORT.Alpha74Gate6Acceptance = (function () {
   function createEvidence_(state) {
     var resources = resources_();
     var flags = flagState_();
+    assert_(state.acceptance && state.acceptance.canaryOperationAccepted === true &&
+      state.acceptance.reversalOperationAccepted === true && state.acceptance.restoreOperationAccepted === true &&
+      state.acceptance.rollbackExact === true && state.acceptance.restoreExact === true,
+      'ALPHA74_GATE6_EVIDENCE_LIFECYCLE_INVALID', 'Gate 6 evidence requires accepted canary, rollback and restore lifecycle checkpoints.', {
+        acceptance: clone_(state.acceptance || {})
+      });
     var evidence = {
       schemaVersion: EVIDENCE_SCHEMA,
       release: RELEASE,
@@ -1113,7 +1136,9 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       liveResources: clone_(state.liveResources),
       canarySource: clone_(state.canarySource),
       operations: {
-        canary: assertOperationAccepted_(operation_(state.operations.canary), 'SOURCE_FILE_LOAD_V4'),
+        canary: assertOperationAccepted_(operation_(state.operations.canary), 'SOURCE_FILE_LOAD_V4', {
+          expectedFinalLoadStatus: 'REVERSED'
+        }),
         reversal: assertOperationAccepted_(operation_(state.operations.reversal), 'RAW_REVERSAL_V4'),
         restore: assertOperationAccepted_(operation_(state.operations.restore), 'SOURCE_FILE_LOAD_V4')
       },
@@ -1171,6 +1196,20 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       bytes: json.length,
       schemaVersion: EVIDENCE_SCHEMA
     };
+  }
+
+  function completeEvidence_(state) {
+    var finalFlags = flagState_();
+    assert_(finalFlags.publishEngineEnabled && finalFlags.executionEnabled && finalFlags.regularPipelineEnabled && !finalFlags.userPipelineEnabled,
+      'ALPHA74_GATE6_FINAL_FLAGS_INVALID', 'Gate 6 final feature flags are invalid.', finalFlags);
+    state.evidence = createEvidence_(state);
+    state.status = 'SUCCESS';
+    state.phase = 'SUCCESS';
+    state.finishedAt = now_();
+    state.leaseUntil = '';
+    deleteTriggers_();
+    try { writeValidation_('GATE 6 SUCCESS', { executionId: state.executionId, evidence: state.evidence }); } catch (ignoredValidation) {}
+    return { phase: 'SUCCESS', evidence: state.evidence };
   }
 
   function processStep_(state) {
@@ -1426,17 +1465,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     }
 
     if (state.phase === 'SAVE_EVIDENCE') {
-      var finalFlags = flagState_();
-      assert_(finalFlags.publishEngineEnabled && finalFlags.executionEnabled && finalFlags.regularPipelineEnabled && !finalFlags.userPipelineEnabled,
-        'ALPHA74_GATE6_FINAL_FLAGS_INVALID', 'Gate 6 final feature flags are invalid.', finalFlags);
-      state.evidence = createEvidence_(state);
-      state.status = 'SUCCESS';
-      state.phase = 'SUCCESS';
-      state.finishedAt = now_();
-      state.leaseUntil = '';
-      deleteTriggers_();
-      try { writeValidation_('GATE 6 SUCCESS', { executionId: state.executionId, evidence: state.evidence }); } catch (ignoredValidation) {}
-      return { phase: 'SUCCESS', evidence: state.evidence };
+      return completeEvidence_(state);
     }
 
     if (state.phase === 'SUCCESS') return { phase: 'SUCCESS', terminal: true };
@@ -1557,14 +1586,19 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     return AKORT.Core.safeRun('ALPHA74_GATE6_START', function () {
       AKORT.EnvironmentGuard.assertDev();
       var flags = flagState_();
+      var existing = loadState_();
+      var alreadyRunning = existing && existing.release === RELEASE && existing.status === 'RUNNING' &&
+        flags.publishEngineEnabled && flags.executionEnabled && !flags.userPipelineEnabled;
+      var alreadyComplete = existing && existing.release === RELEASE && existing.status === 'SUCCESS' &&
+        flags.publishEngineEnabled && flags.executionEnabled && flags.regularPipelineEnabled && !flags.userPipelineEnabled;
+      if (alreadyRunning || alreadyComplete) {
+        if (alreadyRunning) ensureTrigger_();
+        return AKORT.Result.success(alreadyComplete ?
+          'Alpha.7.4 Gate 6 is already complete.' : 'Alpha.7.4 Gate 6 is already running.', publicState_(existing));
+      }
       assert_(flags.publishEngineEnabled && flags.executionEnabled && !flags.regularPipelineEnabled && !flags.userPipelineEnabled,
         'ALPHA74_GATE6_START_FLAGS_INVALID', 'Gate 6 Start requires engine=TRUE, aggregate execution=TRUE, regular pipeline=FALSE and user pipeline=FALSE.', flags);
       assertOperationalRuntimeContext_();
-      var existing = loadState_();
-      if (existing && existing.status === 'RUNNING') {
-        ensureTrigger_();
-        return AKORT.Result.success('Alpha.7.4 Gate 6 is already running.', publicState_(existing));
-      }
       var gate5 = gate5Accepted_();
       var canarySource = validateCanarySpec_();
       assertNoForeignDataOperations_(null);
@@ -2031,6 +2065,53 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       Number(inspection.reversalRecordCount || 0) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RAW_ROWS &&
       Number(inspection.repairRows || 0) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_RAW_ROWS &&
       stableStringify_(inspection.invalidPreviousLoadIds || []) === stableStringify_([REVERSED_PREDECESSOR_INCIDENT_PREVIOUS_LOAD_ID]) &&
+      !!text_(state.artifacts && state.artifacts.dwhBackup && state.artifacts.dwhBackup.id) &&
+      !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
+  }
+
+  function evidenceFinalizationIncident_(state, canaryOperation, reversalOperation, restoreOperation, canaryAudit) {
+    var acceptance = state && state.acceptance || {};
+    var lastError = state && state.lastError || {};
+    var errorDetails = lastError.details || {};
+    var recovery = state && state.recovery || {};
+    var aggregateContract = acceptance.aggregateContractScan || {};
+    var rollbackComparison = compareDigests_(state && state.digests && state.digests.baseline || {},
+      state && state.digests && state.digests.rollback || {});
+    var restoreComparison = compareDigests_(state && state.digests && state.digests.postCanary || {},
+      state && state.digests && state.digests.final || {});
+    var originalIncident = !!state && state.release === EVIDENCE_FINALIZATION_INCIDENT_RELEASE &&
+      state.status === 'FAILED' && state.phase === 'FAILED' && state.failedFromPhase === 'SAVE_EVIDENCE' &&
+      lastError.code === 'ALPHA74_GATE6_RAW_AUDIT_FAILED' &&
+      text_(errorDetails.operationId) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_CANARY_OPERATION_ID &&
+      text_(errorDetails.operationType) === 'SOURCE_FILE_LOAD_V4';
+    var preparedRecovery = !!state && state.release === RELEASE &&
+      text_(recovery.mode) === 'EVIDENCE_FINALIZATION_AFTER_REVERSED_CANARY' &&
+      text_(recovery.recoveredFromRelease) === EVIDENCE_FINALIZATION_INCIDENT_RELEASE &&
+      ((state.status === 'STOPPED' && state.phase === 'STOPPED' && state.stoppedFromPhase === 'SAVE_EVIDENCE') ||
+        (state.status === 'FAILED' && state.phase === 'FAILED' && state.failedFromPhase === 'SAVE_EVIDENCE'));
+    return !!state && !!canaryOperation && !!reversalOperation && !!restoreOperation &&
+      state.stateSchemaVersion === STATE_SCHEMA && state.executionId === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_EXECUTION_ID &&
+      (originalIncident || preparedRecovery) &&
+      text_(state.operations && state.operations.canary) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_CANARY_OPERATION_ID &&
+      text_(state.operations && state.operations.reversal) === EVIDENCE_FINALIZATION_INCIDENT_REVERSAL_OPERATION_ID &&
+      text_(state.operations && state.operations.restore) === EVIDENCE_FINALIZATION_INCIDENT_RESTORE_OPERATION_ID &&
+      text_(state.loads && state.loads.canary) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_TARGET_LOAD_ID &&
+      text_(state.loads && state.loads.reversal) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_REVERSAL_LOAD_ID &&
+      text_(state.loads && state.loads.restore) === EVIDENCE_FINALIZATION_INCIDENT_RESTORE_LOAD_ID &&
+      text_(state.canarySource && state.canarySource.sourceHash) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_SOURCE_HASH &&
+      acceptance.canaryOperationAccepted === true && acceptance.reversalOperationAccepted === true &&
+      acceptance.restoreOperationAccepted === true && acceptance.rollbackExact === true && acceptance.restoreExact === true &&
+      aggregateContract.ok === true && Number(aggregateContract.duplicateLogicalRows || 0) === 0 &&
+      Number(aggregateContract.latestFailures || 0) === 0 && Number(aggregateContract.futureRows || 0) === 0 &&
+      !!text_(state.acceptanceCompletedAt) && !state.scan &&
+      rollbackComparison.exact === true && restoreComparison.exact === true &&
+      operationSummary_(canaryOperation, 'SOURCE_FILE_LOAD_V4').accepted === true &&
+      operationSummary_(reversalOperation, 'RAW_REVERSAL_V4').accepted === true &&
+      operationSummary_(restoreOperation, 'SOURCE_FILE_LOAD_V4').accepted === true &&
+      operationLoadId_(canaryOperation) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_TARGET_LOAD_ID &&
+      operationLoadId_(reversalOperation) === REVERSAL_CHECKPOINT_CAPACITY_INCIDENT_REVERSAL_LOAD_ID &&
+      operationLoadId_(restoreOperation) === EVIDENCE_FINALIZATION_INCIDENT_RESTORE_LOAD_ID &&
+      reversedCanaryAuditAccepted_(canaryAudit) &&
       !!text_(state.artifacts && state.artifacts.dwhBackup && state.artifacts.dwhBackup.id) &&
       !!text_(state.artifacts && state.artifacts.publishBackup && state.artifacts.publishBackup.id);
   }
@@ -2709,6 +2790,115 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     }, { lock: true, persistLogs: true, lockTimeoutMs: 60000 });
   }
 
+  function recoverEvidenceFinalizationIncident() {
+    return AKORT.Core.safeRun('ALPHA74_GATE6_RECOVER_EVIDENCE_FINALIZATION', function () {
+      AKORT.EnvironmentGuard.assertDev();
+      var state = loadState_();
+      var alreadyRecovered = !!state && state.release === RELEASE && state.status === 'SUCCESS' &&
+        state.phase === 'SUCCESS' && state.evidence && state.recovery &&
+        text_(state.recovery.mode) === 'EVIDENCE_FINALIZATION_AFTER_REVERSED_CANARY';
+      if (alreadyRecovered) {
+        return AKORT.Result.success('Alpha.7.4 Gate 6 evidence finalization is already complete.', publicState_(state));
+      }
+      var canaryOperation = state && state.operations && state.operations.canary ? operation_(state.operations.canary) : null;
+      var reversalOperation = state && state.operations && state.operations.reversal ? operation_(state.operations.reversal) : null;
+      var restoreOperation = state && state.operations && state.operations.restore ? operation_(state.operations.restore) : null;
+      var canaryAudit = state && state.loads && state.loads.canary ? AKORT.RawStore.auditLoad(state.loads.canary) : null;
+      assert_(evidenceFinalizationIncident_(state, canaryOperation, reversalOperation, restoreOperation, canaryAudit),
+        'ALPHA74_GATE6_EVIDENCE_RECOVERY_SOURCE_INVALID',
+        'Evidence finalization recovery is restricted to the exact .34 Gate 6 reversed-canary audit incident.', {
+          stateRelease: state && state.release || '',
+          executionId: state && state.executionId || '',
+          status: state && state.status || 'NOT_FOUND',
+          failedFromPhase: state && state.failedFromPhase || '',
+          lastErrorCode: state && state.lastError && state.lastError.code || '',
+          canaryLoadStatus: canaryAudit && canaryAudit.loadStatus || ''
+        });
+      var flags = flagState_();
+      var firstRecoveryAttempt = state.release === EVIDENCE_FINALIZATION_INCIDENT_RELEASE;
+      assert_(flags.publishEngineEnabled && flags.executionEnabled && !flags.userPipelineEnabled &&
+        (!firstRecoveryAttempt || !flags.regularPipelineEnabled),
+        'ALPHA74_GATE6_EVIDENCE_RECOVERY_FLAGS_INVALID',
+        'Evidence finalization recovery requires engine=TRUE, execution=TRUE and user=FALSE; the first .34 recovery attempt also requires regular=FALSE.', flags);
+      assert_(triggers_().length === 0, 'ALPHA74_GATE6_EVIDENCE_RECOVERY_TRIGGER_ACTIVE',
+        'Evidence finalization recovery requires no active Gate 6 worker trigger.', { triggerCount: triggers_().length });
+      assertNoForeignDataOperations_(state);
+      assertSourceHash_(canaryOperation, state, 'CANARY');
+      assertSourceHash_(restoreOperation, state, 'RESTORE');
+      assertOperationAccepted_(canaryOperation, 'SOURCE_FILE_LOAD_V4', { expectedFinalLoadStatus: 'REVERSED' });
+      assertOperationAccepted_(reversalOperation, 'RAW_REVERSAL_V4');
+      assertOperationAccepted_(restoreOperation, 'SOURCE_FILE_LOAD_V4');
+      if (firstRecoveryAttempt) {
+        var previousRecovery = clone_(state.recovery || null);
+        state.recovery = {
+          mode: 'EVIDENCE_FINALIZATION_AFTER_REVERSED_CANARY',
+          recoveredFromRelease: EVIDENCE_FINALIZATION_INCIDENT_RELEASE,
+          recoveredFromExecutionId: state.executionId,
+          recoveredAt: now_(),
+          canaryOperationId: state.operations.canary,
+          reversalOperationId: state.operations.reversal,
+          restoreOperationId: state.operations.restore,
+          canaryLoadId: state.loads.canary,
+          canaryFinalLoadStatus: canaryAudit.loadStatus,
+          preservedRecoveryCopies: true,
+          preservedCycleOperations: true,
+          preservedDigestProofs: true,
+          repeatedSourceParsing: false,
+          repeatedRawCommit: false,
+          repeatedPublish: false,
+          repeatedAggregateCalculation: false,
+          previousRecovery: previousRecovery
+        };
+      }
+      state.release = RELEASE;
+      state.status = 'STOPPED';
+      state.phase = 'STOPPED';
+      state.stoppedFromPhase = 'SAVE_EVIDENCE';
+      state.finishedAt = now_();
+      state.failedFromPhase = '';
+      state.leaseUntil = '';
+      state.consecutiveErrors = 0;
+      state.lastError = null;
+      state.lastStep = {
+        phase: 'EVIDENCE_FINALIZATION_RECOVERY_PREPARED',
+        canaryLoadStatus: canaryAudit.loadStatus,
+        repeatedCanary: false,
+        repeatedReversal: false,
+        repeatedRestore: false
+      };
+      compactCheckpointState_(state);
+      saveState_(state);
+      try {
+        setRegularPipeline_(true);
+        state.regularPipelineEnabledAt = state.regularPipelineEnabledAt || now_();
+        state.status = 'RUNNING';
+        state.phase = 'SAVE_EVIDENCE';
+        state.stoppedFromPhase = '';
+        state.finishedAt = '';
+        completeEvidence_(state);
+        saveState_(state);
+        return AKORT.Result.success(
+          'Alpha.7.4 Gate 6 evidence finalized from the accepted canary, exact rollback and exact restore without replaying data operations.',
+          publicState_(state)
+        );
+      } catch (caught) {
+        try { deleteTriggers_(); } catch (ignoredTriggerCleanup) {}
+        try { setRegularPipeline_(false); } catch (ignoredRegularCleanup) {}
+        try { setUserPipeline_(false); } catch (ignoredUserCleanup) {}
+        state.status = 'FAILED';
+        state.phase = 'FAILED';
+        state.failedFromPhase = 'SAVE_EVIDENCE';
+        state.finishedAt = now_();
+        state.leaseUntil = '';
+        state.lastError = normalizedError_(caught);
+        state.lastStep = { phase: 'FAILED', errorCode: state.lastError.code };
+        try { saveTerminalState_(state); } catch (ignoredStateCleanup) {}
+        try { writeValidation_('GATE 6 FAILED', { executionId: state.executionId, error: state.lastError }); } catch (ignoredValidation) {}
+        throw caught;
+      }
+    }, { lock: true, persistLogs: true, lockTimeoutMs: 60000 });
+  }
+
   function resume() {
     return AKORT.Core.safeRun('ALPHA74_GATE6_RESUME', function () {
       AKORT.EnvironmentGuard.assertDev();
@@ -3119,6 +3309,7 @@ AKORT.Alpha74Gate6Acceptance = (function () {
     recoverWeeklyRollbackPeriodIncident: recoverWeeklyRollbackPeriodIncident,
     recoverReversalCheckpointCapacityIncident: recoverReversalCheckpointCapacityIncident,
     recoverReversedPredecessorIncident: recoverReversedPredecessorIncident,
+    recoverEvidenceFinalizationIncident: recoverEvidenceFinalizationIncident,
     worker: worker,
     stop: stop,
     Test: Object.freeze({
@@ -3140,6 +3331,8 @@ AKORT.Alpha74Gate6Acceptance = (function () {
       reversalCheckpointCapacityIncident: reversalCheckpointCapacityIncident_,
       reversalCheckpointCapacityStage: reversalCheckpointCapacityStage_,
       reversedPredecessorIncident: reversedPredecessorIncident_,
+      evidenceFinalizationIncident: evidenceFinalizationIncident_,
+      reversedCanaryAuditAccepted: reversedCanaryAuditAccepted_,
       monthlyPeriodLabelOperationPrepared: monthlyPeriodLabelOperationPrepared_,
       normalizedJsonSetting: normalizedJsonSetting_,
       compactRecovery: compactRecovery_,

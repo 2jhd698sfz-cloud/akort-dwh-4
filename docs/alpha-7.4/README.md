@@ -2,7 +2,7 @@
 
 ## Статус
 
-`GATE 5 ACCEPTED / GATE 6 ALPHA74.34 RAW-LINEAGE RECOVERY READY / USER PIPELINE PROHIBITED`
+`GATE 5 ACCEPTED / GATE 6 ALPHA74.35 EVIDENCE FINALIZATION RECOVERY READY / USER PIPELINE PROHIBITED`
 
 Дата фиксации: 3 августа 2026 года.
 
@@ -65,6 +65,9 @@
   exact recovery текущей `.32 / RUN_REVERSAL` операции из проверенного
   392-row `STAGED` snapshot без повторения RAW rollback, Publish цен,
   materialization и calculation.
+- `ALPHA74_35_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md` — commit, `clasp push` и
+  точное завершение `.34 / SAVE_EVIDENCE` после уже успешных canary,
+  rollback, restore и финальной сверки без повторения data operations.
 - `GATE6_WEEKLY_ROLLBACK_PERIOD_RECOVERY_HOTFIX.md` — exact `.30` recovery
   196 weekly aggregate rows, ошибочно записанных на UTC-субботу вместо
   ISO-воскресенья, с bounded atomic repair и чистым перезапуском Gate 6.

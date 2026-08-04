@@ -98,8 +98,8 @@ function allTargets(value) {
 }
 
 test('Gate 6 metadata and authoritative target set are exact', () => {
-  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-16');
-  assert.equal(G.Release, '4.0.0-alpha.7.4.34');
+  assert.equal(G.Version, '4.0-alpha74-gate6-acceptance-17');
+  assert.equal(G.Release, '4.0.0-alpha.7.4.35');
   assert.equal(G.EvidenceSchemaVersion, '4.0-alpha74-gate6-evidence-1');
   assert.equal(G.StateSchemaVersion, '4.0-alpha74-gate6-state-1');
   assert.equal(G.ControlSheetName, 'GATE6_CANARY_INPUT');
@@ -961,6 +961,142 @@ test('operation acceptance requires all aggregate phases, RAW audit and SUCCESS'
   assert.equal(G.Test.operationSummary(missing, 'SOURCE_FILE_LOAD_V4').accepted, false);
 });
 
+test('final evidence accepts the canary RAW audit only in the expected REVERSED lifecycle state', () => {
+  const audit = {
+    ok: false,
+    loadId: 'LOAD_CANARY',
+    loadStatus: 'REVERSED',
+    staged: 50,
+    committedStages: 50,
+    expectedCommitted: 50,
+    latestConflicts: []
+  };
+  assert.equal(G.Test.reversedCanaryAuditAccepted(audit), true);
+  assert.equal(G.Test.reversedCanaryAuditAccepted({ ...audit, committedStages: 49 }), false);
+  assert.equal(G.Test.reversedCanaryAuditAccepted({ ...audit, latestConflicts: ['DUPLICATE'] }), false);
+  assert.equal(G.Test.reversedCanaryAuditAccepted({ ...audit, loadStatus: 'COMMITTED' }), false);
+});
+
+test('exact .34 SAVE_EVIDENCE incident is recoverable without replaying canary, rollback or restore', () => {
+  const completedPhases = [
+    'DISCOVER', 'VALIDATE', 'PARSE', 'STAGE', 'COMMIT_RAW', 'UPDATE_PUBLISH',
+    'PREPARING_AGGREGATE_IMPACT', 'MATERIALIZING_AGGREGATE_INPUTS',
+    'CALCULATING_AGGREGATE_SLICES', 'STAGING_AGGREGATE_ROWS', 'UPDATING_AGGREGATES',
+    'UPDATING_AGGREGATE_LATEST', 'RECONCILING_AGGREGATES', 'UPDATE_STATUS',
+    'QUICK_AUDIT', 'FINALIZING', 'SUCCESS'
+  ];
+  function operation(id, type, loadId) {
+    return {
+      operation_id: id,
+      operation_type: type,
+      status: 'SUCCESS',
+      current_phase: 'SUCCESS',
+      checkpoint: {
+        completedPhases,
+        handlerState: { loadId, sourceHash: '5be97a7ca1743062394c3675f8d00228c3e5d287a35edeafee2b7866c4e74bde' },
+        rawStore: { loadId },
+        aggregate: { status: 'SUCCESS', targetAfterFingerprint: 'TARGET' }
+      }
+    };
+  }
+  const canary = operation(
+    'OP_SOURCE_FILE_LOAD_V_20260803T123050299Z_BAD1844BD339',
+    'SOURCE_FILE_LOAD_V4',
+    'LOAD_20260803T123127832Z_3F2F34DAD46B'
+  );
+  const reversal = operation(
+    'OP_RAW_REVERSAL_V4_20260803T173434397Z_DCC49C04030A',
+    'RAW_REVERSAL_V4',
+    'LOAD_REV_56A66E1F8870698F19AC0F3093F9'
+  );
+  const restore = operation(
+    'OP_SOURCE_FILE_LOAD_V_20260803T193851648Z_4ECDB96C4D0F',
+    'SOURCE_FILE_LOAD_V4',
+    'LOAD_20260803T193958095Z_6EADF4F3F0AC'
+  );
+  const baseline = allTargets({});
+  const postCanary = allTargets({
+    PUBLISH_PRICES_WEEKLY: digest([['weekly', 2]]),
+    PUBLISH_PRICES_MONTHLY: digest([['monthly', 2]]),
+    PUBLISH_PRICE_AGGREGATES: digest([['aggregate', 2]])
+  });
+  const state = {
+    stateSchemaVersion: '4.0-alpha74-gate6-state-1',
+    release: '4.0.0-alpha.7.4.34',
+    executionId: 'A74_GATE6_37FAED6EF952F9BB5FD4',
+    status: 'FAILED',
+    phase: 'FAILED',
+    failedFromPhase: 'SAVE_EVIDENCE',
+    acceptanceCompletedAt: '2026-08-03T20:52:10.354Z',
+    operations: {
+      canary: canary.operation_id,
+      reversal: reversal.operation_id,
+      restore: restore.operation_id
+    },
+    loads: {
+      canary: 'LOAD_20260803T123127832Z_3F2F34DAD46B',
+      reversal: 'LOAD_REV_56A66E1F8870698F19AC0F3093F9',
+      restore: 'LOAD_20260803T193958095Z_6EADF4F3F0AC'
+    },
+    canarySource: { sourceHash: '5be97a7ca1743062394c3675f8d00228c3e5d287a35edeafee2b7866c4e74bde' },
+    artifacts: { dwhBackup: { id: 'DWH' }, publishBackup: { id: 'PUBLISH' } },
+    digests: {
+      baseline,
+      rollback: JSON.parse(JSON.stringify(baseline)),
+      postCanary,
+      final: JSON.parse(JSON.stringify(postCanary))
+    },
+    scan: null,
+    evidence: null,
+    acceptance: {
+      canaryOperationAccepted: true,
+      reversalOperationAccepted: true,
+      restoreOperationAccepted: true,
+      rollbackExact: true,
+      restoreExact: true,
+      aggregateContractScan: {
+        ok: true,
+        duplicateLogicalRows: 0,
+        latestFailures: 0,
+        futureRows: 0
+      }
+    },
+    lastError: {
+      code: 'ALPHA74_GATE6_RAW_AUDIT_FAILED',
+      details: {
+        operationId: canary.operation_id,
+        operationType: 'SOURCE_FILE_LOAD_V4'
+      }
+    }
+  };
+  const canaryAudit = {
+    ok: false,
+    loadStatus: 'REVERSED',
+    staged: 50,
+    committedStages: 50,
+    expectedCommitted: 50,
+    latestConflicts: []
+  };
+  assert.equal(G.Test.evidenceFinalizationIncident(state, canary, reversal, restore, canaryAudit), true);
+  const preparedRetry = JSON.parse(JSON.stringify(state));
+  preparedRetry.release = '4.0.0-alpha.7.4.35';
+  preparedRetry.status = 'STOPPED';
+  preparedRetry.phase = 'STOPPED';
+  preparedRetry.stoppedFromPhase = 'SAVE_EVIDENCE';
+  preparedRetry.failedFromPhase = '';
+  preparedRetry.lastError = null;
+  preparedRetry.recovery = {
+    mode: 'EVIDENCE_FINALIZATION_AFTER_REVERSED_CANARY',
+    recoveredFromRelease: '4.0.0-alpha.7.4.34'
+  };
+  assert.equal(G.Test.evidenceFinalizationIncident(preparedRetry, canary, reversal, restore, canaryAudit), true);
+  const wrongAudit = { ...canaryAudit, loadStatus: 'COMMITTED' };
+  assert.equal(G.Test.evidenceFinalizationIncident(state, canary, reversal, restore, wrongAudit), false);
+  const inexactRestore = JSON.parse(JSON.stringify(state));
+  inexactRestore.digests.final.PUBLISH_PRICES_WEEKLY.hash = 'DIFFERENT';
+  assert.equal(G.Test.evidenceFinalizationIncident(inexactRestore, canary, reversal, restore, canaryAudit), false);
+});
+
 test('source contract contains source-file canary, recovery copies, standard rollback, restore and fail-closed flags', () => {
   const source = fs.readFileSync(path.join(root, 'src/28_Alpha74Gate6Acceptance.js'), 'utf8');
   const entries = fs.readFileSync(path.join(root, 'src/08_EntryPoints.js'), 'utf8');
@@ -1002,6 +1138,11 @@ test('source contract contains source-file canary, recovery copies, standard rol
   assert(entries.includes('AKORT_alpha74Gate6RecoverMonthlyPeriodLabel'));
   assert(entries.includes('AKORT_alpha74Gate6RecoverWeeklyRollbackPeriod'));
   assert(entries.includes('AKORT_alpha74Gate6RecoverReversalCheckpointCapacity'));
+  assert(entries.includes('AKORT_alpha74Gate6RecoverEvidenceFinalization'));
+  assert(source.includes('EVIDENCE_FINALIZATION_AFTER_REVERSED_CANARY'));
+  assert(source.includes("expectedFinalLoadStatus: 'REVERSED'"));
+  assert(source.includes('var alreadyRunning = existing && existing.release === RELEASE'));
+  assert(source.includes('var alreadyComplete = existing && existing.release === RELEASE'));
   assert(engine.includes('expected.status || STATUSES.FAILED'));
   assert(engine.includes('OPERATION_CHECKPOINT_CELL_LIMIT_EXCEEDED'));
   assert(engine.includes("schemaVersion: '4.0-operation-cell-summary-1'"));

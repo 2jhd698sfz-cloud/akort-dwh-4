@@ -150,6 +150,14 @@ DEV Publish в Gate 5 не изменялась; regular pipeline остался
 - [ ] Несколько регулярных DEV cycles без intervention.
 - [ ] Recovery/rollback protocol проверен.
 
+Release `4.0.0-alpha.7.4.35` устраняет финальный `.34 / SAVE_EVIDENCE`
+incident после уже успешных canary, exact rollback, restore и final contract
+scan. Canary load закономерно имеет статус `REVERSED`; evidence lifecycle
+теперь принимает это состояние только при сохранённых доказательствах точного
+rollback и restore. Exact recovery не повторяет parser, RAW, Publish или
+Aggregates. Нормативный операторский документ:
+`ALPHA74_35_COMMIT_CLASP_APPS_SCRIPT_RUNBOOK.md`.
+
 Release `4.0.0-alpha.7.4.34` устраняет подтверждённый `.33` RAW-lineage
 incident. Все 50 rollback records восстановили observations старой W27
 загрузки, хотя её load уже имел статус `REVERSED`; поэтому ordinary Weekly и
