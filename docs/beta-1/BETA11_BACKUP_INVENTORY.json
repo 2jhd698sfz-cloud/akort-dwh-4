@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "4.0-beta11-backup-inventory-1",
+  "packageVersion": "4.0.0-beta.1.1.1",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "e4dd3806996f832ab466f0a04d79e13e2ebfc1cd",
+  "writeBoundary": "READ_ONLY",
+  "findings": [
+    {
+      "id": "B11-I-001",
+      "status": "REUSE",
+      "component": "AKORT.Config",
+      "evidence": [
+        "resources.dwhSpreadsheetId",
+        "resources.publishSpreadsheetId",
+        "resources.devRootFolderId",
+        "resources.devTablesFolderId",
+        "resources.testResultsFolderId"
+      ],
+      "decision": "Use accepted DEV resource bindings; do not introduce hard-coded file or folder IDs."
+    },
+    {
+      "id": "B11-I-002",
+      "status": "REUSE_WITH_ADAPTER",
+      "component": "AKORT.IncrementalPublish.createPublishBackup",
+      "evidence": [
+        "createPublishBackup:createPublishBackup",
+        "AKORT_alpha6CreatePublishBackup"
+      ],
+      "decision": "Inspect and reuse the accepted Publish copy primitive. Do not create a second independent Publish-backup implementation."
+    },
+    {
+      "id": "B11-I-003",
+      "status": "REUSE",
+      "component": "AKORT.OperationEngine",
+      "evidence": [
+        "enqueue",
+        "run",
+        "resume",
+        "lease",
+        "idempotencyKey",
+        "safe checkpoints"
+      ],
+      "decision": "The paired backup must be one registered Operation Engine operation; no second executor or queue."
+    },
+    {
+      "id": "B11-I-004",
+      "status": "MISSING",
+      "component": "DWH backup member",
+      "evidence": [],
+      "decision": "Add only the missing DWH copy member using the same bounded copy/adoption contract as Publish."
+    },
+    {
+      "id": "B11-I-005",
+      "status": "MISSING",
+      "component": "Paired backup registry and manifest",
+      "evidence": [],
+      "decision": "Add one module-owned BACKUP_REGISTRY, one shared backup_id and one deterministic pair manifest. Do not change RAW or Publish schemas."
+    },
+    {
+      "id": "B11-I-006",
+      "status": "MISSING",
+      "component": "PARTIAL resume and lost-response adoption",
+      "evidence": [],
+      "decision": "A retry must adopt an already-created exact member and create only the missing DWH or Publish member."
+    },
+    {
+      "id": "B11-I-007",
+      "status": "DEFER_TO_BETA11_ACCEPTANCE",
+      "component": "Daily trigger and freshness",
+      "evidence": [],
+      "decision": "Implement only after the manual paired operation passes isolated DEV acceptance. Trigger ownership remains one-per-process."
+    }
+  ],
+  "nextCandidate": {
+    "packageVersion": "4.0.0-beta.1.1.2",
+    "scope": [
+      "module-owned BACKUP_REGISTRY installation",
+      "one BETA11_PAIRED_BACKUP Operation Engine handler",
+      "deterministic shared backup_id",
+      "DWH and Publish members",
+      "deterministic manifest",
+      "PARTIAL resume and lost-response adoption",
+      "read-only status and freshness API"
+    ],
+    "excluded": [
+      "daily trigger before manual acceptance",
+      "production backup",
+      "automatic restore",
+      "RAW or Publish schema changes",
+      "second executor or queue",
+      "user pipeline enablement"
+    ]
+  }
+}

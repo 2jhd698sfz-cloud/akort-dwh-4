@@ -25,10 +25,7 @@ const gap = JSON.parse(source('docs/beta-1/BETA10_GAP_MATRIX.json'));
 const contract = source('docs/beta-1/BETA10_BOOTSTRAP_CONTRACT.md');
 const files = allSourceFiles();
 const combined = files.map(file => source('src/' + file)).join('\n');
-const combinedRuntime = files
-  .filter(file => file !== '31_Beta10Bootstrap.js')
-  .map(file => source('src/' + file))
-  .join('\n');
+const combinedRuntime = combined;
 
 const tests = [];
 

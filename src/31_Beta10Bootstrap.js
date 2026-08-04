@@ -166,7 +166,7 @@ AKORT.Beta10Bootstrap = (function () {
         'schema redesign',
         'methodology change',
         'production write',
-        'PUBLISH_USER_PIPELINE_ENABLED=true'
+        'general user pipeline enablement before Beta.2 go-live'
       ])
     };
   }
