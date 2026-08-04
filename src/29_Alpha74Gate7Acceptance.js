@@ -9,12 +9,13 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * RAW, Publish and Industry data-plane writes remain unavailable here.
  */
 AKORT.Alpha74Gate7Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate7-acceptance-1';
+  var VERSION = '4.0-alpha74-gate7-acceptance-2';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate7-evidence-1';
-  var STATE_SCHEMA = '4.0-alpha74-gate7-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.38';
+  var STATE_SCHEMA = '4.0-alpha74-gate7-state-2';
+  var RELEASE = '4.0.0-alpha.7.4.39';
 
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE7_STATE_V1';
+  var PREVIEW_ITEM_ENCODING = 'ARRAY_V1';
   var CONTROL_SHEET = 'GATE7_CONTROL_FILES';
   var EXPECTED_PROFILE_COUNT = 12;
   var PREVIEW_BATCH_SIZE = 2;
@@ -468,6 +469,7 @@ AKORT.Alpha74Gate7Acceptance = (function () {
     state.schemaVersion = STATE_SCHEMA;
     state.release = RELEASE;
     state.version = VERSION;
+    state.itemEncoding = PREVIEW_ITEM_ENCODING;
     state.updatedAt = now_();
 
     var serialized = JSON.stringify(state);
@@ -492,17 +494,19 @@ AKORT.Alpha74Gate7Acceptance = (function () {
   function publicState_(state) {
     if (!state) return null;
 
+    var items = expandPreviewItems_(state.items || []);
+
     return {
       status: state.status || '',
       cursor: Number(state.cursor || 0),
-      completedProfiles: (state.items || []).length,
+      completedProfiles: items.length,
       expectedProfiles: EXPECTED_PROFILE_COUNT,
       controlFingerprint: state.controlFingerprint || '',
       matrixFingerprint: state.matrixFingerprint || '',
       startedAt: state.startedAt || '',
       updatedAt: state.updatedAt || '',
       acceptedAt: state.acceptedAt || '',
-      profiles: (state.items || []).map(function (item) {
+      profiles: items.map(function (item) {
         return {
           profileId: item.profileId,
           fileName: item.fileName,
@@ -622,6 +626,115 @@ AKORT.Alpha74Gate7Acceptance = (function () {
       warningCount: item.warningCount,
       infoCount: item.infoCount
     };
+  }
+
+  function compactPreviewItem_(item) {
+    var resolved = item.resolvedOptions || {};
+
+    return [
+      text_(item.profileId),
+      text_(item.fileId),
+      text_(item.fileName),
+      text_(item.mimeType),
+      Number(item.fileSize || 0),
+      text_(item.fileUpdatedAt),
+      text_(item.sourceHash),
+      text_(item.structuralFingerprint),
+      Number(item.confidenceScore || 0),
+      Number(item.confidenceMargin || 0),
+      [
+        resolved.year === undefined ? '' : resolved.year,
+        resolved.month === undefined ? '' : resolved.month,
+        resolved.week === undefined ? '' : resolved.week,
+        text_(resolved.sourcePublishedAt)
+      ],
+      Number(item.sourceObservationCount || 0),
+      Number(item.normalizedRowCount || 0),
+      Number(item.configuredCategoryCount || 0),
+      Number(item.matchedCategoryCount || 0),
+      Number(item.ignoredObservationCount || 0),
+      Number(item.ignoredSourceLabelCount || 0),
+      Number(item.unitCompatibilityConversionCount || 0),
+      clone_(item.unitCompatibilityTransformIds || []),
+      Number(item.issueCount || 0),
+      Number(item.warningCount || 0),
+      Number(item.infoCount || 0),
+      text_(item.previewFingerprint)
+    ];
+  }
+
+  function expandPreviewItem_(record, byProfile) {
+    if (!Array.isArray(record)) return clone_(record);
+
+    assert_(
+      record.length === 23,
+      'ALPHA74_GATE7_PREVIEW_ITEM_ENCODING_INVALID',
+      'Gate 7 compact preview item has an invalid field count.',
+      {
+        fieldCount: record.length,
+        expected: 23
+      }
+    );
+
+    byProfile = byProfile || profileMap_(profiles_());
+
+    var profileId = text_(record[0]);
+    var profile = byProfile[profileId];
+
+    assert_(
+      profile,
+      'ALPHA74_GATE7_PREVIEW_ITEM_PROFILE_UNKNOWN',
+      'Gate 7 compact preview item references an unknown profile.',
+      { profileId: profileId }
+    );
+
+    var resolved = record[10] || [];
+
+    return {
+      profileId: profileId,
+      familyCode: text_(profile.familyCode),
+      frequency: text_(profile.frequency),
+      targetTable: text_(profile.targetTable),
+      datasetCode: text_(profile.datasetCode),
+      sourceFileType: text_(profile.sourceFileType),
+      valueType: text_(profile.valueType),
+      parserKind: text_(profile.parserKind),
+      fileId: text_(record[1]),
+      fileName: text_(record[2]),
+      mimeType: text_(record[3]),
+      fileSize: Number(record[4] || 0),
+      fileUpdatedAt: text_(record[5]),
+      sourceHash: text_(record[6]),
+      structuralFingerprint: text_(record[7]),
+      confidenceScore: Number(record[8] || 0),
+      confidenceMargin: Number(record[9] || 0),
+      resolvedOptions: {
+        year: resolved[0] === undefined ? '' : resolved[0],
+        month: resolved[1] === undefined ? '' : resolved[1],
+        week: resolved[2] === undefined ? '' : resolved[2],
+        sourcePublishedAt: text_(resolved[3])
+      },
+      sourceObservationCount: Number(record[11] || 0),
+      normalizedRowCount: Number(record[12] || 0),
+      configuredCategoryCount: Number(record[13] || 0),
+      matchedCategoryCount: Number(record[14] || 0),
+      ignoredObservationCount: Number(record[15] || 0),
+      ignoredSourceLabelCount: Number(record[16] || 0),
+      unitCompatibilityConversionCount: Number(record[17] || 0),
+      unitCompatibilityTransformIds: clone_(record[18] || []),
+      issueCount: Number(record[19] || 0),
+      warningCount: Number(record[20] || 0),
+      infoCount: Number(record[21] || 0),
+      previewFingerprint: text_(record[22])
+    };
+  }
+
+  function expandPreviewItems_(items) {
+    var byProfile = profileMap_(profiles_());
+
+    return (items || []).map(function (record) {
+      return expandPreviewItem_(record, byProfile);
+    });
   }
 
   function previewEntry_(entry) {
@@ -806,7 +919,7 @@ AKORT.Alpha74Gate7Acceptance = (function () {
   }
 
   function verifyImmutableFiles_(items) {
-    items.forEach(function (item) {
+    expandPreviewItems_(items).forEach(function (item) {
       var current = fileMetadata_(item.fileId);
 
       assert_(
@@ -832,7 +945,8 @@ AKORT.Alpha74Gate7Acceptance = (function () {
       state &&
       text_(state.schemaVersion) === STATE_SCHEMA &&
       text_(state.release) === RELEASE &&
-      text_(state.version) === VERSION
+      text_(state.version) === VERSION &&
+      text_(state.itemEncoding) === PREVIEW_ITEM_ENCODING
     );
   }
 
@@ -841,6 +955,7 @@ AKORT.Alpha74Gate7Acceptance = (function () {
       schemaVersion: STATE_SCHEMA,
       release: RELEASE,
       version: VERSION,
+      itemEncoding: PREVIEW_ITEM_ENCODING,
       status: 'PREVIEW_RUNNING',
       controlFingerprint: control.fingerprint,
       cursor: 0,
@@ -1071,7 +1186,7 @@ AKORT.Alpha74Gate7Acceptance = (function () {
           var entry = control.entries[cursor];
           var item = previewEntry_(entry);
 
-          state.items.push(item);
+          state.items.push(compactPreviewItem_(item));
           state.cursor = cursor + 1;
           processed.push(item);
           saveState_(state);
@@ -1081,11 +1196,14 @@ AKORT.Alpha74Gate7Acceptance = (function () {
           Number(state.cursor || 0) ===
           EXPECTED_PROFILE_COUNT
         ) {
-          verifyImmutableFiles_(state.items);
+          var expandedItems =
+            expandPreviewItems_(state.items);
+
+          verifyImmutableFiles_(expandedItems);
 
           state.matrixFingerprint = AKORT.Core.sha256(
             AKORT.Core.canonicalJson(
-              state.items.map(stablePreviewItem_)
+              expandedItems.map(stablePreviewItem_)
             )
           );
           state.status = 'PREVIEW_ACCEPTED';
@@ -1104,7 +1222,7 @@ AKORT.Alpha74Gate7Acceptance = (function () {
               processedThisRun: processed.map(function (item) {
                 return item.profileId;
               }),
-              matrix: clone_(state.items),
+              matrix: clone_(expandedItems),
               dataPlaneWrites: false
             }
           );
@@ -2095,6 +2213,8 @@ AKORT.Alpha74Gate7Acceptance = (function () {
       parseFileId: parseFileId_,
       controlFingerprint: controlFingerprint_,
       stablePreviewItem: stablePreviewItem_,
+      compactPreviewItem: compactPreviewItem_,
+      expandPreviewItem: expandPreviewItem_,
       readState: readState_,
       readIndustryState: readIndustryState_,
       publicIndustryState: publicIndustryState_

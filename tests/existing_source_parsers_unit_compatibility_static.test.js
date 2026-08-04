@@ -39,10 +39,10 @@ function test(name, fn) {
 test('candidate is .38 and Gate 6 remains .35', () => {
   assert.equal(
     packageJson.version,
-    '4.0.0-alpha.7.4.38'
+    '4.0.0-alpha.7.4.39'
   );
   assert(gate7.includes(
-    "var RELEASE = '4.0.0-alpha.7.4.38';"
+    "var RELEASE = '4.0.0-alpha.7.4.39';"
   ));
   assert(gate6.includes(
     "var RELEASE = '4.0.0-alpha.7.4.35';"

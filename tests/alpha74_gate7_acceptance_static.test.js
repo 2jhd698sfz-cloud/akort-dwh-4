@@ -30,26 +30,27 @@ function test(name, fn) {
 }
 
 test('Gate 7 candidate release is exact', () => {
-  assert(release.includes("version: '4.0.0-alpha.7.4.38'"));
-  assert(integration.includes("var RELEASE = '4.0.0-alpha.7.4.38';"));
-  assert(industry.includes("var RELEASE = '4.0.0-alpha.7.4.38';"));
-  assert.equal(packageJson.version, '4.0.0-alpha.7.4.38');
+  assert(release.includes("version: '4.0.0-alpha.7.4.39'"));
+  assert(integration.includes("var RELEASE = '4.0.0-alpha.7.4.39';"));
+  assert(industry.includes("var RELEASE = '4.0.0-alpha.7.4.39';"));
+  assert.equal(packageJson.version, '4.0.0-alpha.7.4.39');
 });
 
 test('Accepted Gate 6 evidence remains pinned to .35', () => {
   assert(gate6.includes("var RELEASE = '4.0.0-alpha.7.4.35';"));
-  assert(!gate6.includes("var RELEASE = '4.0.0-alpha.7.4.38';"));
+  assert(!gate6.includes("var RELEASE = '4.0.0-alpha.7.4.39';"));
 });
 
 test('Gate 7 metadata and state contracts are exact', () => {
   [
-    "var VERSION = '4.0-alpha74-gate7-acceptance-1';",
+    "var VERSION = '4.0-alpha74-gate7-acceptance-2';",
     "var EVIDENCE_SCHEMA = '4.0-alpha74-gate7-evidence-1';",
-    "var STATE_SCHEMA = '4.0-alpha74-gate7-state-1';",
+    "var STATE_SCHEMA = '4.0-alpha74-gate7-state-2';",
     "'4.0-alpha74-gate7-industry-state-1'",
     "'4.0-alpha74-gate7-industry-permit-1'",
     "var EXPECTED_PROFILE_COUNT = 12;",
-    "var PREVIEW_BATCH_SIZE = 2;"
+    "var PREVIEW_BATCH_SIZE = 2;",
+    "var PREVIEW_ITEM_ENCODING = 'ARRAY_V1';"
   ].forEach(marker => assert(gate7.includes(marker), marker));
 });
 
@@ -61,7 +62,10 @@ test('Control inventory and preview matrix remain exact', () => {
     'ALPHA74_GATE7_PROFILE_RECOGNITION_MISMATCH',
     'ALPHA74_GATE7_PREVIEW_BLOCKING_ISSUES',
     'ALPHA74_GATE7_CONTROL_FILE_MUTATED',
-    "state.status = 'PREVIEW_ACCEPTED';"
+    "state.status = 'PREVIEW_ACCEPTED';",
+    'compactPreviewItem_(item)',
+    'expandPreviewItems_(state.items)',
+    'expandedItems.map(stablePreviewItem_)'
   ].forEach(marker => assert(gate7.includes(marker), marker));
 });
 
