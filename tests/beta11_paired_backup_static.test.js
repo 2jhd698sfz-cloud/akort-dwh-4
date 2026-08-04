@@ -33,12 +33,12 @@ function test(name, fn) {
   }
 }
 
-test('r2 source is syntax-valid and pins accepted base', () => {
+test('r3 source is syntax-valid and pins accepted base', () => {
   new vm.Script(backup, { filename: '33_Beta11PairedBackup.js' });
-  assert(backup.includes("var PACKAGE_VERSION = '4.0.0-beta.1.1.2';"));
+  assert(backup.includes("var PACKAGE_VERSION = '4.0.0-beta.1.1.3';"));
   assert(backup.includes("var BASE_RELEASE = '4.0.0-alpha.7.4.42';"));
   assert(backup.includes(
-    "var BASE_COMMIT = '59372f73eb12f600b1ed8f6960ed18861cda613b';"
+    "var BASE_COMMIT = 'e5cda440d8c59f0e513c61b6a52aee163712de5a';"
   ));
 });
 
@@ -136,12 +136,44 @@ test('daily idempotency and retry are bounded', () => {
 
 test('public API is narrow', () => {
   [
+    'function AKORT_beta11DeploymentPreflight()',
     'function AKORT_beta11Install()',
     'function AKORT_beta11BackupNow()',
     'function AKORT_beta11DailyBackupTrigger()',
     'function AKORT_beta11BackupWorker()',
     'function AKORT_beta11BackupStatus(operationId)'
   ].forEach(marker => assert(backup.includes(marker), marker));
+});
+
+test('deployment preflight is read-only and explicit', () => {
+  assert(backup.includes('function deploymentPreflight()'));
+  assert(backup.includes("'BETA11_DEPLOYMENT_PREFLIGHT'"));
+  assert(backup.includes("writeBoundary: 'READ_ONLY'"));
+  assert(backup.includes('readyToInstall: blockers.length === 0'));
+  assert(backup.includes("'BETA11_DEPLOYMENT_PREFLIGHT_BLOCKED'"));
+  assert.equal(
+    contract.deploymentPreflight.entrypoint,
+    'AKORT_beta11DeploymentPreflight'
+  );
+  assert.equal(contract.deploymentPreflight.writeBoundary, 'READ_ONLY');
+  assert.equal(contract.deploymentPreflight.nestedScriptLock, false);
+});
+
+test('installer never nests the Core Script Lock', () => {
+  const start = backup.indexOf('  function install() {');
+  const end = backup.indexOf('  function backupNow() {');
+  assert(start >= 0 && end > start);
+  const installBlock = backup.slice(start, end);
+  const coreIndex = installBlock.indexOf('var core = AKORT.Core.install();');
+  const betaLockIndex = installBlock.indexOf(
+    "return AKORT.Core.safeRun(\n      'BETA11_PAIRED_BACKUP_INSTALL'"
+  );
+  assert(installBlock.includes('var preflight = deploymentPreflight();'));
+  assert(coreIndex >= 0);
+  assert(betaLockIndex > coreIndex);
+  assert(!installBlock.includes(
+    "return AKORT.Core.safeRun('BETA11_PAIRED_BACKUP_INSTALL', function ()"
+  ));
 });
 
 test('retention is deferred and no deletion exists', () => {
@@ -161,7 +193,7 @@ test('safety boundaries remain exact', () => {
   assert.equal(contract.boundaries.secondQueue, false);
 });
 
-test('r2 suite is wired into full regression', () => {
+test('r3 suite is wired into full regression', () => {
   assert.equal(
     packageJson.scripts['test:beta11-paired-backup'],
     'node tests/beta11_paired_backup_static.test.js'

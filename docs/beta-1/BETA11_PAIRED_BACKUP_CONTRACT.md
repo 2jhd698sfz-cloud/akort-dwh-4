@@ -1,8 +1,25 @@
-# Beta.1.1 r2 — Paired Backup Contract
+# Beta.1.1 r3 — Paired Backup Contract
 
-Package: `4.0.0-beta.1.1.2`  
+Package: `4.0.0-beta.1.1.3`
 Base runtime: `4.0.0-alpha.7.4.42`  
-Base commit: `59372f73eb12f600b1ed8f6960ed18861cda613b`
+Base commit: `e5cda440d8c59f0e513c61b6a52aee163712de5a`
+
+## Deployment preflight and lock boundary
+
+`AKORT_beta11DeploymentPreflight` is read-only. It checks the accepted base
+release, disabled user pipeline, access to DEV DWH and Publish, registry schema,
+backup-folder uniqueness and location, trigger ownership, active backup
+operations, and handler registration.
+
+Installation is two-stage:
+
+1. the read-only preflight completes;
+2. `AKORT.Core.install()` completes under its own Script Lock;
+3. only after that does the Beta.1.1 installer acquire its installation lock,
+   create or reuse the dedicated folder, and install exactly one daily trigger.
+
+The installer must not hold a Script Lock while calling `AKORT.Core.install()`,
+because Apps Script Script Locks are not re-entrant.
 
 ## Schedule
 

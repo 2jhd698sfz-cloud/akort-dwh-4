@@ -1,8 +1,8 @@
 {
-  "schemaVersion": "4.0-beta11-paired-backup-contract-2",
-  "packageVersion": "4.0.0-beta.1.1.2",
+  "schemaVersion": "4.0-beta11-paired-backup-contract-3",
+  "packageVersion": "4.0.0-beta.1.1.3",
   "baseRelease": "4.0.0-alpha.7.4.42",
-  "baseCommit": "59372f73eb12f600b1ed8f6960ed18861cda613b",
+  "baseCommit": "e5cda440d8c59f0e513c61b6a52aee163712de5a",
   "operationType": "BETA11_PAIRED_BACKUP",
   "schedule": {
     "frequency": "DAILY",
@@ -46,5 +46,21 @@
     "userPipelineEnabled": false,
     "secondExecutor": false,
     "secondQueue": false
+  },
+  "deploymentPreflight": {
+    "entrypoint": "AKORT_beta11DeploymentPreflight",
+    "writeBoundary": "READ_ONLY",
+    "checks": [
+      "accepted base release",
+      "general user pipeline disabled",
+      "DEV DWH and Publish accessible",
+      "BACKUP_REGISTRY absent or exact",
+      "dedicated backup folder unambiguous",
+      "configured folder under DEV root",
+      "single daily and worker trigger ownership",
+      "no non-terminal paired-backup operation",
+      "accepted Operation Engine handler registered"
+    ],
+    "nestedScriptLock": false
   }
 }

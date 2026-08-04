@@ -87,7 +87,7 @@ test('accepted Config already binds both source books and DEV folders', () => {
   ].forEach(marker => assert(config.includes(marker), marker));
 });
 
-test('paired backup gap is absent before r2 or closed exactly by r2', () => {
+test('paired backup gap is absent before r2 or closed by Beta.1.1', () => {
   if (!pairedBackupImplemented) {
     assert(!core.includes('BACKUP_REGISTRY'));
     assert(!engine.includes('Beta11BackupHandlers'));
@@ -95,11 +95,19 @@ test('paired backup gap is absent before r2 or closed exactly by r2', () => {
     return;
   }
 
+  const versionMatch = pairedBackupSource.match(
+    /var PACKAGE_VERSION = '4\.0\.0-beta\.1\.1\.(\d+)';/
+  );
+  assert(versionMatch, 'Beta.1.1 paired-backup package version is absent');
+  assert(
+    Number(versionMatch[1]) >= 2,
+    'Paired backup must be r2 or a later Beta.1.1 hardening revision'
+  );
+  assert(pairedBackupSource.includes(
+    "var BASE_RELEASE = '4.0.0-alpha.7.4.42';"
+  ));
   assert(core.includes('BACKUP_REGISTRY'));
   assert(engine.includes('AKORT.Beta11BackupHandlers.supports(type)'));
-  assert(pairedBackupSource.includes(
-    "var PACKAGE_VERSION = '4.0.0-beta.1.1.2';"
-  ));
   assert(pairedBackupSource.includes(
     "var OPERATION_TYPE = 'BETA11_PAIRED_BACKUP';"
   ));

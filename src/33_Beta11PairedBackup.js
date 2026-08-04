@@ -1,11 +1,11 @@
 var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
-/** Beta.1.1 r2: paired DEV backup over the accepted Operation Engine. */
+/** Beta.1.1 r3: paired DEV backup with read-only deployment preflight. */
 AKORT.Beta11PairedBackup = (function () {
-  var PACKAGE_VERSION = '4.0.0-beta.1.1.2';
-  var CONTRACT_VERSION = '4.0-beta11-paired-backup-2';
+  var PACKAGE_VERSION = '4.0.0-beta.1.1.3';
+  var CONTRACT_VERSION = '4.0-beta11-paired-backup-3';
   var BASE_RELEASE = '4.0.0-alpha.7.4.42';
-  var BASE_COMMIT = '59372f73eb12f600b1ed8f6960ed18861cda613b';
+  var BASE_COMMIT = 'e5cda440d8c59f0e513c61b6a52aee163712de5a';
   var OPERATION_TYPE = 'BETA11_PAIRED_BACKUP';
   var REGISTRY = 'BACKUP_REGISTRY';
   var FOLDER_NAME = '08_Резервные копии';
@@ -619,6 +619,203 @@ AKORT.Beta11PairedBackup = (function () {
     }
   }
 
+  function registryInspection_() {
+    var sheet = dwh_().getSheetByName(REGISTRY);
+    if (!sheet) {
+      return {
+        status: 'ABSENT',
+        schemaMatches: true,
+        rows: 0,
+        columns: 0,
+        actualHeaders: []
+      };
+    }
+    var actual = sheet.getRange(
+      1,
+      1,
+      1,
+      Math.max(1, sheet.getLastColumn())
+    ).getValues()[0].map(String);
+    var expected = AKORT.Core.Tables.BACKUP_REGISTRY || [];
+    return {
+      status: 'PRESENT',
+      schemaMatches: JSON.stringify(actual) === JSON.stringify(expected),
+      rows: Math.max(0, sheet.getLastRow() - 1),
+      columns: sheet.getLastColumn(),
+      actualHeaders: actual,
+      expectedHeaders: expected.slice()
+    };
+  }
+
+  function folderInspection_() {
+    var cfg = config_();
+    var root = DriveApp.getFolderById(cfg.resources.devRootFolderId);
+    var iterator = root.getFoldersByName(FOLDER_NAME);
+    var matches = [];
+    while (iterator.hasNext()) {
+      var match = iterator.next();
+      if (!match.isTrashed()) {
+        matches.push({
+          id: match.getId(),
+          name: match.getName(),
+          url: match.getUrl()
+        });
+      }
+    }
+
+    var configuredId = String(
+      cfg.resources.backupFolderId ||
+      PropertiesService.getScriptProperties().getProperty(FOLDER_PROPERTY) ||
+      ''
+    );
+    var configured = null;
+    if (configuredId) {
+      try {
+        var folder = DriveApp.getFolderById(configuredId);
+        var parents = [];
+        var parentIterator = folder.getParents();
+        while (parentIterator.hasNext()) {
+          parents.push(parentIterator.next().getId());
+        }
+        configured = {
+          id: configuredId,
+          exists: true,
+          trashed: folder.isTrashed(),
+          name: folder.getName(),
+          url: folder.getUrl(),
+          parentIds: parents,
+          underDevRoot: parents.indexOf(cfg.resources.devRootFolderId) >= 0
+        };
+      } catch (caught) {
+        configured = {
+          id: configuredId,
+          exists: false,
+          error: String(caught && caught.message || caught)
+        };
+      }
+    }
+
+    return {
+      devRootFolderId: cfg.resources.devRootFolderId,
+      exactMatchCount: matches.length,
+      exactMatches: matches,
+      configured: configured
+    };
+  }
+
+  function nonTerminalBackupOperations_() {
+    var sheet = dwh_().getSheetByName('OPERATION_QUEUE');
+    if (!sheet) return [];
+    var activeStatuses = {
+      QUEUED: true,
+      RUNNING: true,
+      PAUSED: true,
+      RETRY_PENDING: true
+    };
+    return AKORT.Core.Sheets.readObjects(sheet).filter(function (row) {
+      return String(row.operation_type || '') === OPERATION_TYPE &&
+        activeStatuses[String(row.status || '')] === true;
+    }).map(function (row) {
+      return {
+        operationId: String(row.operation_id || ''),
+        status: String(row.status || ''),
+        phase: String(row.current_phase || ''),
+        requestedAt: String(row.requested_at || '')
+      };
+    });
+  }
+
+  function deploymentPreflight() {
+    return AKORT.Core.safeRun(
+      'BETA11_DEPLOYMENT_PREFLIGHT',
+      function () {
+        assertBase_();
+        var cfg = config_();
+        var dwhFile = DriveApp.getFileById(
+          cfg.resources.dwhSpreadsheetId
+        );
+        var publishFile = DriveApp.getFileById(
+          cfg.resources.publishSpreadsheetId
+        );
+        var registry = registryInspection_();
+        var folder = folderInspection_();
+        var triggers = triggerCounts_();
+        var activeOperations = nonTerminalBackupOperations_();
+        var handlerReady = Boolean(
+          AKORT.Beta11BackupHandlers &&
+          typeof AKORT.Beta11BackupHandlers.supports === 'function' &&
+          AKORT.Beta11BackupHandlers.supports(OPERATION_TYPE)
+        );
+        var blockers = [];
+
+        if (!handlerReady) blockers.push('BACKUP_HANDLER_NOT_READY');
+        if (!registry.schemaMatches) {
+          blockers.push('BACKUP_REGISTRY_SCHEMA_MISMATCH');
+        }
+        if (folder.exactMatchCount > 1) {
+          blockers.push('BACKUP_FOLDER_AMBIGUOUS');
+        }
+        if (folder.configured) {
+          if (!folder.configured.exists) {
+            blockers.push('CONFIGURED_BACKUP_FOLDER_MISSING');
+          } else {
+            if (folder.configured.trashed) {
+              blockers.push('CONFIGURED_BACKUP_FOLDER_TRASHED');
+            }
+            if (folder.configured.name !== FOLDER_NAME) {
+              blockers.push('CONFIGURED_BACKUP_FOLDER_NAME_MISMATCH');
+            }
+            if (!folder.configured.underDevRoot) {
+              blockers.push('CONFIGURED_BACKUP_FOLDER_OUTSIDE_DEV_ROOT');
+            }
+          }
+        }
+        if (triggers.daily > 1) {
+          blockers.push('MULTIPLE_DAILY_BACKUP_TRIGGERS');
+        }
+        if (triggers.worker > 1) {
+          blockers.push('MULTIPLE_BACKUP_WORKER_TRIGGERS');
+        }
+        if (activeOperations.length) {
+          blockers.push('NON_TERMINAL_BACKUP_OPERATION_EXISTS');
+        }
+
+        var data = {
+          packageVersion: PACKAGE_VERSION,
+          contractVersion: CONTRACT_VERSION,
+          baseRelease: BASE_RELEASE,
+          baseCommit: BASE_COMMIT,
+          readyToInstall: blockers.length === 0,
+          blockers: blockers,
+          sources: {
+            dwh: fileSummary_(dwhFile),
+            publish: fileSummary_(publishFile)
+          },
+          registry: registry,
+          folder: folder,
+          triggerCounts: triggers,
+          activeBackupOperations: activeOperations,
+          handlerReady: handlerReady,
+          writeBoundary: 'READ_ONLY',
+          userPipelineEnabled: false,
+          productionTouched: false
+        };
+
+        return blockers.length
+          ? AKORT.Result.failure(
+              'BETA11_DEPLOYMENT_PREFLIGHT_BLOCKED',
+              'Beta.1.1 deployment preflight found blockers.',
+              data
+            )
+          : AKORT.Result.success(
+              'Beta.1.1 deployment preflight passed.',
+              data
+            );
+      },
+      { lock: false, persistLogs: false }
+    );
+  }
+
   function operationStatus_(result) {
     var container = result && (result.data || result.details) || {};
     var operation = container.operation ||
@@ -672,32 +869,50 @@ AKORT.Beta11PairedBackup = (function () {
   }
 
   function install() {
-    return AKORT.Core.safeRun('BETA11_PAIRED_BACKUP_INSTALL', function () {
-      assertBase_();
-      var core = AKORT.Core.install();
-      if (!core.ok) return core;
-      var folder = ensureFolder_();
-      var triggerId = installDailyTrigger_();
-      return AKORT.Result.success('Beta.1.1 paired backup installed.', {
-        packageVersion: PACKAGE_VERSION,
-        contractVersion: CONTRACT_VERSION,
-        baseRelease: BASE_RELEASE,
-        backupFolderId: folder.getId(),
-        backupFolderName: folder.getName(),
-        schedule: {
-          frequency: 'DAILY',
-          nominalTime: '04:00',
-          triggerWindow: '03:45-04:15',
-          timezone: TIMEZONE,
-          includesWeekends: true,
-          busyRetryMinutes: 10
-        },
-        dailyTriggerId: triggerId,
-        triggerCounts: triggerCounts_(),
-        userPipelineEnabled: false,
-        productionTouched: false
-      });
-    }, { lock: true, persistLogs: true });
+    var preflight = deploymentPreflight();
+    if (!preflight.ok) return preflight;
+
+    /*
+     * Core.install owns its own Script Lock. It must finish before the
+     * Beta.1.1 installation lock is acquired; Apps Script locks are not
+     * re-entrant.
+     */
+    var core = AKORT.Core.install();
+    if (!core.ok) return core;
+
+    return AKORT.Core.safeRun(
+      'BETA11_PAIRED_BACKUP_INSTALL',
+      function () {
+        assertBase_();
+        var folder = ensureFolder_();
+        var triggerId = installDailyTrigger_();
+        return AKORT.Result.success(
+          'Beta.1.1 paired backup installed.',
+          {
+            packageVersion: PACKAGE_VERSION,
+            contractVersion: CONTRACT_VERSION,
+            baseRelease: BASE_RELEASE,
+            deploymentPreflight: preflight.data,
+            coreInstallation: core.data,
+            backupFolderId: folder.getId(),
+            backupFolderName: folder.getName(),
+            schedule: {
+              frequency: 'DAILY',
+              nominalTime: '04:00',
+              triggerWindow: '03:45-04:15',
+              timezone: TIMEZONE,
+              includesWeekends: true,
+              busyRetryMinutes: 10
+            },
+            dailyTriggerId: triggerId,
+            triggerCounts: triggerCounts_(),
+            userPipelineEnabled: false,
+            productionTouched: false
+          }
+        );
+      },
+      { lock: true, persistLogs: true }
+    );
   }
 
   function backupNow() {
@@ -791,6 +1006,7 @@ AKORT.Beta11PairedBackup = (function () {
     baseRelease: BASE_RELEASE,
     operationType: OPERATION_TYPE,
     execute: execute_,
+    deploymentPreflight: deploymentPreflight,
     install: install,
     backupNow: backupNow,
     dailyTick: dailyTick,
@@ -813,6 +1029,12 @@ AKORT.Beta11BackupHandlers = {
     return AKORT.Beta11PairedBackup.execute(phase, context);
   }
 };
+
+function AKORT_beta11DeploymentPreflight() {
+  var result = AKORT.Beta11PairedBackup.deploymentPreflight();
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
 
 function AKORT_beta11Install() {
   var result = AKORT.Beta11PairedBackup.install();
