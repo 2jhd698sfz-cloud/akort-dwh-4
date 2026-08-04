@@ -1,11 +1,11 @@
 var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
-/** Beta.1.1 r3: paired DEV backup with read-only deployment preflight. */
+/** Beta.1.1 r5: paired DEV backup with explicit result-shape parsing. */
 AKORT.Beta11PairedBackup = (function () {
-  var PACKAGE_VERSION = '4.0.0-beta.1.1.3';
-  var CONTRACT_VERSION = '4.0-beta11-paired-backup-3';
+  var PACKAGE_VERSION = '4.0.0-beta.1.1.5';
+  var CONTRACT_VERSION = '4.0-beta11-paired-backup-5';
   var BASE_RELEASE = '4.0.0-alpha.7.4.42';
-  var BASE_COMMIT = 'e5cda440d8c59f0e513c61b6a52aee163712de5a';
+  var BASE_COMMIT = '7c90ef1b2fb9abe860394c17ec24fe459b505b0e';
   var OPERATION_TYPE = 'BETA11_PAIRED_BACKUP';
   var REGISTRY = 'BACKUP_REGISTRY';
   var FOLDER_NAME = '08_Резервные копии';
@@ -817,10 +817,25 @@ AKORT.Beta11PairedBackup = (function () {
   }
 
   function operationStatus_(result) {
-    var container = result && (result.data || result.details) || {};
-    var operation = container.operation ||
-      container.data && container.data.operation || {};
-    return String(operation.status || '');
+    var data = result && result.data || null;
+    var details = result && result.details || null;
+    var operation = null;
+
+    if (data && data.operation) {
+      operation = data.operation;
+    } else if (details && details.operation) {
+      operation = details.operation;
+    } else if (data && data.data && data.data.operation) {
+      operation = data.data.operation;
+    } else if (data && data.operation_id && data.operation_type) {
+      operation = data;
+    } else if (details &&
+      details.operation_id &&
+      details.operation_type) {
+      operation = details;
+    }
+
+    return String(operation && operation.status || '');
   }
 
   function continueOrSchedule_(operationId, result) {
@@ -1015,7 +1030,8 @@ AKORT.Beta11PairedBackup = (function () {
     Test: {
       dailyBackupId: dailyBackupId_,
       manualBackupId: manualBackupId_,
-      operationBoundary: operationBoundary_
+      operationBoundary: operationBoundary_,
+      operationStatus: operationStatus_
     }
   };
 })();

@@ -33,12 +33,12 @@ function test(name, fn) {
   }
 }
 
-test('r3 source is syntax-valid and pins accepted base', () => {
+test('r5 source is syntax-valid and pins accepted base', () => {
   new vm.Script(backup, { filename: '33_Beta11PairedBackup.js' });
-  assert(backup.includes("var PACKAGE_VERSION = '4.0.0-beta.1.1.3';"));
+  assert(backup.includes("var PACKAGE_VERSION = '4.0.0-beta.1.1.5';"));
   assert(backup.includes("var BASE_RELEASE = '4.0.0-alpha.7.4.42';"));
   assert(backup.includes(
-    "var BASE_COMMIT = 'e5cda440d8c59f0e513c61b6a52aee163712de5a';"
+    "var BASE_COMMIT = '7c90ef1b2fb9abe860394c17ec24fe459b505b0e';"
   ));
 });
 
@@ -134,6 +134,64 @@ test('daily idempotency and retry are bounded', () => {
   assert(backup.includes("? 'WAITING'"));
 });
 
+test('terminal cleanup recognizes every Operation Engine result shape', () => {
+  const sandbox = { console: { log() {} } };
+  vm.createContext(sandbox);
+  new vm.Script(backup, {
+    filename: '33_Beta11PairedBackup.js'
+  }).runInContext(sandbox);
+  const detect = sandbox.AKORT.Beta11PairedBackup.Test.operationStatus;
+
+  assert.equal(detect({
+    data: {
+      operation: { status: 'RETRY_PENDING' }
+    }
+  }), 'RETRY_PENDING');
+
+  assert.equal(detect({
+    details: {
+      operation: { status: 'DEAD_LETTER' }
+    }
+  }), 'DEAD_LETTER');
+
+  assert.equal(detect({
+    data: {
+      operation_id: 'OP_TEST',
+      operation_type: 'BETA11_PAIRED_BACKUP',
+      status: 'SUCCESS'
+    }
+  }), 'SUCCESS');
+
+  assert.equal(detect({
+    status: 'SUCCESS',
+    data: { arbitrary: true }
+  }), '');
+
+  assert.equal(detect({
+    data: {
+      data: {
+        operation: { status: 'PAUSED' }
+      }
+    }
+  }), 'PAUSED');
+
+  assert.equal(detect({
+    details: {
+      operation_id: 'OP_DETAILS',
+      operation_type: 'BETA11_PAIRED_BACKUP',
+      status: 'FAILED'
+    }
+  }), 'FAILED');
+
+  assert.equal(contract.terminalCleanup.wrapperResultStatusIgnored, true);
+  assert.equal(contract.terminalCleanup.clearsActiveOperationProperty, true);
+  assert.equal(contract.terminalCleanup.deletesWorkerTrigger, true);
+  assert.equal(contract.terminalCleanup.operatorPrecedenceAmbiguity, false);
+  assert(!backup.includes(
+    'container.operation_id && container.operation_type ? container : {}'
+  ));
+});
+
 test('public API is narrow', () => {
   [
     'function AKORT_beta11DeploymentPreflight()',
@@ -193,7 +251,7 @@ test('safety boundaries remain exact', () => {
   assert.equal(contract.boundaries.secondQueue, false);
 });
 
-test('r3 suite is wired into full regression', () => {
+test('r5 suite is wired into full regression', () => {
   assert.equal(
     packageJson.scripts['test:beta11-paired-backup'],
     'node tests/beta11_paired_backup_static.test.js'

@@ -1,8 +1,33 @@
-# Beta.1.1 r3 — Paired Backup Contract
+# Beta.1.1 r5 — Paired Backup Contract
 
-Package: `4.0.0-beta.1.1.3`
+Package: `4.0.0-beta.1.1.5`
 Base runtime: `4.0.0-alpha.7.4.42`  
-Base commit: `e5cda440d8c59f0e513c61b6a52aee163712de5a`
+Base commit: `7c90ef1b2fb9abe860394c17ec24fe459b505b0e`
+
+## Terminal cleanup result contract
+
+The accepted Operation Engine may return the final operation row directly in
+`result.data`, rather than under `result.data.operation`. Beta.1.1 must
+recognize all three supported shapes:
+
+- `data.operation.status`;
+- `details.operation.status`;
+- `data.status` only when `data` is itself an operation row identified by
+  `operation_id` and `operation_type`.
+
+The wrapper-level `result.status` is not an operation status and must not be
+used for cleanup decisions. Result shapes are parsed through explicit ordered
+branches; mixed logical and ternary operators are forbidden here because their
+precedence can silently select the container instead of the operation row.
+
+For terminal operation states, Beta.1.1 deletes
+`AKORT_BETA11_ACTIVE_OPERATION_ID` and every
+`AKORT_beta11BackupWorker` trigger. The daily backup trigger is preserved.
+
+The first controlled live backup completed successfully, but r3 did not
+recognize the direct operation-row result shape. This left only stale
+orchestration state; the DWH copy, Publish copy, manifest and registry result
+were not invalidated.
 
 ## Deployment preflight and lock boundary
 
