@@ -151,7 +151,7 @@ function checkpointRow(overrides = {}) {
           targetLoadId: target,
           beta12: {
             packageVersion:
-              '4.0.0-beta.1.2.4',
+              '4.0.0-beta.1.2.5',
             confirmationToken: token,
             reasonHash
           }
@@ -159,6 +159,40 @@ function checkpointRow(overrides = {}) {
         meta: {
           idempotencyKey:
             'BETA12_ROLLBACK_' + token
+        }
+      })
+  };
+}
+
+function sourceOperationRow(overrides = {}) {
+  const idempotencyKey = overrides.idempotencyKey ||
+    'SOURCE_FILE_LOAD_CURRENT';
+  return {
+    operation_id: overrides.operationId || 'OP_SOURCE_1',
+    operation_type:
+      overrides.operationType || 'SOURCE_FILE_LOAD_V4',
+    status: overrides.status || 'SUCCESS',
+    created_by: overrides.createdBy || 'unknown',
+    release_version:
+      overrides.releaseVersion || '4.0.0-alpha.7.4.42',
+    checkpoint_json:
+      overrides.checkpointJson || JSON.stringify({
+        input: {
+          fileName: overrides.fileName || 'AKORT_WEEKLY_W27',
+          sourceName:
+            overrides.sourceName || 'AKORT_WEEKLY_W27'
+        },
+        meta: {
+          idempotencyKey
+        },
+        handlerState: {
+          file: {
+            fileName: overrides.fileName || 'AKORT_WEEKLY_W27'
+          },
+          profile: {
+            profileId: 'AKORT_WEEKLY_W00'
+          },
+          sourceHash: 'SOURCE_HASH'
         }
       })
   };
@@ -178,20 +212,20 @@ function codes(result) {
   return result.blockers.map((item) => item.code);
 }
 
-test('r4 source is syntax-valid and pins the accepted base', () => {
+test('r5 source is syntax-valid and pins the accepted base', () => {
   new vm.Script(source, {
     filename: '35_Beta12RollbackFacade.js'
   });
   assert(source.includes(
-    "var PACKAGE_VERSION = '4.0.0-beta.1.2.4';"
+    "var PACKAGE_VERSION = '4.0.0-beta.1.2.5';"
   ));
   assert(source.includes(
     "var CONTRACT_VERSION = " +
-    "'4.0-beta12-rollback-facade-3';"
+    "'4.0-beta12-rollback-facade-4';"
   ));
   assert(source.includes(
     "var BASE_COMMIT = " +
-    "'439caaa163834dfe8633fdc4c871d530a4bc0ed8';"
+    "'ad27642024690546b16a2b33fa4d3ba8d5dfb8ee';"
   ));
   assert.equal(
     packageJson.version,
@@ -307,6 +341,119 @@ test('accepted evidence protection covers load identity fields', () => {
     }),
     false
   );
+});
+
+test('source-operation provenance blocks Gate restore ancestry', () => {
+  const load = {
+    load_id: 'LOAD_CURRENT',
+    operation_id: 'OP_SOURCE_1'
+  };
+  const regular = facade.Test.sourceOperationProvenance(
+    load,
+    [sourceOperationRow()]
+  );
+  assert.equal(regular.traceable, true);
+  assert.equal(regular.protected, false);
+  assert.equal(regular.blockers.length, 0);
+  assert(regular.fingerprint);
+
+  const gateRestore = facade.Test.sourceOperationProvenance(
+    load,
+    [sourceOperationRow({
+      idempotencyKey:
+        'ALPHA74_GATE6_RESTORE_A74_GATE6_37FAED6EF952F9BB5FD4'
+    })]
+  );
+  assert.equal(gateRestore.protected, true);
+  assert(gateRestore.markerMatches.includes('ALPHA74_GATE6'));
+  assert(codes(gateRestore).includes(
+    'BETA12_ACCEPTANCE_EVIDENCE_PROTECTED'
+  ));
+});
+
+test('source-operation provenance is complete and fail-closed', () => {
+  const missingId = facade.Test.sourceOperationProvenance(
+    { load_id: 'LOAD_CURRENT' },
+    []
+  );
+  assert(codes(missingId).includes(
+    'BETA12_SOURCE_OPERATION_ID_MISSING'
+  ));
+
+  const notFound = facade.Test.sourceOperationProvenance(
+    {
+      load_id: 'LOAD_CURRENT',
+      operation_id: 'OP_MISSING'
+    },
+    []
+  );
+  assert(codes(notFound).includes(
+    'BETA12_SOURCE_OPERATION_NOT_FOUND'
+  ));
+
+  const notSuccess = facade.Test.sourceOperationProvenance(
+    {
+      load_id: 'LOAD_CURRENT',
+      operation_id: 'OP_SOURCE_1'
+    },
+    [sourceOperationRow({ status: 'RUNNING' })]
+  );
+  assert(codes(notSuccess).includes(
+    'BETA12_SOURCE_OPERATION_NOT_SUCCESS'
+  ));
+
+  const reversalLoad = facade.Test.sourceOperationProvenance(
+    {
+      load_id: 'LOAD_REV',
+      operation_id: 'OP_SOURCE_1'
+    },
+    [sourceOperationRow({
+      operationType: 'RAW_REVERSAL_V4'
+    })]
+  );
+  assert(codes(reversalLoad).includes(
+    'BETA12_REVERSAL_LOAD_INELIGIBLE'
+  ));
+
+  assert.throws(
+    () => facade.Test.sourceOperationProvenance(
+      {
+        load_id: 'LOAD_CURRENT',
+        operation_id: 'OP_SOURCE_1'
+      },
+      [
+        sourceOperationRow(),
+        sourceOperationRow()
+      ]
+    ),
+    (error) => error.code ===
+      'BETA12_SOURCE_OPERATION_CONFLICT'
+  );
+});
+
+test('source provenance is bound to preview and confirmation', () => {
+  assert(contract.eligibility.requiresSourceOperation);
+  assert(contract.eligibility.requiresSuccessfulSourceOperation);
+  assert(
+    contract.eligibility
+      .protectsEvidenceBySourceOperationCheckpoint
+  );
+  assert(
+    contract.confirmation.boundFields.includes(
+      'sourceOperationFingerprint'
+    )
+  );
+  assert.equal(
+    contract.confirmation.sourceOperationDriftBehavior,
+    'INVALIDATE_CONFIRMATION_TOKEN'
+  );
+  assert(source.includes(
+    'sourceOperationFingerprint: sourceProvenance.fingerprint'
+  ));
+  assert(source.includes(
+    'sourceOperationFingerprint:\n' +
+    '                previewData.fingerprints.sourceOperation'
+  ));
 });
 
 test('eligibility mirrors latest-load-only policy', () => {
@@ -664,7 +811,7 @@ test('general user pipeline remains disabled', () => {
   });
 });
 
-test('r4 suite is wired once into full regression', () => {
+test('r5 suite remains wired once into full regression', () => {
   assert.equal(
     packageJson.scripts[
       'test:beta12-rollback-facade'

@@ -1,9 +1,9 @@
 {
-  "schemaVersion": "4.0-beta12-rollback-facade-contract-3",
-  "packageVersion": "4.0.0-beta.1.2.4",
-  "contractVersion": "4.0-beta12-rollback-facade-3",
+  "schemaVersion": "4.0-beta12-rollback-facade-contract-4",
+  "packageVersion": "4.0.0-beta.1.2.5",
+  "contractVersion": "4.0-beta12-rollback-facade-4",
   "baseRelease": "4.0.0-alpha.7.4.42",
-  "baseCommit": "439caaa163834dfe8633fdc4c871d530a4bc0ed8",
+  "baseCommit": "ad27642024690546b16a2b33fa4d3ba8d5dfb8ee",
   "requirementId": "BETA1.2-ARBITRARY-ROLLBACK",
   "mode": "DEV_OPERATIONAL_FACADE",
   "dataPlane": {
@@ -40,7 +40,12 @@
     "protectsAcceptedEvidenceLoads": true,
     "invalidCheckpointBehavior": "FAIL_CLOSED",
     "policy": "LATEST_LOAD_ONLY",
-    "previewWrites": false
+    "previewWrites": false,
+    "requiresSourceOperation": true,
+    "requiresSuccessfulSourceOperation": true,
+    "blocksReversalLoads": true,
+    "protectsEvidenceBySourceOperationCheckpoint": true,
+    "sourceOperationConflictBehavior": "FAIL_CLOSED"
   },
   "confirmation": {
     "algorithm": "sha256(canonicalJson(binding))",
@@ -55,9 +60,11 @@
       "unrestoredRowCount",
       "impactFingerprint",
       "lineageFingerprint",
+      "sourceOperationFingerprint",
       "reasonHash"
     ],
-    "driftBehavior": "FAIL_CLOSED_BEFORE_ENQUEUE"
+    "driftBehavior": "FAIL_CLOSED_BEFORE_ENQUEUE",
+    "sourceOperationDriftBehavior": "INVALIDATE_CONFIRMATION_TOKEN"
   },
   "submission": {
     "idempotencyKey": "BETA12_ROLLBACK_<confirmationToken>",

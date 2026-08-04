@@ -1,13 +1,13 @@
 var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
 /**
- * Beta.1.2 r4: consolidated idempotent facade over RAW_REVERSAL_V4.
+ * Beta.1.2 r5: source-provenance protected facade over RAW_REVERSAL_V4.
  */
 AKORT.Beta12RollbackFacade = (function () {
-  var PACKAGE_VERSION = '4.0.0-beta.1.2.4';
-  var CONTRACT_VERSION = '4.0-beta12-rollback-facade-3';
+  var PACKAGE_VERSION = '4.0.0-beta.1.2.5';
+  var CONTRACT_VERSION = '4.0-beta12-rollback-facade-4';
   var BASE_RELEASE = '4.0.0-alpha.7.4.42';
-  var BASE_COMMIT = '439caaa163834dfe8633fdc4c871d530a4bc0ed8';
+  var BASE_COMMIT = 'ad27642024690546b16a2b33fa4d3ba8d5dfb8ee';
   var OPERATION_TYPE = 'RAW_REVERSAL_V4';
   var REASON_MIN = 12;
   var REASON_MAX = 500;
@@ -104,16 +104,21 @@ AKORT.Beta12RollbackFacade = (function () {
     return null;
   }
 
+  function protectedMarkerMatches_(value) {
+    var identity = String(value || '').toUpperCase();
+    return PROTECTED_MARKERS.filter(function (marker) {
+      return identity.indexOf(marker) >= 0;
+    });
+  }
+
   function protectedLoad_(load) {
     var identity = [
       load && load.load_id,
       load && load.source_id,
       load && load.source_name,
       load && load.operation_id
-    ].join('|').toUpperCase();
-    return PROTECTED_MARKERS.some(function (marker) {
-      return identity.indexOf(marker) >= 0;
-    });
+    ].join('|');
+    return protectedMarkerMatches_(identity).length > 0;
   }
 
   function checkpointInput_(operation) {
@@ -125,6 +130,127 @@ AKORT.Beta12RollbackFacade = (function () {
       checkpoint: checkpoint,
       input: checkpoint.input || {},
       meta: checkpoint.meta || {}
+    };
+  }
+
+  function sourceOperationProvenance_(load, operations) {
+    var sourceOperationId = String(
+      load && load.operation_id || ''
+    );
+    var baseEvidence = {
+      sourceOperationId: sourceOperationId,
+      targetLoadId: String(load && load.load_id || '')
+    };
+
+    if (!sourceOperationId) {
+      baseEvidence.state = 'SOURCE_OPERATION_ID_MISSING';
+      return {
+        traceable: false,
+        protected: false,
+        operationId: '',
+        operationType: '',
+        operationStatus: '',
+        idempotencyKey: '',
+        markerMatches: [],
+        fingerprint: AKORT.Core.sha256(
+          AKORT.Core.canonicalJson(baseEvidence)
+        ),
+        blockers: [{
+          code: 'BETA12_SOURCE_OPERATION_ID_MISSING'
+        }]
+      };
+    }
+
+    var matches = (operations || []).filter(function (operation) {
+      return String(operation.operation_id || '') ===
+        sourceOperationId;
+    });
+    if (matches.length > 1) {
+      throw AKORT.Core.error(
+        'BETA12_SOURCE_OPERATION_CONFLICT',
+        'More than one source operation has the selected operation_id.',
+        {
+          retryable: false,
+          sourceOperationId: sourceOperationId,
+          matchCount: matches.length
+        }
+      );
+    }
+    if (!matches.length) {
+      baseEvidence.state = 'SOURCE_OPERATION_NOT_FOUND';
+      return {
+        traceable: false,
+        protected: false,
+        operationId: sourceOperationId,
+        operationType: '',
+        operationStatus: '',
+        idempotencyKey: '',
+        markerMatches: [],
+        fingerprint: AKORT.Core.sha256(
+          AKORT.Core.canonicalJson(baseEvidence)
+        ),
+        blockers: [{
+          code: 'BETA12_SOURCE_OPERATION_NOT_FOUND',
+          operationId: sourceOperationId
+        }]
+      };
+    }
+
+    var operation = matches[0];
+    var parsed = checkpointInput_(operation);
+    var checkpoint = parsed.checkpoint;
+    var handlerState = checkpoint.handlerState || {};
+    var parseState = handlerState.parse || {};
+    var evidence = {
+      sourceOperationId: sourceOperationId,
+      operationType: String(operation.operation_type || ''),
+      operationStatus: String(operation.status || ''),
+      createdBy: String(operation.created_by || ''),
+      releaseVersion: String(operation.release_version || ''),
+      idempotencyKey: String(parsed.meta.idempotencyKey || ''),
+      input: parsed.input || {},
+      handlerFile: handlerState.file || {},
+      handlerProfile: handlerState.profile || {},
+      parseProfile: parseState.profile || {},
+      resolvedOptions: handlerState.resolvedOptions || {},
+      sourceHash: String(handlerState.sourceHash || '')
+    };
+    var evidenceJson = AKORT.Core.canonicalJson(evidence);
+    var markerMatches = protectedMarkerMatches_(evidenceJson);
+    var blockers = [];
+
+    if (String(operation.status || '') !== 'SUCCESS') {
+      blockers.push({
+        code: 'BETA12_SOURCE_OPERATION_NOT_SUCCESS',
+        operationId: sourceOperationId,
+        operationStatus: String(operation.status || '')
+      });
+    }
+    if (String(operation.operation_type || '') === OPERATION_TYPE) {
+      blockers.push({
+        code: 'BETA12_REVERSAL_LOAD_INELIGIBLE',
+        operationId: sourceOperationId
+      });
+    }
+    if (markerMatches.length) {
+      blockers.push({
+        code: 'BETA12_ACCEPTANCE_EVIDENCE_PROTECTED',
+        provenance: 'SOURCE_OPERATION',
+        operationId: sourceOperationId,
+        markerMatches: markerMatches
+      });
+    }
+
+    return {
+      traceable: true,
+      protected: markerMatches.length > 0,
+      operationId: sourceOperationId,
+      operationType: String(operation.operation_type || ''),
+      operationStatus: String(operation.status || ''),
+      idempotencyKey: String(parsed.meta.idempotencyKey || ''),
+      markerMatches: markerMatches,
+      fingerprint: AKORT.Core.sha256(evidenceJson),
+      blockers: blockers
     };
   }
 
@@ -315,6 +441,9 @@ AKORT.Beta12RollbackFacade = (function () {
       return String(row.target_load_id || '') === id;
     });
     var operations = readObjects_(spreadsheet, 'OPERATION_QUEUE');
+    var sourceProvenance = sourceOperationProvenance_(
+      load, operations
+    );
     var eligibility = buildEligibility_(
       load,
       targetRows,
@@ -323,6 +452,12 @@ AKORT.Beta12RollbackFacade = (function () {
       reversalRows,
       operations
     );
+    if (sourceProvenance.blockers.length) {
+      eligibility.blockers = eligibility.blockers.concat(
+        sourceProvenance.blockers
+      );
+      eligibility.eligible = false;
+    }
 
     var reasonHash = AKORT.Core.sha256(normalizedReason);
     var lineageRows = eligibility.predecessors.map(function (item) {
@@ -397,6 +532,7 @@ AKORT.Beta12RollbackFacade = (function () {
         targetRows.length - restoredRowCount,
       impactFingerprint: impactFingerprint,
       lineageFingerprint: lineageFingerprint,
+      sourceOperationFingerprint: sourceProvenance.fingerprint,
       reasonHash: reasonHash
     };
     var token = AKORT.Core.sha256(
@@ -427,7 +563,17 @@ AKORT.Beta12RollbackFacade = (function () {
         activeOperationId: eligibility.activeOperationId,
         targetRowCount: targetRows.length,
         laterConflictCount:
-          eligibility.laterConflictCount
+          eligibility.laterConflictCount,
+        sourceOperation: {
+          traceable: sourceProvenance.traceable,
+          protected: sourceProvenance.protected,
+          operationId: sourceProvenance.operationId,
+          operationType: sourceProvenance.operationType,
+          operationStatus: sourceProvenance.operationStatus,
+          idempotencyKey: sourceProvenance.idempotencyKey,
+          markerMatches: sourceProvenance.markerMatches,
+          fingerprint: sourceProvenance.fingerprint
+        }
       },
       restoration: {
         restoredRowCount: restoredRowCount,
@@ -438,6 +584,7 @@ AKORT.Beta12RollbackFacade = (function () {
       fingerprints: {
         lineage: lineageFingerprint,
         impact: impactFingerprint,
+        sourceOperation: sourceProvenance.fingerprint,
         reason: reasonHash
       },
       confirmationToken: token,
@@ -923,6 +1070,8 @@ AKORT.Beta12RollbackFacade = (function () {
                 previewData.fingerprints.lineage,
               impactFingerprint:
                 previewData.fingerprints.impact,
+              sourceOperationFingerprint:
+                previewData.fingerprints.sourceOperation,
               reasonHash:
                 previewData.fingerprints.reason,
               previewTargetRows:
@@ -993,6 +1142,7 @@ AKORT.Beta12RollbackFacade = (function () {
       reasonMaximumCharacters: REASON_MAX,
       previewWrites: false,
       invalidCheckpointBehavior: 'FAIL_CLOSED',
+      sourceOperationProvenance: 'REQUIRED_AND_BOUND',
       terminalFailureReportedAsSuccess: false,
       newQueue: false,
       newExecutor: false,
@@ -1016,6 +1166,8 @@ AKORT.Beta12RollbackFacade = (function () {
       parseCheckpoint: parseCheckpoint_,
       normalizeReason: normalizeReason_,
       protectedLoad: protectedLoad_,
+      sourceOperationProvenance:
+        sourceOperationProvenance_,
       buildEligibility: buildEligibility_,
       findExistingSubmissionInRows:
         findExistingSubmissionInRows_,
