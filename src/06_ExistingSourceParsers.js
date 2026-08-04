@@ -39,7 +39,7 @@ AKORT.ExistingSourceParsers = (function () {
     },
     PARSER_FAIL_ON_UNMAPPED: {
       value: true, type: 'BOOLEAN',
-      description: 'Block source loads when exact active mapping is absent'
+      description: 'Compatibility flag for fail-closed parser contract errors; source rows outside the active monitoring scope are ignored'
     },
     PARSER_TEMP_CONVERSION_ENABLED: {
       value: true, type: 'BOOLEAN',
@@ -570,20 +570,41 @@ AKORT.ExistingSourceParsers = (function () {
   }
 
   function mappingIndex_(profile, mappings, period) {
-    var result = {};
+    var byName = {};
+    var categoryIds = {};
+    var activeMappings = [];
+
     mappings.forEach(function (mapping) {
       if (!truthy_(mapping.is_active)) return;
       if (String(mapping.dataset_code || '') !== profile.datasetCode) return;
       if (String(mapping.source_file_type || '') !== profile.sourceFileType) return;
-      if (isIndexValueType_(profile.valueType) && norm_(mapping.value_type) !== norm_(profile.valueType)) return;
-      if (mapping.valid_from && new Date(mapping.valid_from).getTime() > period.getTime()) return;
-      if (mapping.valid_to && new Date(mapping.valid_to).getTime() < period.getTime()) return;
+      if (
+        isIndexValueType_(profile.valueType) &&
+        norm_(mapping.value_type) !== norm_(profile.valueType)
+      ) return;
+      if (
+        mapping.valid_from &&
+        new Date(mapping.valid_from).getTime() > period.getTime()
+      ) return;
+      if (
+        mapping.valid_to &&
+        new Date(mapping.valid_to).getTime() < period.getTime()
+      ) return;
+
+      activeMappings.push(mapping);
+      categoryIds[String(mapping.category_id)] = true;
+
       nameKeys_(mapping.source_product_name).forEach(function (key) {
-        if (!result[key]) result[key] = [];
-        result[key].push(mapping);
+        if (!byName[key]) byName[key] = [];
+        byName[key].push(mapping);
       });
     });
-    return result;
+
+    return {
+      byName: byName,
+      categoryIds: categoryIds,
+      activeMappings: activeMappings
+    };
   }
 
   function isIndexValueType_(valueType) {
@@ -640,69 +661,247 @@ AKORT.ExistingSourceParsers = (function () {
 
   function mapObservations_(profile, parsed, reference, options) {
     options = options || {};
+
     var products = productIndex_(reference.products || []);
-    var mappings = mappingIndex_(profile, reference.mappings || [], parsed.observations.length ? parsed.observations[0].period : new Date());
-    var buckets = {}, issues = [];
+    var period = parsed.observations.length
+      ? parsed.observations[0].period
+      : new Date();
+    var mappingScope = mappingIndex_(
+      profile,
+      reference.mappings || [],
+      period
+    );
+
+    var configuredCategoryIds = {};
+    if (profile.datasetCode.indexOf('AKORT_') === 0) {
+      Object.keys(products.byId).forEach(function (categoryId) {
+        configuredCategoryIds[categoryId] = true;
+      });
+    } else {
+      configuredCategoryIds = mappingScope.categoryIds;
+    }
+
+    var buckets = {};
+    var issues = [];
+    var matchedCategoryIds = {};
+    var matchedObservationCount = 0;
+    var ignoredObservationCount = 0;
+    var ignoredSourceLabels = {};
+
+    if (!Object.keys(configuredCategoryIds).length) {
+      issues.push(issue_(
+        'ERROR',
+        'MONITORING_SCOPE_EMPTY',
+        null,
+        {
+          datasetCode: profile.datasetCode,
+          sourceFileType: profile.sourceFileType,
+          valueType: profile.valueType
+        }
+      ));
+    }
+
     parsed.observations.forEach(function (observation) {
       var targets = [];
+
       if (profile.datasetCode.indexOf('AKORT_') === 0) {
         nameKeys_(observation.sourceName).some(function (key) {
-          if (products.byName[key]) { targets = [{ category_id: products.byName[key].category_id }]; return true; }
+          if (products.byName[key]) {
+            targets = [{
+              category_id: products.byName[key].category_id
+            }];
+            return true;
+          }
           return false;
         });
+
         if (!targets.length) {
-          var alias = AKORT_PRODUCT_ALIASES[canonicalName_(observation.sourceName)];
+          var alias =
+            AKORT_PRODUCT_ALIASES[
+              canonicalName_(observation.sourceName)
+            ];
           if (alias) {
             nameKeys_(alias).some(function (key) {
-              if (products.byName[key]) { targets = [{ category_id: products.byName[key].category_id }]; return true; }
+              if (products.byName[key]) {
+                targets = [{
+                  category_id: products.byName[key].category_id
+                }];
+                return true;
+              }
               return false;
             });
           }
         }
-      } else targets = exactMappings_(mappings, observation.sourceName);
+      } else {
+        targets = exactMappings_(
+          mappingScope.byName,
+          observation.sourceName
+        );
+      }
+
       if (!targets.length) {
-        issues.push(issue_('ERROR', 'MAPPING_REQUIRED', observation, {
-          datasetCode: profile.datasetCode, sourceFileType: profile.sourceFileType, valueType: observation.valueType
-        }));
+        ignoredObservationCount += 1;
+        ignoredSourceLabels[text_(observation.sourceName)] = true;
         return;
       }
+
+      matchedObservationCount += 1;
+
       targets.forEach(function (mapping) {
-        var product = products.byId[String(mapping.category_id)];
-        if (!product) { issues.push(issue_('ERROR', 'TARGET_CATEGORY_MISSING', observation, { categoryId: mapping.category_id })); return; }
+        var categoryId = String(mapping.category_id);
+        var product = products.byId[categoryId];
+
+        if (!product) {
+          issues.push(issue_(
+            'ERROR',
+            'TARGET_CATEGORY_MISSING',
+            observation,
+            { categoryId: mapping.category_id }
+          ));
+          return;
+        }
+
+        matchedCategoryIds[categoryId] = true;
+
         var converted = { value: observation.value };
         if (!isIndexValueType_(observation.valueType)) {
-          var sourceUnit = observation.sourceUnit || stripUnit_(observation.sourceName).unit || product.unit;
-          converted = convertUnit_(observation.value, sourceUnit, product.unit);
-          if (converted.error) { issues.push(issue_('ERROR', converted.error, observation, { sourceUnit: sourceUnit, targetUnit: product.unit, categoryId: product.category_id })); return; }
+          var sourceUnit =
+            observation.sourceUnit ||
+            stripUnit_(observation.sourceName).unit ||
+            product.unit;
+          converted = convertUnit_(
+            observation.value,
+            sourceUnit,
+            product.unit
+          );
+          if (converted.error) {
+            issues.push(issue_(
+              'ERROR',
+              converted.error,
+              observation,
+              {
+                sourceUnit: sourceUnit,
+                targetUnit: product.unit,
+                categoryId: product.category_id
+              }
+            ));
+            return;
+          }
         }
-        var row = profile.frequency === 'weekly' ? {
-          dataset_code: profile.datasetCode, category_id: product.category_id,
-          value_type: observation.valueType, index_type: observation.indexType || '',
-          observation_date: observation.period, value: converted.value,
-          source_published_at: options.sourcePublishedAt || ''
-        } : {
-          dataset_code: profile.datasetCode, category_id: product.category_id,
-          value_type: observation.valueType, index_type: observation.indexType || '',
-          observation_month: observation.period, value: converted.value,
-          source_published_at: options.sourcePublishedAt || ''
-        };
-        row = AKORT.RawStore.normalizeRow(profile.targetTable, row);
-        var key = AKORT.RawStore.businessKey(profile.targetTable, row);
-        if (!buckets[key]) buckets[key] = { row: row, values: [], labels: [], sourceRow: observation.sourceRow, sourceColumn: observation.sourceColumn };
+
+        var row = profile.frequency === 'weekly'
+          ? {
+              dataset_code: profile.datasetCode,
+              category_id: product.category_id,
+              value_type: observation.valueType,
+              index_type: observation.indexType || '',
+              observation_date: observation.period,
+              value: converted.value,
+              source_published_at:
+                options.sourcePublishedAt || ''
+            }
+          : {
+              dataset_code: profile.datasetCode,
+              category_id: product.category_id,
+              value_type: observation.valueType,
+              index_type: observation.indexType || '',
+              observation_month: observation.period,
+              value: converted.value,
+              source_published_at:
+                options.sourcePublishedAt || ''
+            };
+
+        row = AKORT.RawStore.normalizeRow(
+          profile.targetTable,
+          row
+        );
+
+        var key = AKORT.RawStore.businessKey(
+          profile.targetTable,
+          row
+        );
+
+        if (!buckets[key]) {
+          buckets[key] = {
+            row: row,
+            values: [],
+            labels: [],
+            sourceRow: observation.sourceRow,
+            sourceColumn: observation.sourceColumn
+          };
+        }
+
         buckets[key].values.push(Number(converted.value));
         buckets[key].labels.push(observation.sourceName);
       });
     });
+
+    var ignoredLabels = Object.keys(ignoredSourceLabels).sort();
+    if (ignoredObservationCount) {
+      issues.push(issue_(
+        'INFO',
+        'OUT_OF_MONITORING_SCOPE_IGNORED',
+        null,
+        {
+          datasetCode: profile.datasetCode,
+          sourceFileType: profile.sourceFileType,
+          valueType: profile.valueType,
+          observationCount: ignoredObservationCount,
+          uniqueSourceLabelCount: ignoredLabels.length,
+          sourceLabelsSample: ignoredLabels.slice(0, 20)
+        }
+      ));
+    }
+
     var rows = [];
     Object.keys(buckets).forEach(function (key) {
       var bucket = buckets[key];
-      bucket.row.value = bucket.values.reduce(function (sum, value) { return sum + value; }, 0) / bucket.values.length;
-      rows.push({ row: bucket.row, sourceLabel: bucket.labels.join(' | '), sourceRow: bucket.sourceRow, sourceColumn: bucket.sourceColumn });
-      if (bucket.values.length > 1) issues.push(issue_('WARNING', 'MULTIPLE_SOURCE_VALUES_AGGREGATED', {
-        sourceName: bucket.labels.join(' | '), sourceRow: bucket.sourceRow, sourceColumn: bucket.sourceColumn
-      }, { businessKey: key, count: bucket.values.length, aggregation: 'AVERAGE' }));
+      bucket.row.value = bucket.values.reduce(
+        function (sum, value) {
+          return sum + value;
+        },
+        0
+      ) / bucket.values.length;
+
+      rows.push({
+        row: bucket.row,
+        sourceLabel: bucket.labels.join(' | '),
+        sourceRow: bucket.sourceRow,
+        sourceColumn: bucket.sourceColumn
+      });
+
+      if (bucket.values.length > 1) {
+        issues.push(issue_(
+          'WARNING',
+          'MULTIPLE_SOURCE_VALUES_AGGREGATED',
+          {
+            sourceName: bucket.labels.join(' | '),
+            sourceRow: bucket.sourceRow,
+            sourceColumn: bucket.sourceColumn
+          },
+          {
+            businessKey: key,
+            count: bucket.values.length,
+            aggregation: 'AVERAGE'
+          }
+        ));
+      }
     });
-    return { rows: rows, issues: issues };
+
+    return {
+      rows: rows,
+      issues: issues,
+      monitoringScope: {
+        configuredCategoryCount:
+          Object.keys(configuredCategoryIds).length,
+        matchedCategoryCount:
+          Object.keys(matchedCategoryIds).length,
+        matchedObservationCount: matchedObservationCount,
+        ignoredObservationCount: ignoredObservationCount,
+        ignoredSourceLabelCount: ignoredLabels.length,
+        ignoredSourceLabelsSample: ignoredLabels.slice(0, 20)
+      }
+    };
   }
 
   function parseMatrix(profileId, values, options) {
@@ -718,6 +917,7 @@ AKORT.ExistingSourceParsers = (function () {
       issues: mapped.issues,
       sourceObservationCount: parsed.observations.length,
       normalizedRowCount: mapped.rows.length,
+      monitoringScope: clone_(mapped.monitoringScope || {}),
       structure: parsed.structure
     };
   }
@@ -832,6 +1032,7 @@ AKORT.ExistingSourceParsers = (function () {
       profile: publicProfile_(detected.profile), confidence: { score: detected.score, margin: detected.margin, candidates: detected.candidates },
       resolvedOptions: resolved,
       sourceObservationCount: parsed.sourceObservationCount, normalizedRowCount: parsed.normalizedRowCount,
+      monitoringScope: clone_(parsed.monitoringScope || {}),
       issues: parsed.issues, sampleRows: parsed.rows.slice(0, 10).map(function (item) { return item.row; })
     });
   }
@@ -902,7 +1103,9 @@ AKORT.ExistingSourceParsers = (function () {
       profile: publicProfile_(detected.profile), confidence: { score: detected.score, margin: detected.margin },
       resolvedOptions: resolved,
       targetTable: detected.profile.targetTable, sourceObservationCount: parsed.sourceObservationCount,
-      normalizedRowCount: parsed.normalizedRowCount, parserStageRows: staged,
+      normalizedRowCount: parsed.normalizedRowCount,
+      monitoringScope: clone_(parsed.monitoringScope || {}),
+      parserStageRows: staged,
       issueCount: issueCount, blockingIssueCount: blocking.length
     };
   }

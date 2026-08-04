@@ -3,7 +3,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
 
 var AKORT_RELEASE_DEFINITION = {
   system: 'AKORT analytical monitoring system',
-  version: '4.0.0-alpha.7.4.36',
+  version: '4.0.0-alpha.7.4.37',
   channel: 'alpha',
   environment: 'DEV',
   schemaVersion: '4.0-core-1',

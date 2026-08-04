@@ -164,14 +164,101 @@ AKORT.Alpha5Tests = (function () {
         return result.rows.map(function (item) { return item.row.category_id; });
       }));
 
-      tests.push(test_('blocking_validation', function () {
-        var zeroRows = false, unmapped = false;
-        try { AKORT.ExistingSourceParsers.parseMatrix('AKORT_WEEKLY_W00', [['YEAR', 2099], ['WEEK', 1], [], [], [], ['product_name', 'purchase_price', 'retail_price']], { referenceData: ref_() }); }
-        catch (caught) { zeroRows = caught.code === 'PARSER_ZERO_ROWS'; }
-        var result = AKORT.ExistingSourceParsers.parseMatrix('ROSSTAT_WEEKLY_RETAIL_PRICES', [['YEAR', 2099], [], ['Еженедельные цены'], [], ['product_name / observation_date', 'на 5 января'], ['Неизвестная категория', 100]], { referenceData: ref_('AVG_PRICE', 'розница') });
-        unmapped = result.issues.some(function (issue) { return issue.issueCode === 'MAPPING_REQUIRED'; });
-        require_(zeroRows && unmapped, 'PARSER_VALIDATION_CONTRACT', 'Zero-row or mapping validation did not fire.', { zeroRows: zeroRows, issues: result.issues });
-        return { zeroRowsBlocked: zeroRows, mappingIssueCreated: unmapped };
+      tests.push(test_('source_scope_filtering_and_blocking_validation', function () {
+        var zeroRows = false;
+
+        try {
+          AKORT.ExistingSourceParsers.parseMatrix(
+            'AKORT_WEEKLY_W00',
+            [
+              ['YEAR', 2099],
+              ['WEEK', 1],
+              [],
+              [],
+              [],
+              ['product_name', 'purchase_price', 'retail_price']
+            ],
+            { referenceData: ref_() }
+          );
+        } catch (caught) {
+          zeroRows = caught.code === 'PARSER_ZERO_ROWS';
+        }
+
+        var values = [
+          ['YEAR', 2099],
+          [],
+          ['Еженедельные цены'],
+          [],
+          ['product_name / observation_date', 'на 5 января'],
+          ['Капуста белокочанная свежая, кг', 100],
+          ['Категория вне мониторинга', 200]
+        ];
+
+        var filtered =
+          AKORT.ExistingSourceParsers.parseMatrix(
+            'ROSSTAT_WEEKLY_RETAIL_PRICES',
+            values,
+            {
+              referenceData: ref_('AVG_PRICE', 'розница')
+            }
+          );
+
+        var blocking = filtered.issues.filter(function (issue) {
+          return issue.severity === 'ERROR';
+        });
+        var scopeInfo = filtered.issues.filter(function (issue) {
+          return issue.issueCode ===
+            'OUT_OF_MONITORING_SCOPE_IGNORED';
+        });
+
+        require_(
+          filtered.rows.length === 1 &&
+            filtered.monitoringScope.configuredCategoryCount === 1 &&
+            filtered.monitoringScope.matchedCategoryCount === 1 &&
+            filtered.monitoringScope.ignoredObservationCount === 1 &&
+            filtered.monitoringScope.ignoredSourceLabelCount === 1 &&
+            blocking.length === 0 &&
+            scopeInfo.length === 1,
+          'PARSER_SOURCE_SCOPE_FILTER_FAILED',
+          'Full source export was not filtered by the active monitoring scope.',
+          filtered
+        );
+
+        var emptyScope =
+          AKORT.ExistingSourceParsers.parseMatrix(
+            'ROSSTAT_WEEKLY_RETAIL_PRICES',
+            values,
+            {
+              referenceData: {
+                products: ref_().products,
+                mappings: []
+              }
+            }
+          );
+
+        var emptyScopeBlocked =
+          emptyScope.issues.some(function (issue) {
+            return issue.severity === 'ERROR' &&
+              issue.issueCode === 'MONITORING_SCOPE_EMPTY';
+          });
+
+        require_(
+          zeroRows && emptyScopeBlocked,
+          'PARSER_VALIDATION_CONTRACT',
+          'Zero-row or empty monitoring-scope validation did not fire.',
+          {
+            zeroRows: zeroRows,
+            emptyScope: emptyScope
+          }
+        );
+
+        return {
+          zeroRowsBlocked: zeroRows,
+          sourceScopeFiltered: true,
+          ignoredObservationCount:
+            filtered.monitoringScope.ignoredObservationCount,
+          emptyScopeBlocked: emptyScopeBlocked
+        };
       }));
 
       tests.push(test_('operation_engine_integration', function () {

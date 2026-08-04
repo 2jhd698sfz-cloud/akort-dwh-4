@@ -30,15 +30,15 @@ function test(name, fn) {
 }
 
 test('Gate 7 candidate release is exact', () => {
-  assert(release.includes("version: '4.0.0-alpha.7.4.36'"));
-  assert(integration.includes("var RELEASE = '4.0.0-alpha.7.4.36';"));
-  assert(industry.includes("var RELEASE = '4.0.0-alpha.7.4.36';"));
-  assert.equal(packageJson.version, '4.0.0-alpha.7.4.36');
+  assert(release.includes("version: '4.0.0-alpha.7.4.37'"));
+  assert(integration.includes("var RELEASE = '4.0.0-alpha.7.4.37';"));
+  assert(industry.includes("var RELEASE = '4.0.0-alpha.7.4.37';"));
+  assert.equal(packageJson.version, '4.0.0-alpha.7.4.37');
 });
 
 test('Accepted Gate 6 evidence remains pinned to .35', () => {
   assert(gate6.includes("var RELEASE = '4.0.0-alpha.7.4.35';"));
-  assert(!gate6.includes("var RELEASE = '4.0.0-alpha.7.4.36';"));
+  assert(!gate6.includes("var RELEASE = '4.0.0-alpha.7.4.37';"));
 });
 
 test('Gate 7 metadata and state contracts are exact', () => {

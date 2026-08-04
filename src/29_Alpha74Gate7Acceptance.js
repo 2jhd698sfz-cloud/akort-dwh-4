@@ -12,7 +12,7 @@ AKORT.Alpha74Gate7Acceptance = (function () {
   var VERSION = '4.0-alpha74-gate7-acceptance-1';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate7-evidence-1';
   var STATE_SCHEMA = '4.0-alpha74-gate7-state-1';
-  var RELEASE = '4.0.0-alpha.7.4.36';
+  var RELEASE = '4.0.0-alpha.7.4.37';
 
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE7_STATE_V1';
   var CONTROL_SHEET = 'GATE7_CONTROL_FILES';
@@ -510,6 +510,10 @@ AKORT.Alpha74Gate7Acceptance = (function () {
           structuralFingerprint: item.structuralFingerprint,
           sourceObservationCount: item.sourceObservationCount,
           normalizedRowCount: item.normalizedRowCount,
+          configuredCategoryCount: item.configuredCategoryCount,
+          matchedCategoryCount: item.matchedCategoryCount,
+          ignoredObservationCount: item.ignoredObservationCount,
+          ignoredSourceLabelCount: item.ignoredSourceLabelCount,
           issueCount: item.issueCount,
           warningCount: item.warningCount
         };
@@ -602,6 +606,10 @@ AKORT.Alpha74Gate7Acceptance = (function () {
       resolvedOptions: item.resolvedOptions,
       sourceObservationCount: item.sourceObservationCount,
       normalizedRowCount: item.normalizedRowCount,
+      configuredCategoryCount: item.configuredCategoryCount,
+      matchedCategoryCount: item.matchedCategoryCount,
+      ignoredObservationCount: item.ignoredObservationCount,
+      ignoredSourceLabelCount: item.ignoredSourceLabelCount,
       issueCount: item.issueCount,
       warningCount: item.warningCount,
       infoCount: item.infoCount
@@ -726,6 +734,8 @@ AKORT.Alpha74Gate7Acceptance = (function () {
       }
     );
 
+    var monitoringScope = data.monitoringScope || {};
+
     var item = {
       profileId: entry.profileId,
       familyCode: entry.familyCode,
@@ -747,6 +757,14 @@ AKORT.Alpha74Gate7Acceptance = (function () {
       resolvedOptions: resolved,
       sourceObservationCount: Number(data.sourceObservationCount || 0),
       normalizedRowCount: Number(data.normalizedRowCount || 0),
+      configuredCategoryCount:
+        Number(monitoringScope.configuredCategoryCount || 0),
+      matchedCategoryCount:
+        Number(monitoringScope.matchedCategoryCount || 0),
+      ignoredObservationCount:
+        Number(monitoringScope.ignoredObservationCount || 0),
+      ignoredSourceLabelCount:
+        Number(monitoringScope.ignoredSourceLabelCount || 0),
       issueCount: issues.length,
       warningCount: warnings.length,
       infoCount: infos.length
@@ -789,6 +807,15 @@ AKORT.Alpha74Gate7Acceptance = (function () {
         }
       );
     });
+  }
+
+  function stateContractMatches_(state) {
+    return Boolean(
+      state &&
+      text_(state.schemaVersion) === STATE_SCHEMA &&
+      text_(state.release) === RELEASE &&
+      text_(state.version) === VERSION
+    );
   }
 
   function newPreviewState_(control) {
@@ -959,7 +986,7 @@ AKORT.Alpha74Gate7Acceptance = (function () {
         );
 
         if (
-          state &&
+          stateContractMatches_(state) &&
           state.status === 'PREVIEW_ACCEPTED'
         ) {
           assert_(
@@ -992,7 +1019,7 @@ AKORT.Alpha74Gate7Acceptance = (function () {
         }
 
         if (
-          !state ||
+          !stateContractMatches_(state) ||
           state.status !== 'PREVIEW_RUNNING' ||
           state.controlFingerprint !== control.fingerprint
         ) {
@@ -1083,6 +1110,14 @@ AKORT.Alpha74Gate7Acceptance = (function () {
                 sourceHash: item.sourceHash,
                 normalizedRowCount:
                   item.normalizedRowCount,
+                configuredCategoryCount:
+                  item.configuredCategoryCount,
+                matchedCategoryCount:
+                  item.matchedCategoryCount,
+                ignoredObservationCount:
+                  item.ignoredObservationCount,
+                ignoredSourceLabelCount:
+                  item.ignoredSourceLabelCount,
                 issueCount: item.issueCount
               };
             }),
