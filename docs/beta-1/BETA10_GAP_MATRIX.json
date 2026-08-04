@@ -1,0 +1,162 @@
+{
+  "schemaVersion": "4.0-beta1-gap-matrix-1",
+  "packageVersion": "4.0.0-beta.1.0.1",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "28d9827a8b80f1bdda615e00bab22d35cd8130cc",
+  "gate7Evidence": {
+    "evidenceId": "G7E_5F028CEB97F66118A57E5B6C",
+    "evidenceHash": "5f028ceb97f66118a57e5b6cb6a78dc67355bf41fb6ddbb8796894e4401dc3fc",
+    "acceptedAt": "2026-08-04T13:08:44.181Z",
+    "controlFingerprint": "3772f95e5044c62178ea45e754949b224ed40aa05774337a84802b8235bd7f96",
+    "previewMatrixFingerprint": "db4197faeebb5d3db485be645c3c34e159ecc786da8a3fd04dbc3dcde9151127"
+  },
+  "requirements": [
+    {
+      "requirementId": "BETA1.0-BASELINE-GUARD",
+      "releaseUnit": "Beta.1.0",
+      "title": "Accepted Alpha.7.4 baseline remains immutable",
+      "sourceDocuments": [
+        "Ход создания системы 4.0",
+        "Системная модель",
+        "Порядок создания релиза 4"
+      ],
+      "existingComponents": [
+        "Alpha.7.4 Gate 7 evidence",
+        "AKORT.EnvironmentGuard",
+        "accepted Gate 6 release 4.0.0-alpha.7.4.35",
+        "accepted Alpha.7.4 release 4.0.0-alpha.7.4.42"
+      ],
+      "gapStatus": "ALREADY_IMPLEMENTED",
+      "exactGap": "No data-plane code gap. Beta.1 requires static guards so later packages cannot silently change accepted evidence, production compatibility, schemas or user-pipeline state.",
+      "minimalDelta": "Add read-only bootstrap metadata and regression guards only.",
+      "acceptanceTest": "Full Alpha regression passes; accepted release pins and evidence metadata remain exact; no physical-write API is present in Beta.1.0."
+    },
+    {
+      "requirementId": "BETA1.1-PAIRED-BACKUP",
+      "releaseUnit": "Beta.1.1",
+      "title": "Paired DWH TECH and Publish backup",
+      "sourceDocuments": [
+        "Пользовательская модель §16",
+        "Системная модель §13",
+        "Порядок создания релиза 4 §19"
+      ],
+      "existingComponents": [
+        "AKORT.Core.safeRun",
+        "AKORT.Core.Id",
+        "AKORT.Config resource bindings",
+        "AKORT.OperationEngine",
+        "SYSTEM_LOG"
+      ],
+      "gapStatus": "MISSING",
+      "exactGap": "No registered paired-backup operation, BACKUP_REGISTRY, shared backup_id, pair manifest, PARTIAL resume contract or freshness status exists in the accepted source inventory.",
+      "minimalDelta": "Inventory any reusable copy helpers, then add one Operation Engine handler and one registry/manifest contract without creating a second executor.",
+      "acceptanceTest": "SUCCESS creates one registered DWH+Publish pair; PARTIAL retries only the missing member; isolated restore rehearsal reproduces the pair."
+    },
+    {
+      "requirementId": "BETA1.2-ARBITRARY-ROLLBACK",
+      "releaseUnit": "Beta.1.2",
+      "title": "Rollback any eligible load_id",
+      "sourceDocuments": [
+        "Пользовательская модель §10",
+        "Системная модель §13",
+        "Порядок создания релиза 4 §19"
+      ],
+      "existingComponents": [
+        "RAW_REVERSAL_V4",
+        "RAW_REVERSAL_LOG",
+        "AKORT.RawStore",
+        "AKORT.OperationEngine.resume",
+        "AKORT.OperationEngine.recoverFailedPhase",
+        "Gate 6 and Gate 7 exact reversal evidence"
+      ],
+      "gapStatus": "PARTIAL",
+      "exactGap": "The reversal engine is accepted, but there is no general eligibility API, read-only impact preview, mandatory user reason/confirmation contract or compact terminal evidence for an arbitrary selected load_id.",
+      "minimalDelta": "Add a thin eligibility/preview/submit facade over RAW_REVERSAL_V4 and existing dependency processing.",
+      "acceptanceTest": "An eligible load_id completes preview → reason → reversal → Publish/aggregate/latest update → quick audit; repeated submit is idempotent."
+    },
+    {
+      "requirementId": "BETA1.3-FAILURE-INJECTION",
+      "releaseUnit": "Beta.1.3",
+      "title": "Uncovered operational failure matrix",
+      "sourceDocuments": [
+        "Пользовательская модель §18",
+        "Системная модель §12",
+        "Порядок создания релиза 4 §19"
+      ],
+      "existingComponents": [
+        "AKORT.TestOperationHandlers",
+        "Operation Engine retry and lease tests",
+        "Gate 4–Gate 7 lost-response, timeout and recovery proofs"
+      ],
+      "gapStatus": "PARTIAL",
+      "exactGap": "Existing tests cover many data-plane failures, but not the complete Beta operational surface such as paired-backup PARTIAL, general rollback interruption, stale intake trigger and materialized-status recovery.",
+      "minimalDelta": "Extend existing DEV-only test handlers and failure flags only for uncovered boundaries.",
+      "acceptanceTest": "Each injected failure proves no duplicate write, no false SUCCESS and continuation from the exact durable checkpoint."
+    },
+    {
+      "requirementId": "BETA1.4-OPERATIONAL-HARDENING",
+      "releaseUnit": "Beta.1.4",
+      "title": "Trigger, stale-operation and recovery hardening",
+      "sourceDocuments": [
+        "Пользовательская модель §§17–18",
+        "Системная модель §§3, 12",
+        "Порядок создания релиза 4 §19"
+      ],
+      "existingComponents": [
+        "Operation Engine lease",
+        "retry and dead-letter statuses",
+        "safe stop",
+        "resume",
+        "failed-phase recovery",
+        "bounded Gate 7 runner trigger"
+      ],
+      "gapStatus": "PARTIAL",
+      "exactGap": "Accepted components do not yet provide one consolidated trigger-ownership registry, stale-operation/watchdog classification and normalized next_action for all future user-facing operations.",
+      "minimalDelta": "Consolidate guards around the existing Operation Engine; do not add a second queue or executor.",
+      "acceptanceTest": "Exactly one trigger owner exists per process; stale and retryable states are classified; incompatible writes cannot run concurrently; safe stop and resume preserve checkpoints."
+    },
+    {
+      "requirementId": "BETA1.5-MINIMUM-OBSERVABILITY",
+      "releaseUnit": "Beta.1.5",
+      "title": "Compact health, freshness, issue and backup status",
+      "sourceDocuments": [
+        "Пользовательская модель §§4, 8, 15, 17",
+        "Системная модель §10",
+        "Порядок создания релиза 4 §19"
+      ],
+      "existingComponents": [
+        "OPERATION_QUEUE",
+        "OPERATION_STEPS",
+        "SYSTEM_LOG",
+        "RAW_LOAD_REGISTRY",
+        "PUBLISH_RUNS",
+        "Gate acceptance evidence"
+      ],
+      "gapStatus": "PARTIAL",
+      "exactGap": "Source registries exist, but DATASET_STATUS, ISSUE_REGISTRY and BACKUP_REGISTRY are not materialized as a compact read model with freshness, progress, checkpoint and next_action.",
+      "minimalDelta": "Materialize and incrementally refresh compact status tables from existing registries; UI reads must not scan full RAW or Publish.",
+      "acceptanceTest": "Status reads are bounded and show release, health, freshness, active phase, progress, checkpoint, trigger, backup, issue and next_action."
+    },
+    {
+      "requirementId": "BETA1.6-FULL-AUDIT-RETENTION",
+      "releaseUnit": "Beta.1.6",
+      "title": "Resumable Full Audit and retention dry-run",
+      "sourceDocuments": [
+        "Пользовательская модель §§15–16",
+        "Системная модель §§10, 13",
+        "Порядок создания релиза 4 §19"
+      ],
+      "existingComponents": [
+        "quick audit",
+        "RAW/Publish reconciliation",
+        "aggregate reconciliation",
+        "Gate 7 read-only contract scan",
+        "operation checkpoints"
+      ],
+      "gapStatus": "PARTIAL",
+      "exactGap": "Checks exist separately, but there is no unified resumable Full Audit operation, durable audit evidence, retention registry or protected-artifact dry-run.",
+      "minimalDelta": "Orchestrate accepted checks through the existing Operation Engine and add retention planning in dry-run mode only.",
+      "acceptanceTest": "Audit resumes after interruption and produces evidence; retention dry-run protects accepted releases, Gate evidence, baseline and required backups; no physical deletion occurs."
+    }
+  ]
+}
