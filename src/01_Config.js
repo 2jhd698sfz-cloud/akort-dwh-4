@@ -25,6 +25,7 @@ AKORT.Config = (function () {
         devTablesFolderId: p[PROPERTY_PREFIX + 'DEV_TABLES_FOLDER_ID'],
         testFilesFolderId: p[PROPERTY_PREFIX + 'TEST_FILES_FOLDER_ID'],
         testResultsFolderId: p[PROPERTY_PREFIX + 'TEST_RESULTS_FOLDER_ID'],
+        backupFolderId: p[PROPERTY_PREFIX + 'BACKUP_FOLDER_ID'],
         releasesFolderId: p[PROPERTY_PREFIX + 'RELEASES_FOLDER_ID'],
         docsFolderId: p[PROPERTY_PREFIX + 'DOCS_FOLDER_ID'],
         alpha71BaselinePublishSpreadsheetId: p[PROPERTY_PREFIX + 'ALPHA71_BASELINE_PUBLISH_SPREADSHEET_ID']

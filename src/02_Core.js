@@ -39,6 +39,15 @@ AKORT.Core = (function () {
       'row_payload_json', 'row_fingerprint', 'expected_target_fingerprint',
       'stage_status', 'created_at', 'verified_at', 'release_version'
     ],
+    BACKUP_REGISTRY: [
+      'backup_id', 'operation_id', 'request_type', 'status', 'scheduled_date',
+      'backup_folder_id', 'dwh_source_id', 'dwh_backup_id', 'dwh_backup_name',
+      'dwh_backup_url', 'publish_source_id', 'publish_backup_id',
+      'publish_backup_name', 'publish_backup_url', 'manifest_file_id',
+      'manifest_url', 'manifest_hash', 'operation_boundary_json',
+      'started_at', 'finished_at', 'error_code', 'error_message',
+      'release_version', 'created_by'
+    ],
     SYSTEM_LOG: [
       'log_id', 'logged_at', 'level', 'component', 'operation_id', 'step_id',
       'execution_id', 'event_code', 'message', 'details_json', 'release_version'

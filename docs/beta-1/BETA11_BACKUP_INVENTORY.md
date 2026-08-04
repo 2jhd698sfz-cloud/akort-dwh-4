@@ -46,3 +46,15 @@ The implementation must preserve the accepted runtime schemas and Gate 7 evidenc
 - no retention deletion;
 - no user-pipeline enablement;
 - no UI work belonging to Beta.2.
+
+## Status after candidate r2
+
+The inventory above remains the historical pre-r2 gap assessment. Candidate
+`4.0.0-beta.1.1.2` closes the confirmed `BACKUP_REGISTRY`, paired-operation,
+manifest and scheduling gaps through the accepted Operation Engine and the
+existing Incremental Publish backup primitive.
+
+The earlier sequencing sentence about adding the daily schedule only after a
+separate manual-operation candidate is superseded by r2: manual backup and the
+single daily trigger are delivered in the same bounded candidate, while the
+data plane and user pipeline remain unchanged.

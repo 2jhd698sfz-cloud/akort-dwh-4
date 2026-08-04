@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "4.0-beta11-paired-backup-contract-2",
+  "packageVersion": "4.0.0-beta.1.1.2",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "59372f73eb12f600b1ed8f6960ed18861cda613b",
+  "operationType": "BETA11_PAIRED_BACKUP",
+  "schedule": {
+    "frequency": "DAILY",
+    "nominalTime": "04:00",
+    "triggerWindow": "03:45-04:15",
+    "timezone": "Europe/Moscow",
+    "includesWeekends": true,
+    "busyRetryMinutes": 10,
+    "dailyIdempotency": "BKP_DAILY_YYYYMMDD"
+  },
+  "storage": {
+    "parentResource": "config.resources.devRootFolderId",
+    "folderName": "08_Резервные копии",
+    "scriptProperty": "AKORT_BACKUP_FOLDER_ID",
+    "registry": "BACKUP_REGISTRY",
+    "members": [
+      "AKORT_DWH_TECH_4_BACKUP__<backup_id>",
+      "AKORT_PUBLISH_4_BACKUP__<backup_id>",
+      "AKORT_BACKUP_MANIFEST__<backup_id>.json"
+    ]
+  },
+  "recovery": {
+    "statuses": [
+      "WAITING",
+      "RUNNING",
+      "PARTIAL",
+      "SUCCESS",
+      "FAILED"
+    ],
+    "lostResponseAdoption": true,
+    "resumeOnlyMissingMember": true,
+    "operationBoundaryFailClosed": true
+  },
+  "retention": {
+    "automaticDeletion": false,
+    "ownerRelease": "Beta.1.6"
+  },
+  "boundaries": {
+    "environment": "DEV",
+    "productionTouched": false,
+    "userPipelineEnabled": false,
+    "secondExecutor": false,
+    "secondQueue": false
+  }
+}

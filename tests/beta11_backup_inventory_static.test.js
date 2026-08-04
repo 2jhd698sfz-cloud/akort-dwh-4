@@ -16,6 +16,15 @@ const inventorySource = read('src/32_Beta11BackupInventory.js');
 const inventory = JSON.parse(read('docs/beta-1/BETA11_BACKUP_INVENTORY.json'));
 const contractDoc = read('docs/beta-1/BETA11_BACKUP_INVENTORY.md');
 const packageJson = JSON.parse(read('package.json'));
+const pairedBackupPath = path.join(root, 'src/33_Beta11PairedBackup.js');
+const pairedBackupImplemented = fs.existsSync(pairedBackupPath);
+const pairedBackupSource = pairedBackupImplemented
+  ? read('src/33_Beta11PairedBackup.js')
+  : '';
+const pairedBackupContractPath = path.join(
+  root,
+  'docs/beta-1/BETA11_PAIRED_BACKUP_CONTRACT.md'
+);
 
 const tests = [];
 function test(name, fn) {
@@ -78,10 +87,27 @@ test('accepted Config already binds both source books and DEV folders', () => {
   ].forEach(marker => assert(config.includes(marker), marker));
 });
 
-test('paired backup registry and handler are genuinely absent before r2', () => {
-  assert(!core.includes('BACKUP_REGISTRY'));
-  assert(!engine.includes('Beta11BackupHandlers'));
-  assert(!engine.includes("BETA11_PAIRED_BACKUP"));
+test('paired backup gap is absent before r2 or closed exactly by r2', () => {
+  if (!pairedBackupImplemented) {
+    assert(!core.includes('BACKUP_REGISTRY'));
+    assert(!engine.includes('Beta11BackupHandlers'));
+    assert(!engine.includes("BETA11_PAIRED_BACKUP"));
+    return;
+  }
+
+  assert(core.includes('BACKUP_REGISTRY'));
+  assert(engine.includes('AKORT.Beta11BackupHandlers.supports(type)'));
+  assert(pairedBackupSource.includes(
+    "var PACKAGE_VERSION = '4.0.0-beta.1.1.2';"
+  ));
+  assert(pairedBackupSource.includes(
+    "var OPERATION_TYPE = 'BETA11_PAIRED_BACKUP';"
+  ));
+  assert.equal(
+    (engine.match(/AKORT\.Beta11BackupHandlers\.supports\(type\)/g) || [])
+      .length,
+    1
+  );
 });
 
 test('inventory matrix classifies reuse and exact missing deltas', () => {
@@ -100,9 +126,20 @@ test('minimal-change documentation forbids a second subsystem', () => {
     'must extend them rather than create a new backup subsystem',
     'one module-owned `BACKUP_REGISTRY` table',
     'one `BETA11_PAIRED_BACKUP` handler',
-    'no second executor, queue or dispatcher',
-    'Daily scheduling is added only after the manual paired operation'
+    'no second executor, queue or dispatcher'
   ].forEach(marker => assert(contractDoc.includes(marker), marker));
+
+  if (pairedBackupImplemented) {
+    assert(contractDoc.includes('Status after candidate r2'));
+    assert(fs.existsSync(pairedBackupContractPath));
+    assert(read('docs/beta-1/BETA11_PAIRED_BACKUP_CONTRACT.md').includes(
+      'One paired backup is scheduled every calendar day'
+    ));
+  } else {
+    assert(contractDoc.includes(
+      'Daily scheduling is added only after the manual paired operation'
+    ));
+  }
 });
 
 test('user pipeline remains disabled in accepted runtime', () => {
