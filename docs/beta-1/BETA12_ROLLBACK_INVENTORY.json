@@ -1,0 +1,164 @@
+{
+  "schemaVersion": "4.0-beta12-rollback-inventory-1",
+  "packageVersion": "4.0.0-beta.1.2.1",
+  "contractVersion": "4.0-beta12-rollback-inventory-1",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "05e5b473d3867b6519472f265b20554b9bbe4040",
+  "requirementId": "BETA1.2-ARBITRARY-ROLLBACK",
+  "objective": "Rollback any eligible RAW load_id through the accepted RAW_REVERSAL_V4 data plane.",
+  "acceptedReuse": [
+    {
+      "component": "AKORT.RawStore",
+      "status": "ALREADY_IMPLEMENTED",
+      "evidence": [
+        "RAW_LOAD_REGISTRY",
+        "RAW_REVERSAL_LOG",
+        "reverseLoadStep(targetLoadId, operationId, reason)",
+        "inspectReversal(targetLoadId, operationId)",
+        "reversalSnapshot(targetLoadId, operationId)",
+        "auditLoad(loadId)"
+      ],
+      "decision": "Reuse without changing RAW schemas or reversal semantics."
+    },
+    {
+      "component": "AKORT.RawStoreHandlers / RAW_REVERSAL_V4",
+      "status": "ALREADY_IMPLEMENTED",
+      "evidence": [
+        "bounded COMMIT_RAW reversal chunks",
+        "durable lost-response adoption",
+        "UPDATE_PUBLISH via IncrementalPublish.planReversal/applyPublishStep",
+        "aggregate recalculation through AggregateIntegration",
+        "UPDATE_STATUS and QUICK_AUDIT phases"
+      ],
+      "decision": "Keep RAW_REVERSAL_V4 as the only rollback executor."
+    },
+    {
+      "component": "AKORT.OperationEngine",
+      "status": "ALREADY_IMPLEMENTED",
+      "evidence": [
+        "enqueue with idempotencyKey",
+        "run",
+        "resume",
+        "status",
+        "recoverFailedPhase",
+        "lease/retry/dead-letter/checkpoint contracts"
+      ],
+      "decision": "Reuse the existing queue and executor; no second dispatcher."
+    },
+    {
+      "component": "AKORT.IncrementalPublish and AKORT.AggregateIntegration",
+      "status": "ALREADY_IMPLEMENTED",
+      "evidence": [
+        "reversal dependency planning from durable RAW_REVERSAL_LOG",
+        "Publish series replacement",
+        "aggregate and latest recalculation",
+        "reconciliation checkpoints"
+      ],
+      "decision": "No parallel Publish or aggregate path."
+    }
+  ],
+  "gaps": [
+    {
+      "gapId": "B12-G01-ELIGIBILITY",
+      "status": "PARTIAL",
+      "exactGap": "Low-level inspectReversal fails closed, but no general facade returns a normalized eligible/blockers decision for an arbitrary selected load_id.",
+      "minimalDelta": "Add a read-only eligibility adapter over RAW_LOAD_REGISTRY and existing reversal validation.",
+      "acceptance": "Committed load with no later active revision is eligible; missing, non-committed, empty, reversing, reversed or superseded loads return explicit blocker codes without writes."
+    },
+    {
+      "gapId": "B12-G02-IMPACT-PREVIEW",
+      "status": "MISSING",
+      "exactGap": "IncrementalPublish.planReversal requires durable reversal records created after COMMIT_RAW; there is no pre-submit read-only preview of affected RAW rows, Publish series, aggregate scopes and latest changes.",
+      "minimalDelta": "Build a bounded preview from the selected load and existing accepted dependency identities without writing RAW_REVERSAL_LOG.",
+      "acceptance": "Preview identifies target table, row counts, restored predecessors, affected frequencies/series/aggregate scope and a deterministic snapshot fingerprint."
+    },
+    {
+      "gapId": "B12-G03-REASON",
+      "status": "MISSING",
+      "exactGap": "RAW_REVERSAL_V4 currently substitutes a default reason when input.reason is blank.",
+      "minimalDelta": "Facade rejects blank or trivial reason before enqueue; the data-plane handler remains unchanged.",
+      "acceptance": "Submit cannot enqueue without a normalized user-provided reason meeting the bounded contract."
+    },
+    {
+      "gapId": "B12-G04-CONFIRMATION",
+      "status": "MISSING",
+      "exactGap": "No confirmation token binds target load, eligibility snapshot, impact preview and reason to the later submit.",
+      "minimalDelta": "Return a deterministic preview token and require the exact token at submit.",
+      "acceptance": "Any load, lineage, preview or reason drift invalidates confirmation and causes zero writes."
+    },
+    {
+      "gapId": "B12-G05-SUBMIT-FACADE",
+      "status": "MISSING",
+      "exactGap": "No public DEV facade selects an arbitrary load_id and enqueues RAW_REVERSAL_V4 with deterministic idempotency.",
+      "minimalDelta": "Add one thin submit function that revalidates the preview and calls OperationEngine.enqueue/run only.",
+      "acceptance": "Repeated submit for the same confirmed preview returns the same operation_id and never creates a second reversal."
+    },
+    {
+      "gapId": "B12-G06-COMPACT-EVIDENCE",
+      "status": "MISSING",
+      "exactGap": "OperationEngine.status returns full operation and step history; there is no compact rollback terminal evidence for routine operator use.",
+      "minimalDelta": "Materialize no new data table; derive bounded evidence from OPERATION_QUEUE, RAW_LOAD_REGISTRY, RAW_REVERSAL_LOG and checkpoint summaries.",
+      "acceptance": "Status exposes operation_id, target/reversal load IDs, terminal status, reversed rows, Publish/aggregate completion, audit result, errors and idempotency without oversized step output."
+    }
+  ],
+  "eligibilityPolicy": {
+    "policyOwner": "accepted Raw Store policy",
+    "runtimeSetting": "RAW_REVERSAL_POLICY=LATEST_LOAD_ONLY",
+    "eligibleStatus": "COMMITTED",
+    "mustHavePhysicalRawRows": true,
+    "laterNonReversedRevisionAllowed": false,
+    "alreadyReversedBehavior": "Return existing terminal evidence when the deterministic Beta.1.2 operation exists; otherwise classify as already reversed and do not enqueue.",
+    "reversingBehavior": "Return active operation/continuation guidance; do not enqueue a second operation."
+  },
+  "confirmationContract": {
+    "requiredFields": [
+      "targetLoadId",
+      "targetTable",
+      "loadStatus",
+      "sourceHash",
+      "targetRowCount",
+      "restoredRowCount",
+      "unrestoredRowCount",
+      "impactFingerprint",
+      "lineageFingerprint",
+      "reasonHash"
+    ],
+    "tokenAlgorithm": "AKORT.Core.sha256(AKORT.Core.canonicalJson(binding))",
+    "submitRevalidation": true,
+    "writesDuringPreview": false
+  },
+  "implementationBoundary": {
+    "newQueue": false,
+    "newExecutor": false,
+    "newRawSchema": false,
+    "newPublishSchema": false,
+    "newAggregateSchema": false,
+    "methodologyChange": false,
+    "productionWrite": false,
+    "generalUserPipelineEnablement": false,
+    "allowedDelta": [
+      "one thin rollback facade module",
+      "read-only eligibility and impact preview",
+      "mandatory reason and confirmation binding",
+      "deterministic Operation Engine submission",
+      "compact status/evidence adapter",
+      "static and controlled DEV tests"
+    ]
+  },
+  "plannedPublicApi": [
+    "AKORT_beta12RollbackPreview(targetLoadId, reason)",
+    "AKORT_beta12RollbackSubmit(targetLoadId, reason, confirmationToken)",
+    "AKORT_beta12RollbackStatus(operationId)"
+  ],
+  "acceptanceFlow": [
+    "preview eligible current DEV load",
+    "verify zero writes",
+    "submit exact reason and token",
+    "RAW_REVERSAL_V4 reaches SUCCESS",
+    "Publish/aggregate/latest are updated by accepted handlers",
+    "quick audit and compact evidence pass",
+    "repeat submit returns the same operation_id",
+    "user pipeline remains disabled",
+    "productionTouched remains false"
+  ]
+}
