@@ -62,8 +62,8 @@ function dimension(overrides = {}) {
 }
 
 test('operator form contract is explicit and only two columns are user inputs', () => {
-  assert.equal(I.Version, '4.0-alpha74-industry-input-1');
-  assert.equal(I.Release, '4.0.0-alpha.7.4.39');
+  assert.equal(I.Version, '4.0-alpha74-industry-input-2');
+  assert.equal(I.Release, '4.0.0-alpha.7.4.40');
   assert.equal(I.SheetName, 'INDUSTRY_INPUT');
   assert.equal(I.LogSheetName, 'INDUSTRY_INPUT_LOG');
   assert.deepEqual(
@@ -141,6 +141,23 @@ test('new, revised and unchanged values are classified deterministically', () =>
   assert.equal(I.Test.classifyAction({ value: '10,000000' }, 10), 'NOOP');
 });
 
+test('Gate 7 canary is a bounded deterministic revision value', () => {
+  const base = 100;
+  const value = I.Test.acceptanceCanaryValue(
+    base,
+    dimension({ metric_type: 'level_currency' })
+  );
+  assert.notEqual(value, base);
+  assert(Math.abs(value - base) > 1e-9);
+
+  const shareAtLimit = I.Test.acceptanceCanaryValue(
+    100,
+    dimension({ metric_type: 'share_percent' })
+  );
+  assert(shareAtLimit >= 0 && shareAtLimit <= 100);
+  assert.notEqual(shareAtLimit, 100);
+});
+
 test('future periods and incomplete rows are blocked before RAW writes', () => {
   const rawState = { byBusinessKey: {}, latestBySeries: {} };
   assert.throws(
@@ -175,6 +192,7 @@ test('Gate 7 acceptance API is narrow and exact', () => {
     'AKORT_ALPHA74_GATE7_INDUSTRY_PERMIT_V1'
   );
   [
+    'prepareCanary',
     'inspect',
     'submit',
     'continueLatest',

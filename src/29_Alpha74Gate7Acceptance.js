@@ -9,16 +9,21 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * RAW, Publish and Industry data-plane writes remain unavailable here.
  */
 AKORT.Alpha74Gate7Acceptance = (function () {
-  var VERSION = '4.0-alpha74-gate7-acceptance-2';
+  var VERSION = '4.0-alpha74-gate7-acceptance-3';
   var EVIDENCE_SCHEMA = '4.0-alpha74-gate7-evidence-1';
-  var STATE_SCHEMA = '4.0-alpha74-gate7-state-2';
-  var RELEASE = '4.0.0-alpha.7.4.39';
+  var STATE_SCHEMA = '4.0-alpha74-gate7-state-3';
+  var RELEASE = '4.0.0-alpha.7.4.40';
 
   var STATE_PROPERTY = 'AKORT_ALPHA74_GATE7_STATE_V1';
   var PREVIEW_ITEM_ENCODING = 'ARRAY_V1';
+  var LEGACY_PREVIEW_RELEASE = '4.0.0-alpha.7.4.39';
+  var LEGACY_PREVIEW_VERSION =
+    '4.0-alpha74-gate7-acceptance-2';
+  var LEGACY_PREVIEW_STATE_SCHEMA =
+    '4.0-alpha74-gate7-state-2';
   var CONTROL_SHEET = 'GATE7_CONTROL_FILES';
   var EXPECTED_PROFILE_COUNT = 12;
-  var PREVIEW_BATCH_SIZE = 2;
+  var PREVIEW_BATCH_SIZE = 1;
   var MAX_STATE_BYTES = 8500;
   var INDUSTRY_STATE_SCHEMA =
     '4.0-alpha74-gate7-industry-state-1';
@@ -950,6 +955,59 @@ AKORT.Alpha74Gate7Acceptance = (function () {
     );
   }
 
+  function legacyPreviewContractMatches_(state) {
+    return Boolean(
+      state &&
+      text_(state.schemaVersion) ===
+        LEGACY_PREVIEW_STATE_SCHEMA &&
+      text_(state.release) === LEGACY_PREVIEW_RELEASE &&
+      text_(state.version) === LEGACY_PREVIEW_VERSION &&
+      text_(state.itemEncoding) === PREVIEW_ITEM_ENCODING &&
+      (
+        text_(state.status) === 'PREVIEW_RUNNING' ||
+        text_(state.status) === 'PREVIEW_ACCEPTED'
+      )
+    );
+  }
+
+  function adoptLegacyPreviewState_(state, control) {
+    if (!legacyPreviewContractMatches_(state)) return state;
+
+    assert_(
+      text_(state.controlFingerprint) ===
+        text_(control && control.fingerprint),
+      'ALPHA74_GATE7_LEGACY_CONTROL_MISMATCH',
+      'The resumable .39 preview state belongs to another control inventory.',
+      {
+        stateFingerprint: text_(state.controlFingerprint),
+        controlFingerprint: text_(control && control.fingerprint)
+      }
+    );
+
+    assert_(
+      Array.isArray(state.items) &&
+        Number(state.cursor || 0) === state.items.length &&
+        state.items.length <= EXPECTED_PROFILE_COUNT,
+      'ALPHA74_GATE7_LEGACY_STATE_INVALID',
+      'The resumable .39 preview state has an invalid durable cursor.',
+      {
+        cursor: Number(state.cursor || 0),
+        itemCount: Array.isArray(state.items)
+          ? state.items.length
+          : -1
+      }
+    );
+
+    state.migratedFrom = {
+      release: LEGACY_PREVIEW_RELEASE,
+      version: LEGACY_PREVIEW_VERSION,
+      schemaVersion: LEGACY_PREVIEW_STATE_SCHEMA,
+      migratedAt: now_()
+    };
+
+    return saveState_(state);
+  }
+
   function newPreviewState_(control) {
     return {
       schemaVersion: STATE_SCHEMA,
@@ -1117,6 +1175,10 @@ AKORT.Alpha74Gate7Acceptance = (function () {
           'Stored Gate 7 state is not valid JSON.',
           state || {}
         );
+
+        if (!stateContractMatches_(state)) {
+          state = adoptLegacyPreviewState_(state, control);
+        }
 
         if (
           stateContractMatches_(state) &&
@@ -1608,6 +1670,47 @@ AKORT.Alpha74Gate7Acceptance = (function () {
     ).operationId;
   }
 
+  function readIndustryPermitOptional_() {
+    var raw = PropertiesService
+      .getScriptProperties()
+      .getProperty(INDUSTRY_PERMIT_PROPERTY);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (caught) {
+      throw error_(
+        'ALPHA74_GATE7_INDUSTRY_PERMIT_INVALID',
+        'Stored Gate 7 Industry permit is not valid JSON.',
+        { message: caught.message || String(caught) }
+      );
+    }
+  }
+
+  function adoptIndustryLoadBinding_(state) {
+    if (!state || text_(state.phase) !== 'RUN_LOAD') return state;
+    if (text_(state.operationIds && state.operationIds.load)) {
+      return state;
+    }
+
+    var permit = readIndustryPermitOptional_();
+    if (!permit ||
+        text_(permit.executionId) !== text_(state.executionId) ||
+        text_(permit.permitDigest) !== text_(state.permitDigest)) {
+      return state;
+    }
+
+    if (text_(permit.operationId)) {
+      state.operationIds = state.operationIds || {};
+      state.operationIds.load = text_(permit.operationId);
+    }
+    if (text_(permit.loadId)) {
+      state.loadIds = state.loadIds || {};
+      state.loadIds.load = text_(permit.loadId);
+    }
+
+    return state;
+  }
+
   function startIndustry() {
     return AKORT.Core.safeRun(
       'ALPHA74_GATE7_START_INDUSTRY',
@@ -1738,6 +1841,9 @@ AKORT.Alpha74Gate7Acceptance = (function () {
           {}
         );
 
+        state = adoptIndustryLoadBinding_(state);
+        saveIndustryState_(state);
+
         if (state.status === 'GATE7_ACCEPTED' ||
             state.status === 'INDUSTRY_ACCEPTED') {
           return AKORT.Result.success(
@@ -1747,6 +1853,30 @@ AKORT.Alpha74Gate7Acceptance = (function () {
         }
 
         if (state.phase === 'RUN_LOAD') {
+          if (!text_(state.operationIds && state.operationIds.load)) {
+            var recoveredSubmission = resultData_(
+              acceptanceApi_().submit({
+                executionId: state.executionId,
+                permitDigest: state.permitDigest
+              }),
+              'ALPHA74_GATE7_INDUSTRY_SUBMIT_RECOVERY_FAILED',
+              'Gate 7 Industry submission could not be recovered.'
+            );
+
+            state.operationIds.load =
+              text_(recoveredSubmission.operationId);
+            if (text_(recoveredSubmission.loadId)) {
+              state.loadIds.load =
+                text_(recoveredSubmission.loadId);
+            }
+            saveIndustryState_(state);
+
+            return AKORT.Result.paused(
+              'Gate 7 Industry submission binding recovered.',
+              publicIndustryState_(state)
+            );
+          }
+
           var continuedData = resultData_(
             acceptanceApi_().continueLatest({
               executionId: state.executionId,
@@ -2159,11 +2289,15 @@ AKORT.Alpha74Gate7Acceptance = (function () {
             implementationStatus:
               gate7Accepted
                 ? 'GATE7_ACCEPTED'
-                : industryAccepted
-                  ? 'READY_TO_FINALIZE'
-                  : industryState
-                    ? 'INDUSTRY_ACCEPTANCE_RUNNING'
-                    : 'READY_FOR_INDUSTRY_ACCEPTANCE',
+                : !previewAccepted
+                  ? 'PREVIEW_RUNNING'
+                  : !industryData.installed
+                    ? 'READY_TO_INSTALL_INDUSTRY'
+                    : industryAccepted
+                      ? 'READY_TO_FINALIZE'
+                      : industryState
+                        ? 'INDUSTRY_ACCEPTANCE_RUNNING'
+                        : 'READY_FOR_INDUSTRY_ACCEPTANCE',
             readyToStartIndustry:
               Boolean(
                 previewAccepted &&
@@ -2215,6 +2349,10 @@ AKORT.Alpha74Gate7Acceptance = (function () {
       stablePreviewItem: stablePreviewItem_,
       compactPreviewItem: compactPreviewItem_,
       expandPreviewItem: expandPreviewItem_,
+      legacyPreviewContractMatches:
+        legacyPreviewContractMatches_,
+      adoptIndustryLoadBinding:
+        adoptIndustryLoadBinding_,
       readState: readState_,
       readIndustryState: readIndustryState_,
       publicIndustryState: publicIndustryState_

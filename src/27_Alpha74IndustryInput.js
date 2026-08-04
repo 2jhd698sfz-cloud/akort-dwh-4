@@ -11,8 +11,8 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * - direct edits of RAW_INDUSTRY and PUBLISH_INDUSTRY are never used.
  */
 AKORT.IndustryInput = (function () {
-  var VERSION = '4.0-alpha74-industry-input-1';
-  var RELEASE = '4.0.0-alpha.7.4.39';
+  var VERSION = '4.0-alpha74-industry-input-2';
+  var RELEASE = '4.0.0-alpha.7.4.40';
   var INPUT_SHEET = 'INDUSTRY_INPUT';
   var LOG_SHEET = 'INDUSTRY_INPUT_LOG';
   var HEADER_ROW = 5;
@@ -1307,6 +1307,268 @@ AKORT.IndustryInput = (function () {
     };
   }
 
+  function acceptanceCanaryValue_(currentValue, dimension) {
+    var current = number_(currentValue);
+    if (current === null) {
+      throw error_(
+        'INDUSTRY_INPUT_GATE7_CANARY_BASE_INVALID',
+        'Gate 7 Industry canary requires a numeric latest value.',
+        { value: text_(currentValue) }
+      );
+    }
+
+    var magnitude = Math.max(
+      0.000001,
+      Math.abs(current) * 0.000000001
+    );
+    var candidates = [
+      current + magnitude,
+      current - magnitude
+    ];
+
+    for (var index = 0; index < candidates.length; index += 1) {
+      var candidate = candidates[index];
+      if (Math.abs(candidate - current) <= 1e-9) continue;
+      try {
+        validateMetricValue_(candidate, dimension);
+        return candidate;
+      } catch (ignored) {}
+    }
+
+    throw error_(
+      'INDUSTRY_INPUT_GATE7_CANARY_VALUE_UNAVAILABLE',
+      'No bounded revision value can be generated for the Industry canary.',
+      {
+        seriesId: text_(dimension && dimension.series_id),
+        metricType: text_(dimension && dimension.metric_type),
+        currentValue: current
+      }
+    );
+  }
+
+  function acceptancePrepareCanary() {
+    return AKORT.Core.safeRun(
+      'INDUSTRY_INPUT_GATE7_PREPARE_CANARY',
+      function () {
+        AKORT.EnvironmentGuard.assertDev();
+        assertAcceptanceRuntimeReady_();
+
+        var spreadsheet = getDwh_();
+        var sheet = assertHeaders_(
+          spreadsheet.getSheetByName(INPUT_SHEET),
+          HEADER_ROW,
+          HEADERS,
+          INPUT_SHEET
+        );
+        var dimensions = readDimensions_();
+        var dimensionsById = dimensionMap_(dimensions);
+        var rawState = readLatestRaw_();
+        var inputRows = readObjects_(
+          sheet,
+          HEADER_ROW,
+          HEADERS
+        );
+        var rowBySeries = {};
+
+        inputRows.forEach(function (row) {
+          rowBySeries[text_(row.series_id)] = row;
+        });
+
+        var populated = inputRows.filter(function (row) {
+          return text_(row['Период']) ||
+            row['Значение'] === 0 ||
+            text_(row['Значение']) ||
+            (
+              text_(row['Статус']) === STATUS.PROCESSING &&
+              text_(row.operation_id)
+            );
+        });
+
+        if (populated.length) {
+          var existingValidation = validateInternal_();
+          var existingReady = existingValidation.entries.filter(
+            function (entry) {
+              return entry.action !== 'NOOP';
+            }
+          );
+          var existingNoOps = existingValidation.entries.filter(
+            function (entry) {
+              return entry.action === 'NOOP';
+            }
+          );
+
+          if (!existingValidation.errors.length &&
+              !existingValidation.counts.processing &&
+              existingReady.length === 1 &&
+              existingNoOps.length === 0 &&
+              text_(existingReady[0].action) === 'REVISION') {
+            return AKORT.Result.success(
+              'Existing exact Industry revision canary retained.',
+              {
+                rowNumber: existingReady[0].rowNumber,
+                seriesId:
+                  text_(existingReady[0].normalized.series_id),
+                period: existingReady[0].period.label,
+                baselineValue:
+                  Number(existingReady[0].existing.value),
+                canaryValue:
+                  Number(existingReady[0].normalized.value),
+                action: existingReady[0].action,
+                reused: true,
+                physicalWrites: false
+              }
+            );
+          }
+
+          throw error_(
+            'INDUSTRY_INPUT_GATE7_FORM_NOT_EMPTY',
+            'Industry form contains operator data that cannot be replaced by an automatic Gate 7 canary.',
+            {
+              populatedRows: populated.map(function (row) {
+                return {
+                  rowNumber: row.__row,
+                  seriesId: text_(row.series_id),
+                  period: text_(row['Период']),
+                  status: text_(row['Статус'])
+                };
+              }),
+              errors: existingValidation.errors,
+              counts: existingValidation.counts
+            }
+          );
+        }
+
+        var selected = null;
+
+        for (var dimensionIndex = 0;
+             dimensionIndex < dimensions.length;
+             dimensionIndex += 1) {
+          var dimension = dimensions[dimensionIndex];
+          var seriesId = text_(dimension.series_id);
+          var latest = rawState.latestBySeries[seriesId];
+          var formRow = rowBySeries[seriesId];
+
+          if (!latest || !formRow) continue;
+
+          try {
+            var periodLabel = periodLabelForRaw_(
+              latest,
+              dimension
+            );
+            var canaryValue = acceptanceCanaryValue_(
+              latest.value,
+              dimension
+            );
+            var synthetic = {
+              __row: formRow.__row,
+              series_id: seriesId,
+              'Период': periodLabel,
+              'Значение': canaryValue
+            };
+            var candidate = normalizedCandidate_(
+              synthetic,
+              dimensionsById[seriesId],
+              rawState,
+              new Date()
+            );
+
+            if (candidate.action !== 'REVISION') continue;
+
+            selected = {
+              formRow: formRow,
+              dimension: dimension,
+              latest: latest,
+              candidate: candidate
+            };
+            break;
+          } catch (ignoredCandidate) {}
+        }
+
+        if (!selected) {
+          throw error_(
+            'INDUSTRY_INPUT_GATE7_CANARY_SOURCE_NOT_FOUND',
+            'No active Industry series with a safe latest RAW observation is available for the Gate 7 canary.',
+            {
+              activeSeries: dimensions.length,
+              latestSeries:
+                Object.keys(rawState.latestBySeries || {}).length
+            }
+          );
+        }
+
+        var inputIndex = inputIndex_();
+        sheet.getRange(
+          selected.formRow.__row,
+          inputIndex['Период'] + 1
+        ).setValue(selected.candidate.period.label);
+        sheet.getRange(
+          selected.formRow.__row,
+          inputIndex['Значение'] + 1
+        ).setValue(selected.candidate.value);
+        sheet.getRange(
+          selected.formRow.__row,
+          inputIndex['Статус'] + 1
+        ).setValue('');
+        sheet.getRange(
+          selected.formRow.__row,
+          inputIndex['Сообщение'] + 1
+        ).setValue('Gate 7 automatic controlled revision canary.');
+        sheet.getRange(
+          selected.formRow.__row,
+          inputIndex['operation_id'] + 1
+        ).clearContent();
+        sheet.getRange(
+          selected.formRow.__row,
+          inputIndex['load_id'] + 1
+        ).clearContent();
+        sheet.getRange(
+          selected.formRow.__row,
+          inputIndex['row_fingerprint'] + 1
+        ).clearContent();
+
+        var validation = validateInternal_();
+        var ready = validation.entries.filter(function (entry) {
+          return entry.action !== 'NOOP';
+        });
+        var noChanges = validation.entries.filter(function (entry) {
+          return entry.action === 'NOOP';
+        });
+
+        if (validation.errors.length ||
+            validation.counts.processing ||
+            ready.length !== 1 ||
+            noChanges.length !== 0 ||
+            ready[0].action !== 'REVISION') {
+          throw error_(
+            'INDUSTRY_INPUT_GATE7_CANARY_VALIDATION_FAILED',
+            'Automatic Industry canary did not produce one exact revision row.',
+            {
+              errors: validation.errors,
+              counts: validation.counts,
+              readyRows: ready.map(acceptanceEntryPublic_),
+              noChangeRows: noChanges.map(acceptanceEntryPublic_)
+            }
+          );
+        }
+
+        return AKORT.Result.success(
+          'Automatic Industry revision canary prepared.',
+          {
+            rowNumber: ready[0].rowNumber,
+            seriesId: text_(ready[0].normalized.series_id),
+            period: ready[0].period.label,
+            baselineValue: Number(ready[0].existing.value),
+            canaryValue: Number(ready[0].normalized.value),
+            action: ready[0].action,
+            reused: false,
+            physicalWrites: false
+          }
+        );
+      },
+      { lock: true, persistLogs: true }
+    );
+  }
+
   function acceptanceInspect() {
     return AKORT.Core.safeRun(
       'INDUSTRY_INPUT_GATE7_INSPECT',
@@ -1913,6 +2175,7 @@ AKORT.IndustryInput = (function () {
     Acceptance: Object.freeze({
       PermitSchema: GATE7_PERMIT_SCHEMA,
       PermitProperty: GATE7_PERMIT_PROPERTY,
+      prepareCanary: acceptancePrepareCanary,
       inspect: acceptanceInspect,
       submit: acceptanceSubmit,
       continueLatest: acceptanceContinue,
@@ -1928,7 +2191,8 @@ AKORT.IndustryInput = (function () {
       rowFingerprint: rowFingerprint_,
       rawBusinessKey: rawBusinessKey_,
       periodHint: periodHint_,
-      normalizedCandidate: normalizedCandidate_
+      normalizedCandidate: normalizedCandidate_,
+      acceptanceCanaryValue: acceptanceCanaryValue_
     })
   });
 })();

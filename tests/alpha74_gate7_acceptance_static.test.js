@@ -30,27 +30,30 @@ function test(name, fn) {
 }
 
 test('Gate 7 candidate release is exact', () => {
-  assert(release.includes("version: '4.0.0-alpha.7.4.39'"));
-  assert(integration.includes("var RELEASE = '4.0.0-alpha.7.4.39';"));
-  assert(industry.includes("var RELEASE = '4.0.0-alpha.7.4.39';"));
-  assert.equal(packageJson.version, '4.0.0-alpha.7.4.39');
+  assert(release.includes("version: '4.0.0-alpha.7.4.40'"));
+  assert(integration.includes("var RELEASE = '4.0.0-alpha.7.4.40';"));
+  assert(industry.includes("var RELEASE = '4.0.0-alpha.7.4.40';"));
+  assert.equal(packageJson.version, '4.0.0-alpha.7.4.40');
 });
 
 test('Accepted Gate 6 evidence remains pinned to .35', () => {
   assert(gate6.includes("var RELEASE = '4.0.0-alpha.7.4.35';"));
-  assert(!gate6.includes("var RELEASE = '4.0.0-alpha.7.4.39';"));
+  assert(!gate6.includes("var RELEASE = '4.0.0-alpha.7.4.40';"));
 });
 
 test('Gate 7 metadata and state contracts are exact', () => {
   [
-    "var VERSION = '4.0-alpha74-gate7-acceptance-2';",
+    "var VERSION = '4.0-alpha74-gate7-acceptance-3';",
     "var EVIDENCE_SCHEMA = '4.0-alpha74-gate7-evidence-1';",
-    "var STATE_SCHEMA = '4.0-alpha74-gate7-state-2';",
+    "var STATE_SCHEMA = '4.0-alpha74-gate7-state-3';",
     "'4.0-alpha74-gate7-industry-state-1'",
     "'4.0-alpha74-gate7-industry-permit-1'",
     "var EXPECTED_PROFILE_COUNT = 12;",
-    "var PREVIEW_BATCH_SIZE = 2;",
-    "var PREVIEW_ITEM_ENCODING = 'ARRAY_V1';"
+    "var PREVIEW_BATCH_SIZE = 1;",
+    "var PREVIEW_ITEM_ENCODING = 'ARRAY_V1';",
+    "var LEGACY_PREVIEW_RELEASE = '4.0.0-alpha.7.4.39';",
+    "'4.0-alpha74-gate7-acceptance-2'",
+    "'4.0-alpha74-gate7-state-2'"
   ].forEach(marker => assert(gate7.includes(marker), marker));
 });
 
@@ -65,7 +68,9 @@ test('Control inventory and preview matrix remain exact', () => {
     "state.status = 'PREVIEW_ACCEPTED';",
     'compactPreviewItem_(item)',
     'expandPreviewItems_(state.items)',
-    'expandedItems.map(stablePreviewItem_)'
+    'expandedItems.map(stablePreviewItem_)',
+    'adoptLegacyPreviewState_(state, control)',
+    'state.items.push(compactPreviewItem_(item))'
   ].forEach(marker => assert(gate7.includes(marker), marker));
 });
 
