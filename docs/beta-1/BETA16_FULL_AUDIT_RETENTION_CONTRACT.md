@@ -26,3 +26,8 @@ Retention is permanently constrained to planning in Beta.1.6:
 ## Safety boundary
 
 The general user pipeline remains disabled. Production is untouched. Beta.1.6 creates no trigger and performs no data-plane write. `FULL_AUDIT_V4` is classified by Beta.1.4 as snapshot-exclusive so it cannot overlap a paired backup or data-plane operation.
+
+
+## Schema ownership correction
+
+The Full Audit adapter resolves `RAW_LOAD_REGISTRY` from the accepted RawStore schema and `PUBLISH_RECONCILIATION` from the accepted Incremental Publish schema. These registries are not added to `AKORT.Core.Tables`; preflight and runtime validation preserve their established module ownership.

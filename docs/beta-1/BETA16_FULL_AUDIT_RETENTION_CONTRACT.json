@@ -1,5 +1,5 @@
 {
-  "packageVersion": "4.0.0-beta.1.6.2",
+  "packageVersion": "4.0.0-beta.1.6.3",
   "contractVersion": "4.0-beta16-full-audit-retention-1",
   "baseRelease": "4.0.0-alpha.7.4.42",
   "baseCommit": "55fd0f2379ed19ad7461dc00d3711ab80c4ff4d1",
@@ -32,6 +32,15 @@
     "SYSTEM_LOG", "RAW_LOAD_REGISTRY", "PUBLISH_RECONCILIATION",
     "BACKUP_REGISTRY", "DATASET_STATUS", "ISSUE_REGISTRY"
   ],
+  "schemaOwnership": {
+    "core": [
+      "RELEASE_REGISTRY", "OPERATION_QUEUE", "OPERATION_STEPS",
+      "SYSTEM_LOG", "BACKUP_REGISTRY", "DATASET_STATUS",
+      "ISSUE_REGISTRY", "FULL_AUDIT_EVIDENCE", "RETENTION_REGISTRY"
+    ],
+    "rawStore": ["RAW_LOAD_REGISTRY"],
+    "incrementalPublish": ["PUBLISH_RECONCILIATION"]
+  },
   "tailRowsPerSource": 25,
   "retentionPolicy": {
     "backupRetentionDays": 30,

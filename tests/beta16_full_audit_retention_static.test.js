@@ -94,8 +94,8 @@ function loadModule() {
   return context.AKORT.Beta16FullAuditRetention;
 }
 
-test('r2 metadata pins accepted inventory head and runtime', () => {
-  assert.strictEqual(contract.packageVersion, '4.0.0-beta.1.6.2');
+test('r3 metadata pins accepted inventory head and runtime', () => {
+  assert.strictEqual(contract.packageVersion, '4.0.0-beta.1.6.3');
   assert.strictEqual(contract.contractVersion, '4.0-beta16-full-audit-retention-1');
   assert.strictEqual(contract.baseRelease, '4.0.0-alpha.7.4.42');
   assert.strictEqual(contract.baseCommit, '55fd0f2379ed19ad7461dc00d3711ab80c4ff4d1');
@@ -147,6 +147,24 @@ test('Full Audit spans the accepted resumable phase contract', () => {
   });
   assert(source.includes('context.checkpoint.handlerState.beta16FullAudit'));
   assert(source.includes('AKORT.OperationEngine.resume(operationId, { maxSteps: 50 })'));
+});
+
+test('non-Core source schemas preserve accepted module ownership', () => {
+  assert(source.includes('var NON_CORE_SOURCE_HEADERS = {'));
+  assert(source.includes('RAW_LOAD_REGISTRY: ['));
+  assert(source.includes('PUBLISH_RECONCILIATION: ['));
+  assert(source.includes('function expectedHeaders_(name)'));
+  assert(!source.includes('var expected = AKORT.Core.Tables[name] || [];'));
+  assert.deepStrictEqual(
+    contract.schemaOwnership.rawStore,
+    ['RAW_LOAD_REGISTRY']
+  );
+  assert.deepStrictEqual(
+    contract.schemaOwnership.incrementalPublish,
+    ['PUBLISH_RECONCILIATION']
+  );
+  assert(!contract.schemaOwnership.core.includes('RAW_LOAD_REGISTRY'));
+  assert(!contract.schemaOwnership.core.includes('PUBLISH_RECONCILIATION'));
 });
 
 test('audit reads only bounded service registries', () => {
@@ -386,6 +404,9 @@ function runtimeHarness() {
   const sheets = {};
   Object.keys(tables).forEach((name) => { sheets[name] = new Sheet(tables[name], rows[name]); });
   const spreadsheet = { getSheetByName: (name) => sheets[name] || null };
+  const coreTables = Object.assign({}, tables);
+  delete coreTables.RAW_LOAD_REGISTRY;
+  delete coreTables.PUBLISH_RECONCILIATION;
   const makeError = (code, message, details) => {
     const error = new Error(message);
     error.code = code;
@@ -402,7 +423,7 @@ function runtimeHarness() {
     },
     AKORT: {
       Core: {
-        Tables: tables,
+        Tables: coreTables,
         Sheets: {
           readObjects: (sheet) => {
             const values = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getValues();
@@ -450,14 +471,29 @@ function runtimeHarness() {
           previewState: { matrixFingerprint: 'MATRIX_FP' }
         } })
       },
-      Beta14OperationalHardening: { enqueueGuarded: () => ({ ok: true, data: {} }) },
-      OperationEngine: { status: () => ({ ok: true, data: {} }), resume: () => ({ ok: true }) }
+      Beta14OperationalHardening: {
+        enqueueGuarded: () => ({ ok: true, data: {} }),
+        status: () => ({ ok: true, data: { operationInventory: { nonTerminalCount: 0 } } })
+      },
+      OperationEngine: {
+        enqueue: () => ({ ok: true, data: {} }),
+        status: () => ({ ok: true, data: {} }),
+        resume: () => ({ ok: true })
+      }
     }
   };
   vm.createContext(context);
   new vm.Script(source, { filename: sourcePath }).runInContext(context);
   return { module: context.AKORT.Beta16FullAuditRetention, sheets };
 }
+
+test('preflight passes when accepted non-Core registries are absent from Core.Tables', () => {
+  const harness = runtimeHarness();
+  const result = harness.module.preflight();
+  assert.strictEqual(result.ok, true);
+  assert.strictEqual(result.data.readyToInstall, true);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(result.data.blockers)), []);
+});
 
 test('all Full Audit phases converge in an in-memory Apps Script runtime', () => {
   const harness = runtimeHarness();

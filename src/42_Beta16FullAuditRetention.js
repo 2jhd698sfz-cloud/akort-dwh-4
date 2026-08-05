@@ -6,7 +6,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * Reads accepted service registries only; never reads physical RAW/Publish.
  */
 AKORT.Beta16FullAuditRetention = (function () {
-  var PACKAGE_VERSION = '4.0.0-beta.1.6.2';
+  var PACKAGE_VERSION = '4.0.0-beta.1.6.3';
   var CONTRACT_VERSION = '4.0-beta16-full-audit-retention-1';
   var BASE_RELEASE = '4.0.0-alpha.7.4.42';
   var BASE_COMMIT = '55fd0f2379ed19ad7461dc00d3711ab80c4ff4d1';
@@ -28,6 +28,30 @@ AKORT.Beta16FullAuditRetention = (function () {
     'DATASET_STATUS',
     'ISSUE_REGISTRY'
   ];
+
+
+  /*
+   * RAW_LOAD_REGISTRY and PUBLISH_RECONCILIATION are accepted service
+   * registries owned outside Core. Keep their schemas local to this audit
+   * adapter instead of pretending that AKORT.Core.Tables owns them.
+   */
+  var NON_CORE_SOURCE_HEADERS = {
+    RAW_LOAD_REGISTRY: [
+      'load_id', 'operation_id', 'source_id', 'source_name',
+      'source_hash', 'target_table', 'status', 'rows_received',
+      'rows_staged', 'rows_inserted', 'rows_revised',
+      'rows_unchanged', 'rows_reversed', 'started_at', 'finished_at',
+      'error_code', 'error_message', 'release_version'
+    ],
+    PUBLISH_RECONCILIATION: [
+      'reconciliation_id', 'checked_at', 'full_build_id',
+      'incremental_build_id', 'sheet_name', 'baseline_rows',
+      'full_rows', 'incremental_rows', 'baseline_hash', 'full_hash',
+      'incremental_hash', 'full_equals_baseline',
+      'incremental_equals_full', 'status', 'details_json',
+      'release_version'
+    ]
+  };
 
   var EVIDENCE_HEADERS = [
     'audit_id', 'operation_id', 'audit_status', 'audit_scope',
@@ -109,6 +133,20 @@ AKORT.Beta16FullAuditRetention = (function () {
     return SpreadsheetApp.openById(config.resources.dwhSpreadsheetId);
   }
 
+  function expectedHeaders_(name) {
+    var coreHeaders = AKORT.Core.Tables[name];
+    if (coreHeaders && coreHeaders.length) return coreHeaders.slice();
+    var externalHeaders = NON_CORE_SOURCE_HEADERS[name];
+    if (externalHeaders && externalHeaders.length) {
+      return externalHeaders.slice();
+    }
+    throw AKORT.Core.error(
+      'BETA16_SCHEMA_CONTRACT_MISSING',
+      'No accepted schema contract is registered for the service table.',
+      { table: name, retryable: false }
+    );
+  }
+
   function table_(spreadsheet, name) {
     var sheet = spreadsheet.getSheetByName(name);
     if (!sheet) {
@@ -118,7 +156,7 @@ AKORT.Beta16FullAuditRetention = (function () {
         { table: name, retryable: false }
       );
     }
-    var expected = AKORT.Core.Tables[name] || [];
+    var expected = expectedHeaders_(name);
     var actual = sheet.getRange(
       1, 1, 1, Math.max(1, sheet.getLastColumn())
     ).getValues()[0].map(String);
