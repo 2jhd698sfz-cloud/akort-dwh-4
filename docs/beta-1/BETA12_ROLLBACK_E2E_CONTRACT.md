@@ -4,7 +4,7 @@
 
 This package adds a controlled end-to-end acceptance harness over the already accepted `RAW_LOAD_V4`, Beta.1.4 operational hardening, Beta.1.2 rollback facade, `RAW_REVERSAL_V4`, Publish, aggregate integration, reconciliation, and quick audit. It does not add a queue, executor, handler, trigger, table, or alternative rollback implementation.
 
-The implementation base is branch `codex/beta-1-operational-gap-closure` at commit `157f017d842a27aa85e53de51d2d80fe8facb5bd`. The runtime remains `4.0.0-alpha.7.4.42`.
+The implementation base is branch `codex/beta-1-operational-gap-closure` at commit `8d5f9a93210aa4ab7c02c9a9219b085e4d2947ac`. The runtime remains `4.0.0-alpha.7.4.42`.
 
 Corrective package `4.0.0-beta.1.2.7` preserves contract `4.0-beta12-rollback-e2e-1` and verifies the restore evidence file by SHA-256 of canonical JSON, not by whitespace-sensitive raw file bytes.
 
@@ -37,7 +37,7 @@ The restore rehearsal internal base commit remains `cc5451f3bfaad4a294f07c31a7c0
 
 ## Candidate policy
 
-The predecessor must be a deterministic current `RAW_INDUSTRY` row with a finite numeric value. Its source load must be `COMMITTED`, its source operation must exist and be `SUCCESS`, and its lineage must not contain any accepted facade protected marker (`ALPHA3_TEST_`, `ALPHA3_DEMO_`, `ALPHA4_TEST_`, `ALPHA5_TEST_`, `ALPHA74_GATE6`, `ALPHA74_GATE7`, `GATE6_`, or `GATE7_`). Existing reversal evidence, an active rollback, a later active revision, duplicate identifiers, invalid checkpoints, or missing registry lineage all block the run.
+The predecessor must be a deterministic current `RAW_INDUSTRY` row with a finite numeric value. Two lineage modes are accepted. Registered lineage requires a `COMMITTED` source load and a successful non-reversal source operation. Legacy row-bound lineage is allowed only when no `RAW_LOAD_REGISTRY` row exists for the predecessor load ID, the predecessor is version 1 with revision type `INITIAL`, and both the row and legacy-lineage fingerprints remain exact through canary submission. Any partially registered lineage fails closed. Both modes reject accepted facade protected markers (`ALPHA3_TEST_`, `ALPHA3_DEMO_`, `ALPHA4_TEST_`, `ALPHA5_TEST_`, `ALPHA74_GATE6`, `ALPHA74_GATE7`, `GATE6_`, or `GATE7_`). Existing reversal evidence, an active rollback, a later active revision, duplicate identifiers, invalid checkpoints, or lineage drift block the run.
 
 The owned source identity is `B12E2E_R1` / `B12 E2E controlled revision r1`. Static tests verify that this identity does not collide with the accepted protected markers.
 
@@ -56,3 +56,7 @@ The targeted command is `npm run test:beta12-rollback-e2e`. In the full `npm tes
 ## Safety boundary
 
 Production is never selected. Active DEV configuration is not changed. The user pipeline remains disabled. No trigger is created or deleted. No physical deletion or evidence cleanup is implemented. Accepted core modules are consumed through their public interfaces and are not modified by this package.
+
+## Release-closure corrections
+
+Package `4.0.0-beta.1.2.8` closes the two live preflight defects without changing the accepted data plane. Restore evidence is verified by SHA-256 of canonical JSON rather than whitespace-sensitive raw bytes. Candidate selection supports either fully registered source-operation lineage or a narrowly defined legacy `RAW_INDUSTRY` predecessor: no load-registry row, version 1, revision type `INITIAL`, exact row fingerprint, and exact legacy-lineage fingerprint. Any partially registered, revised, protected, or drifting lineage remains fail-closed.

@@ -1,9 +1,9 @@
 {
-  "schemaVersion": "4.0-beta12-rollback-e2e-1",
-  "packageVersion": "4.0.0-beta.1.2.7",
+  "schemaVersion": "4.0-beta12-rollback-e2e-2",
+  "packageVersion": "4.0.0-beta.1.2.8",
   "implementationBase": {
     "branch": "codex/beta-1-operational-gap-closure",
-    "head": "157f017d842a27aa85e53de51d2d80fe8facb5bd",
+    "head": "8d5f9a93210aa4ab7c02c9a9219b085e4d2947ac",
     "release": "4.0.0-alpha.7.4.42"
   },
   "acceptedBindings": {
@@ -71,8 +71,17 @@
     "deterministic": true,
     "requiresLatest": true,
     "requiresFiniteValue": true,
-    "requiresCommittedSourceLoad": true,
-    "requiresSuccessfulSourceOperation": true,
+    "registeredLineage": {
+      "requiresCommittedSourceLoad": true,
+      "requiresSuccessfulNonReversalSourceOperation": true
+    },
+    "legacyRowBoundLineage": {
+      "allowed": true,
+      "requiresNoLoadRegistryRow": true,
+      "requiresVersionNo": 1,
+      "requiresRevisionType": "INITIAL",
+      "requiresExactRowAndLineageFingerprints": true
+    },
     "protectsGateAndTestLineage": true,
     "blocksExistingReversal": true,
     "blocksActiveRollback": true,

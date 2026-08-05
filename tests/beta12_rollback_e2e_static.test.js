@@ -115,11 +115,11 @@ const protectedMarkers = [
 
 test('source is syntax-valid and pins exact implementation base', () => {
   new vm.Script(source, { filename: '45_Beta12RollbackE2E.js' });
-  assert.equal(harness.PackageVersion, '4.0.0-beta.1.2.7');
-  assert.equal(harness.ContractVersion, '4.0-beta12-rollback-e2e-1');
+  assert.equal(harness.PackageVersion, '4.0.0-beta.1.2.8');
+  assert.equal(harness.ContractVersion, '4.0-beta12-rollback-e2e-2');
   assert.equal(
     harness.ImplementationBaseHead,
-    '157f017d842a27aa85e53de51d2d80fe8facb5bd'
+    '8d5f9a93210aa4ab7c02c9a9219b085e4d2947ac'
   );
   assert.equal(
     harness.ImplementationBaseBranch,
@@ -317,7 +317,7 @@ test('full phase chain covers Publish, aggregate, reconciliation and quick audit
 });
 
 
-test('candidate selection is deterministic and rejects protected or untraceable lineage', () => {
+test('candidate selection is deterministic and supports only explicit registered or legacy row-bound lineage', () => {
   const operation = {
     operation_id: 'OP_SOURCE_1',
     operation_type: 'SOURCE_FILE_LOAD_V4',
@@ -337,6 +337,7 @@ test('candidate selection is deterministic and rejects protected or untraceable 
     period_end: '2026-01-31',
     value: 100,
     version_no: 1,
+    revision_type: 'INITIAL',
     is_latest: true,
     load_id: 'LOAD_1'
   };
@@ -353,6 +354,7 @@ test('candidate selection is deterministic and rejects protected or untraceable 
   });
   assert.equal(selected.predecessorObservationId, 'OBS_1');
   assert.equal(selected.predecessorLoadId, 'LOAD_1');
+  assert.equal(selected.lineageMode, 'REGISTERED_OPERATION');
   assert(selected.candidateFingerprint);
 
   const protectedLoad = Object.assign({}, load, {
@@ -371,6 +373,58 @@ test('candidate selection is deterministic and rejects protected or untraceable 
     }),
     (error) => error.code === 'BETA12_E2E_SAFE_CANDIDATE_NOT_FOUND'
   );
+
+
+  const legacyRow = Object.assign({}, row, {
+    observation_id: 'OBS_LEGACY_1',
+    load_id: 'INDI_20260702_143415_269'
+  });
+  const legacy = harness.Test.candidateFromSnapshot({
+    rows: [legacyRow], loads: [], reversals: [], operations: []
+  });
+  assert.equal(legacy.predecessorObservationId, 'OBS_LEGACY_1');
+  assert.equal(legacy.lineageMode, 'LEGACY_ROW_BOUND');
+  assert.equal(legacy.sourceOperationId, '');
+  assert(legacy.sourceOperationFingerprint);
+
+  assert.throws(
+    () => harness.Test.candidateFromSnapshot({
+      rows: [Object.assign({}, legacyRow, { version_no: 2 })],
+      loads: [], reversals: [], operations: []
+    }),
+    (error) => error.code === 'BETA12_E2E_SAFE_CANDIDATE_NOT_FOUND'
+  );
+  assert.throws(
+    () => harness.Test.candidateFromSnapshot({
+      rows: [Object.assign({}, legacyRow, { revision_type: 'REVISION' })],
+      loads: [], reversals: [], operations: []
+    }),
+    (error) => error.code === 'BETA12_E2E_SAFE_CANDIDATE_NOT_FOUND'
+  );
+  assert.throws(
+    () => harness.Test.candidateFromSnapshot({
+      rows: [legacyRow],
+      loads: [Object.assign({}, load, {
+        load_id: legacyRow.load_id,
+        operation_id: 'OP_MISSING'
+      })],
+      reversals: [],
+      operations: []
+    }),
+    (error) => error.code === 'BETA12_E2E_SAFE_CANDIDATE_NOT_FOUND'
+  );
+});
+
+test('legacy candidate policy is narrow, row-bound and fail-closed', () => {
+  const candidateBody = functionBody(source, 'candidateFromSnapshot_', 'snapshot_');
+  const revalidateBody = functionBody(source, 'revalidateCandidate_', 'operationIdFromResult_');
+  assert(candidateBody.includes("LEGACY_LINEAGE_MODE"));
+  assert(candidateBody.includes("number_(row.version_no) !== 1"));
+  assert(candidateBody.includes("text_(row.revision_type).toUpperCase() !== 'INITIAL'"));
+  assert(candidateBody.includes('sourceOperationFingerprint = legacyLineageFingerprint_(row)'));
+  assert(revalidateBody.includes('!registered'));
+  assert(revalidateBody.includes('legacyLineageFingerprint_(row) === candidate.sourceOperationFingerprint'));
+  assert(source.includes('lineageMode: candidate.lineageMode'));
 });
 
 test('preview binding requires exact one-row restoration and all fingerprints', () => {
@@ -427,8 +481,8 @@ test('forbidden cleanup, trigger and pipeline-enablement APIs are absent', () =>
 });
 
 test('contract JSON and Markdown preserve fail-closed scope', () => {
-  assert.equal(contract.schemaVersion, '4.0-beta12-rollback-e2e-1');
-  assert.equal(contract.packageVersion, '4.0.0-beta.1.2.7');
+  assert.equal(contract.schemaVersion, '4.0-beta12-rollback-e2e-2');
+  assert.equal(contract.packageVersion, '4.0.0-beta.1.2.8');
   assert.equal(contract.scope.canaryOperationType, 'RAW_LOAD_V4');
   assert.equal(contract.scope.rollbackOperationType, 'RAW_REVERSAL_V4');
   assert.equal(contract.scope.targetTable, 'RAW_INDUSTRY');
@@ -436,7 +490,9 @@ test('contract JSON and Markdown preserve fail-closed scope', () => {
   assert.equal(contract.safety.failClosed, true);
   assert.equal(contract.safety.changesAcceptedCoreModules, false);
   assert(markdown.includes('4.0-beta11-isolated-restore-rehearsal-2'));
-  assert(markdown.includes('157f017d842a27aa85e53de51d2d80fe8facb5bd'));
+  assert(markdown.includes('8d5f9a93210aa4ab7c02c9a9219b085e4d2947ac'));
+  assert.equal(contract.candidatePolicy.legacyRowBoundLineage.requiresVersionNo, 1);
+  assert.equal(contract.candidatePolicy.legacyRowBoundLineage.requiresRevisionType, 'INITIAL');
   assert(markdown.includes('does not add a queue, executor, handler, trigger, table'));
 });
 

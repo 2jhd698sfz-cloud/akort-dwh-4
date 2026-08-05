@@ -10,10 +10,10 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * or service table.
  */
 AKORT.Beta12RollbackE2E = (function () {
-  var PACKAGE_VERSION = '4.0.0-beta.1.2.7';
-  var CONTRACT_VERSION = '4.0-beta12-rollback-e2e-1';
+  var PACKAGE_VERSION = '4.0.0-beta.1.2.8';
+  var CONTRACT_VERSION = '4.0-beta12-rollback-e2e-2';
   var IMPLEMENTATION_BASE_BRANCH = 'codex/beta-1-operational-gap-closure';
-  var IMPLEMENTATION_BASE_HEAD = '157f017d842a27aa85e53de51d2d80fe8facb5bd';
+  var IMPLEMENTATION_BASE_HEAD = '8d5f9a93210aa4ab7c02c9a9219b085e4d2947ac';
   var BASE_RELEASE = '4.0.0-alpha.7.4.42';
 
   var FACADE_PACKAGE = '4.0.0-beta.1.2.5';
@@ -43,6 +43,8 @@ AKORT.Beta12RollbackE2E = (function () {
   var RAW_TARGET = 'RAW_INDUSTRY';
   var RAW_LOAD_TYPE = 'RAW_LOAD_V4';
   var RAW_REVERSAL_TYPE = 'RAW_REVERSAL_V4';
+  var REGISTERED_LINEAGE_MODE = 'REGISTERED_OPERATION';
+  var LEGACY_LINEAGE_MODE = 'LEGACY_ROW_BOUND';
   var TIMEZONE = 'Europe/Moscow';
   var BACKUP_WINDOW_START_MINUTE = 3 * 60 + 35;
   var BACKUP_WINDOW_END_MINUTE = 4 * 60 + 25;
@@ -429,6 +431,19 @@ AKORT.Beta12RollbackE2E = (function () {
     });
   }
 
+  function legacyLineageFingerprint_(row) {
+    return canonicalHash_({
+      lineageMode: LEGACY_LINEAGE_MODE,
+      targetTable: RAW_TARGET,
+      predecessorObservationId: text_(row.observation_id),
+      predecessorLoadId: text_(row.load_id),
+      predecessorRowFingerprint: rowFingerprint_(row),
+      revisionType: text_(row.revision_type),
+      versionNo: number_(row.version_no)
+    });
+  }
+
+
   function candidateFingerprint_(candidate) {
     return canonicalHash_({
       targetTable: RAW_TARGET,
@@ -440,6 +455,7 @@ AKORT.Beta12RollbackE2E = (function () {
       predecessorValue: candidate.predecessorValue,
       predecessorVersionNo: candidate.predecessorVersionNo,
       predecessorLoadId: candidate.predecessorLoadId,
+      lineageMode: candidate.lineageMode,
       sourceOperationId: candidate.sourceOperationId,
       predecessorRowFingerprint: candidate.predecessorRowFingerprint,
       sourceOperationFingerprint: candidate.sourceOperationFingerprint
@@ -503,20 +519,40 @@ AKORT.Beta12RollbackE2E = (function () {
     snapshot.rows.forEach(function (row) {
       if (!truthy_(row.is_latest) || !isFinite(number_(row.value))) return;
       var loadId = text_(row.load_id);
-      var load = loadsById[loadId];
-      if (!load || text_(load.status) !== 'COMMITTED' ||
-          text_(load.target_table) !== RAW_TARGET) return;
-      if (reversedTargets[loadId] || activeRollbackTargets[loadId]) return;
-      var operation = operationsById[text_(load.operation_id)];
-      if (!operation || text_(operation.status) !== 'SUCCESS' ||
-          text_(operation.operation_type) === RAW_REVERSAL_TYPE) return;
-      var identity = [
-        load.load_id, load.source_id, load.source_name, load.operation_id,
-        operation.operation_id, operation.operation_type,
-        operation.checkpoint_json
-      ].join('|');
-      var ownedIdentity = text_(load.source_id) === SOURCE_ID ||
-        text_(load.source_name) === SOURCE_NAME ||
+      if (!loadId || reversedTargets[loadId] || activeRollbackTargets[loadId]) return;
+      var load = loadsById[loadId] || null;
+      var operation = load ? operationsById[text_(load.operation_id)] : null;
+      var lineageMode = '';
+      var sourceOperationId = '';
+      var sourceOperationFingerprint = '';
+      var identity = '';
+
+      if (load) {
+        if (text_(load.status) !== 'COMMITTED' ||
+            text_(load.target_table) !== RAW_TARGET) return;
+        if (!operation || text_(operation.status) !== 'SUCCESS' ||
+            text_(operation.operation_type) === RAW_REVERSAL_TYPE) return;
+        identity = [
+          load.load_id, load.source_id, load.source_name, load.operation_id,
+          operation.operation_id, operation.operation_type,
+          operation.checkpoint_json
+        ].join('|');
+        lineageMode = REGISTERED_LINEAGE_MODE;
+        sourceOperationId = text_(operation.operation_id);
+        sourceOperationFingerprint = operationFingerprint_(operation);
+      } else {
+        identity = [
+          row.observation_id, row.series_id, row.period_start, row.period_end,
+          row.load_id, row.revision_type, row.version_no
+        ].join('|');
+        if (number_(row.version_no) !== 1 ||
+            text_(row.revision_type).toUpperCase() !== 'INITIAL') return;
+        lineageMode = LEGACY_LINEAGE_MODE;
+        sourceOperationFingerprint = legacyLineageFingerprint_(row);
+      }
+
+      var ownedIdentity = text_(load && load.source_id) === SOURCE_ID ||
+        text_(load && load.source_name) === SOURCE_NAME ||
         identity.indexOf(CONTRACT_VERSION) >= 0 ||
         identity.indexOf(PACKAGE_VERSION) >= 0 ||
         identity.toUpperCase().indexOf('B12E2E_') >= 0;
@@ -541,9 +577,10 @@ AKORT.Beta12RollbackE2E = (function () {
         predecessorValue: number_(row.value),
         predecessorVersionNo: number_(row.version_no),
         predecessorLoadId: loadId,
-        sourceOperationId: text_(operation.operation_id),
+        lineageMode: lineageMode,
+        sourceOperationId: sourceOperationId,
         predecessorRowFingerprint: rowFingerprint_(row),
-        sourceOperationFingerprint: operationFingerprint_(operation)
+        sourceOperationFingerprint: sourceOperationFingerprint
       };
       candidate.candidateFingerprint = candidateFingerprint_(candidate);
       candidates.push(candidate);
@@ -558,8 +595,8 @@ AKORT.Beta12RollbackE2E = (function () {
       'BETA12_E2E_SAFE_CANDIDATE_NOT_FOUND',
       'No current RAW_INDUSTRY row satisfies the fail-closed E2E eligibility policy.', {
         retryable: false,
-        requiredSourceLoadStatus: 'COMMITTED',
-        requiredSourceOperationStatus: 'SUCCESS',
+        registeredPolicy: 'COMMITTED_LOAD_AND_SUCCESSFUL_NON_REVERSAL_OPERATION',
+        legacyPolicy: 'UNREGISTERED_VERSION_1_INITIAL_ROW_BOUND_LINEAGE',
         protectedMarkers: PROTECTED_MARKERS.slice()
       });
     return candidates[0];
@@ -727,18 +764,34 @@ AKORT.Beta12RollbackE2E = (function () {
     var row = unique_(snap.rows, function (item) {
       return text_(item.observation_id) === text_(candidate.predecessorObservationId);
     }, 'BETA12_E2E_PREDECESSOR_NOT_UNIQUE', 'Predecessor observation');
-    var load = findOne_(snap.loads, 'load_id', candidate.predecessorLoadId);
-    var operation = load ? findOne_(snap.operations, 'operation_id', load.operation_id) : null;
-    assert_(load && operation && truthy_(row.is_latest) &&
+    var lineageValid = false;
+
+    if (candidate.lineageMode === REGISTERED_LINEAGE_MODE) {
+      var load = findOne_(snap.loads, 'load_id', candidate.predecessorLoadId);
+      var operation = load ? findOne_(snap.operations, 'operation_id', load.operation_id) : null;
+      lineageValid = !!(load && operation &&
         text_(load.status) === 'COMMITTED' &&
+        text_(load.target_table) === RAW_TARGET &&
         text_(operation.status) === 'SUCCESS' &&
+        text_(operation.operation_type) !== RAW_REVERSAL_TYPE &&
+        operationFingerprint_(operation) === candidate.sourceOperationFingerprint);
+    } else if (candidate.lineageMode === LEGACY_LINEAGE_MODE) {
+      var registered = findOne_(snap.loads, 'load_id', candidate.predecessorLoadId);
+      lineageValid = !registered &&
+        text_(row.load_id) === text_(candidate.predecessorLoadId) &&
+        number_(row.version_no) === 1 &&
+        text_(row.revision_type).toUpperCase() === 'INITIAL' &&
+        legacyLineageFingerprint_(row) === candidate.sourceOperationFingerprint;
+    }
+
+    assert_(lineageValid && truthy_(row.is_latest) &&
         rowFingerprint_(row) === candidate.predecessorRowFingerprint &&
-        operationFingerprint_(operation) === candidate.sourceOperationFingerprint &&
         candidateFingerprint_(candidate) === candidate.candidateFingerprint,
       'BETA12_E2E_PREDECESSOR_DRIFT',
       'The selected predecessor or its source lineage changed after preflight.', {
         retryable: false,
-        predecessorObservationId: candidate.predecessorObservationId
+        predecessorObservationId: candidate.predecessorObservationId,
+        lineageMode: candidate.lineageMode
       });
     assert_(activeOperations_(snap.operations, []).length === 0,
       'BETA12_E2E_OPERATION_QUIESCENCE_REQUIRED',
@@ -1762,6 +1815,13 @@ AKORT.Beta12RollbackE2E = (function () {
         rollback: RAW_REVERSAL_TYPE,
         canaryRows: 1,
         targetTable: RAW_TARGET
+      },
+      candidatePolicy: {
+        registeredLineageMode: REGISTERED_LINEAGE_MODE,
+        legacyLineageMode: LEGACY_LINEAGE_MODE,
+        legacyRequiresNoRegistryRow: true,
+        legacyRequiresVersionOneInitial: true,
+        rowAndLineageFingerprintsRequired: true
       },
       publicFunctions: [
         'AKORT_beta12RollbackE2EPreflight',
