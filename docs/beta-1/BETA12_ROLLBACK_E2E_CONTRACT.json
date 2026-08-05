@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "4.0-beta12-rollback-e2e-1",
+  "packageVersion": "4.0.0-beta.1.2.6",
+  "implementationBase": {
+    "branch": "codex/beta-1-operational-gap-closure",
+    "head": "157f017d842a27aa85e53de51d2d80fe8facb5bd",
+    "release": "4.0.0-alpha.7.4.42"
+  },
+  "acceptedBindings": {
+    "rollbackFacade": {
+      "packageVersion": "4.0.0-beta.1.2.5",
+      "contractVersion": "4.0-beta12-rollback-facade-4"
+    },
+    "operationalHardening": {
+      "packageVersion": "4.0.0-beta.1.4.2",
+      "contractVersion": "4.0-beta14-operational-hardening-1"
+    },
+    "restoreRehearsal": {
+      "packageVersion": "4.0.0-beta.1.1.7",
+      "contractVersion": "4.0-beta11-isolated-restore-rehearsal-2",
+      "baseCommit": "cc5451f3bfaad4a294f07c31a7c0b76b71f14299",
+      "backupId": "BKP_DAILY_20260805",
+      "evidenceId": "RRE_0F19BA90233D4B0C053C5659",
+      "evidenceHash": "0f19ba90233d4b0c053c565957a6183d14c48a4405020964d38a270adf9e9d15",
+      "evidenceFileId": "151LMCH-yam2Guba_2TzCUwzhc3javtct",
+      "evidenceFileSha256": "3fff487ea06cc32bb86cd516434e9cd6c5bf62b618499b4c726126d305a972a3"
+    }
+  },
+  "environmentBinding": {
+    "scriptId": "1M3u30v6Wrv7X_qqGMDe_ITtdZSsfd1SNPr7MlEaqYFPbfJC0GSEeluL9",
+    "dwhSpreadsheetId": "1d89EJVHtrZ4a8emcb-13OMjHMyh3mvW36LcxQf9Gk5s",
+    "publishSpreadsheetId": "1tO_GmM02JSjOx05LYncsoqcqH4om9cVtr4pECxVCFBw",
+    "devRootFolderId": "1EvZx01xSMR6smJ2PNakKzlrEwT0OjV4J",
+    "environment": "DEV",
+    "userPipelineEnabled": false
+  },
+  "scope": {
+    "canaryOperationType": "RAW_LOAD_V4",
+    "rollbackOperationType": "RAW_REVERSAL_V4",
+    "targetTable": "RAW_INDUSTRY",
+    "canaryRows": 1,
+    "sourceId": "B12E2E_R1",
+    "sourceName": "B12 E2E controlled revision r1",
+    "sourceIdentityProtected": false,
+    "newQueue": false,
+    "newExecutor": false,
+    "newHandler": false,
+    "newTable": false,
+    "newTrigger": false
+  },
+  "decisionBoundaries": {
+    "preflight": "READ_ONLY",
+    "canarySubmit": "ONE_OWNED_RAW_LOAD_ONLY",
+    "continueLatest": "EXACT_STORED_OPERATION_ONLY",
+    "rollbackPreview": "READ_ONLY_DATA_PLANE_CONTROL_BINDING_ONLY",
+    "rollbackSubmit": "EXACT_STORED_TARGET_AND_BINDING_ONLY",
+    "statusLatest": "READ_ONLY",
+    "finalizeLatest": "VERIFY_AND_WRITE_EVIDENCE_ONLY"
+  },
+  "publicFunctions": [
+    "AKORT_beta12RollbackE2EPreflight",
+    "AKORT_beta12RollbackE2ECanarySubmit",
+    "AKORT_beta12RollbackE2EContinueLatest",
+    "AKORT_beta12RollbackE2ERollbackPreview",
+    "AKORT_beta12RollbackE2ERollbackSubmit",
+    "AKORT_beta12RollbackE2EStatusLatest",
+    "AKORT_beta12RollbackE2EFinalizeLatest",
+    "AKORT_beta12RollbackE2EContract"
+  ],
+  "candidatePolicy": {
+    "deterministic": true,
+    "requiresLatest": true,
+    "requiresFiniteValue": true,
+    "requiresCommittedSourceLoad": true,
+    "requiresSuccessfulSourceOperation": true,
+    "protectsGateAndTestLineage": true,
+    "blocksExistingReversal": true,
+    "blocksActiveRollback": true,
+    "blocksLaterActiveRevision": true,
+    "requiresPublishAndAggregatePipeline": true,
+    "failureMode": "FAIL_CLOSED"
+  },
+  "confirmationBinding": {
+    "requiresFreshPreviewAtSubmit": true,
+    "fields": [
+      "targetLoadId",
+      "targetRowCount",
+      "restoredRowCount",
+      "unrestoredRowCount",
+      "confirmationToken",
+      "lineageFingerprint",
+      "impactFingerprint",
+      "sourceOperationFingerprint",
+      "reasonHash",
+      "reason"
+    ],
+    "driftBehavior": "REFUSE_SUBMIT"
+  },
+  "acceptance": {
+    "minimumChecks": 12,
+    "requiresCanarySuccess": true,
+    "requiresRollbackSuccess": true,
+    "requiresExactReversalPair": true,
+    "requiresPredecessorRestoredLatest": true,
+    "requiresCanaryNotLatest": true,
+    "requiresFullPublishAggregateReconciliationAudit": true,
+    "requiresNoUnrelatedActiveOperations": true,
+    "evidence": {
+      "format": "IMMUTABLE_JSON",
+      "folderName": "10_Beta12_Rollback_E2E",
+      "physicalCleanup": false,
+      "hashDomain": "CANONICAL_JSON_EXCLUDING_EVIDENCE_ID_HASH_AND_FILE_POINTERS"
+    }
+  },
+  "safety": {
+    "failClosed": true,
+    "productionTouched": false,
+    "activeDevConfigurationChanged": false,
+    "physicalDeletion": false,
+    "userPipelineEnabled": false,
+    "deletesEvidence": false,
+    "changesTriggers": false,
+    "changesAcceptedCoreModules": false
+  }
+}
