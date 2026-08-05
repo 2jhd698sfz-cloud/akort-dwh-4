@@ -160,13 +160,31 @@ test('accepted audit and protection inputs exist', () => {
   });
 });
 
-test('Full Audit and retention gaps are not falsely closed by r1', () => {
+test('Full Audit gap is absent before r2 or closed exactly by r2', () => {
   const core = fs.readFileSync(
     path.join(root, 'src', '02_Core.js'),
     'utf8'
   );
-  assert(!core.includes('FULL_AUDIT_EVIDENCE'));
-  assert(!core.includes('RETENTION_REGISTRY'));
+  const implementationPath = path.join(
+    root,
+    'src',
+    '42_Beta16FullAuditRetention.js'
+  );
+  const implementationPresent = fs.existsSync(implementationPath);
+  if (!implementationPresent) {
+    assert(!core.includes('FULL_AUDIT_EVIDENCE'));
+    assert(!core.includes('RETENTION_REGISTRY'));
+  } else {
+    const implementation = fs.readFileSync(implementationPath, 'utf8');
+    const engine = fs.readFileSync(
+      path.join(root, 'src', '03_OperationEngine.js'),
+      'utf8'
+    );
+    assert(core.includes('FULL_AUDIT_EVIDENCE: ['));
+    assert(core.includes('RETENTION_REGISTRY: ['));
+    assert(implementation.includes("'FULL_AUDIT_V4'"));
+    assert(engine.includes('AKORT.Beta16FullAuditHandlers'));
+  }
   assert(source.includes("'FULL_AUDIT_V4'"));
   assert(source.includes("'FULL_AUDIT_EVIDENCE'"));
   assert(source.includes("'RETENTION_REGISTRY'"));

@@ -245,6 +245,9 @@ AKORT.Beta14OperationalHardening = (function () {
         type.indexOf('ALPHA3_DEMO_') === 0) {
       return 'CONTROL_PLANE_TEST';
     }
+    if (type === 'FULL_AUDIT_V4') {
+      return 'SNAPSHOT_EXCLUSIVE';
+    }
     if (type === 'BETA11_PAIRED_BACKUP') {
       return 'SNAPSHOT_EXCLUSIVE';
     }
@@ -1266,7 +1269,7 @@ AKORT.Beta14OperationalHardening = (function () {
       staleThresholdMinutes: clone_(STALE_MINUTES),
       normalizedNextActions: NEXT_ACTIONS.slice(),
       operationClasses: {
-        snapshotExclusive: ['BETA11_PAIRED_BACKUP'],
+        snapshotExclusive: ['BETA11_PAIRED_BACKUP', 'FULL_AUDIT_V4'],
         dataPlaneExclusive: [
           'SOURCE_FILE_LOAD_V4',
           'RAW_LOAD_V4',

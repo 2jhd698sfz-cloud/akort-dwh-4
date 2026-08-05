@@ -71,6 +71,24 @@ AKORT.Core = (function () {
       'summary', 'details_json', 'resolution', 'next_action',
       'observed_at', 'snapshot_fingerprint', 'release_version'
     ],
+    FULL_AUDIT_EVIDENCE: [
+      'audit_id', 'operation_id', 'audit_status', 'audit_scope',
+      'started_at', 'finished_at', 'checks_total', 'checks_passed',
+      'checks_warned', 'checks_failed', 'retention_rows',
+      'protected_artifacts', 'review_candidates', 'release_version',
+      'base_commit', 'gate7_evidence_id', 'gate7_evidence_hash',
+      'dataset_snapshot_fingerprint', 'source_snapshot_fingerprint',
+      'retention_snapshot_fingerprint', 'evidence_hash', 'checks_json',
+      'next_action', 'created_by'
+    ],
+    RETENTION_REGISTRY: [
+      'retention_id', 'audit_id', 'operation_id', 'artifact_class',
+      'artifact_id', 'artifact_name', 'artifact_source',
+      'artifact_timestamp', 'age_days', 'retention_days',
+      'protected_flag', 'protection_reason', 'candidate_action',
+      'dry_run', 'physical_deletion', 'plan_status', 'next_action',
+      'planned_at', 'snapshot_fingerprint', 'release_version'
+    ],
     SYSTEM_LOG: [
       'log_id', 'logged_at', 'level', 'component', 'operation_id', 'step_id',
       'execution_id', 'event_code', 'message', 'details_json', 'release_version'

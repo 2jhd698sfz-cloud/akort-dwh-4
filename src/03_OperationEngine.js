@@ -617,6 +617,11 @@ AKORT.OperationEngine = (function () {
         AKORT.RawStoreHandlers.supports(type)) {
       return AKORT.RawStoreHandlers;
     }
+    if (AKORT.Beta16FullAuditHandlers &&
+        typeof AKORT.Beta16FullAuditHandlers.supports === 'function' &&
+        AKORT.Beta16FullAuditHandlers.supports(type)) {
+      return AKORT.Beta16FullAuditHandlers;
+    }
     if (AKORT.Beta11BackupHandlers &&
         typeof AKORT.Beta11BackupHandlers.supports === 'function' &&
         AKORT.Beta11BackupHandlers.supports(type)) {
