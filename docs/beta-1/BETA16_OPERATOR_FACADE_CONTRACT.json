@@ -1,0 +1,22 @@
+{
+  "packageVersion": "4.0.0-beta.1.6.4",
+  "contractVersion": "4.0-beta16-operator-facade-1",
+  "operationType": "FULL_AUDIT_V4",
+  "acceptedExecutor": "AKORT.OperationEngine",
+  "acceptedStatusSource": "AKORT.Beta14OperationalHardening.status",
+  "publicApi": [
+    "AKORT_beta16FullAuditContinueLatest",
+    "AKORT_beta16FullAuditStatusLatest"
+  ],
+  "requiresOperationArgument": false,
+  "createsOperation": false,
+  "createsTable": false,
+  "createsTrigger": false,
+  "deletesTrigger": false,
+  "driveEnumeration": false,
+  "physicalDeletion": false,
+  "readsPhysicalRawTargets": false,
+  "readsPhysicalPublishTargets": false,
+  "productionWrite": false,
+  "enablesUserPipeline": false
+}
