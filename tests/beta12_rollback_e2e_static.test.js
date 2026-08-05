@@ -115,7 +115,7 @@ const protectedMarkers = [
 
 test('source is syntax-valid and pins exact implementation base', () => {
   new vm.Script(source, { filename: '45_Beta12RollbackE2E.js' });
-  assert.equal(harness.PackageVersion, '4.0.0-beta.1.2.6');
+  assert.equal(harness.PackageVersion, '4.0.0-beta.1.2.7');
   assert.equal(harness.ContractVersion, '4.0-beta12-rollback-e2e-1');
   assert.equal(
     harness.ImplementationBaseHead,
@@ -164,6 +164,20 @@ test('restore evidence binding and exact DEV IDs are pinned', () => {
   assert.equal(
     contract.acceptedBindings.restoreRehearsal.contractVersion,
     '4.0-beta11-isolated-restore-rehearsal-2'
+  );
+});
+
+test('restore evidence file hash uses canonical JSON rather than raw file bytes', () => {
+  const start = source.indexOf('function restoreEvidence_()');
+  const end = source.indexOf('\n  function activeOperations_', start);
+  assert(start >= 0 && end > start);
+  const body = source.slice(start, end);
+  assert(body.includes('var evidence = parseJson_('));
+  assert(body.includes('var fileHash = canonicalHash_(evidence);'));
+  assert(!body.includes('AKORT.Core.sha256(content)'));
+  assert(
+    body.indexOf('var evidence = parseJson_(') <
+      body.indexOf('var fileHash = canonicalHash_(evidence);')
   );
 });
 
@@ -414,7 +428,7 @@ test('forbidden cleanup, trigger and pipeline-enablement APIs are absent', () =>
 
 test('contract JSON and Markdown preserve fail-closed scope', () => {
   assert.equal(contract.schemaVersion, '4.0-beta12-rollback-e2e-1');
-  assert.equal(contract.packageVersion, '4.0.0-beta.1.2.6');
+  assert.equal(contract.packageVersion, '4.0.0-beta.1.2.7');
   assert.equal(contract.scope.canaryOperationType, 'RAW_LOAD_V4');
   assert.equal(contract.scope.rollbackOperationType, 'RAW_REVERSAL_V4');
   assert.equal(contract.scope.targetTable, 'RAW_INDUSTRY');

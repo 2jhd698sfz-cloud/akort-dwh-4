@@ -10,7 +10,7 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * or service table.
  */
 AKORT.Beta12RollbackE2E = (function () {
-  var PACKAGE_VERSION = '4.0.0-beta.1.2.6';
+  var PACKAGE_VERSION = '4.0.0-beta.1.2.7';
   var CONTRACT_VERSION = '4.0-beta12-rollback-e2e-1';
   var IMPLEMENTATION_BASE_BRANCH = 'codex/beta-1-operational-gap-closure';
   var IMPLEMENTATION_BASE_HEAD = '157f017d842a27aa85e53de51d2d80fe8facb5bd';
@@ -331,12 +331,12 @@ AKORT.Beta12RollbackE2E = (function () {
   function restoreEvidence_() {
     var file = DriveApp.getFileById(RESTORE_EVIDENCE_FILE_ID);
     var content = file.getBlob().getDataAsString('UTF-8');
-    var fileHash = AKORT.Core.sha256(content);
     var evidence = parseJson_(
       content,
       'BETA12_E2E_RESTORE_EVIDENCE_INVALID',
       'Accepted restore evidence file'
     );
+    var fileHash = canonicalHash_(evidence);
     var passChecks = (evidence.checks || []).filter(function (check) {
       return text_(check.status) === 'PASS';
     });

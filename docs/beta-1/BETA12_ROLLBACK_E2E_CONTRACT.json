@@ -1,6 +1,6 @@
 {
   "schemaVersion": "4.0-beta12-rollback-e2e-1",
-  "packageVersion": "4.0.0-beta.1.2.6",
+  "packageVersion": "4.0.0-beta.1.2.7",
   "implementationBase": {
     "branch": "codex/beta-1-operational-gap-closure",
     "head": "157f017d842a27aa85e53de51d2d80fe8facb5bd",

@@ -6,6 +6,8 @@ This package adds a controlled end-to-end acceptance harness over the already ac
 
 The implementation base is branch `codex/beta-1-operational-gap-closure` at commit `157f017d842a27aa85e53de51d2d80fe8facb5bd`. The runtime remains `4.0.0-alpha.7.4.42`.
 
+Corrective package `4.0.0-beta.1.2.7` preserves contract `4.0-beta12-rollback-e2e-1` and verifies the restore evidence file by SHA-256 of canonical JSON, not by whitespace-sensitive raw file bytes.
+
 ## Accepted bindings
 
 The harness fails closed unless all accepted bindings match exactly:
