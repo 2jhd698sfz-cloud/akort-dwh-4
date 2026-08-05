@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "4.0-beta15-observability-inventory-1",
+  "packageVersion": "4.0.0-beta.1.5.1",
+  "contractVersion": "4.0-beta15-observability-inventory-1",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "00d1c5e139f2304cf248e1b6ca0e222459c2ed53",
+  "requirementId": "BETA1.5-MINIMUM-OBSERVABILITY",
+  "mode": "READ_ONLY_OBSERVABILITY_INVENTORY",
+  "sourceTables": [
+    "RELEASE_REGISTRY",
+    "OPERATION_QUEUE",
+    "OPERATION_STEPS",
+    "SYSTEM_LOG",
+    "RAW_LOAD_REGISTRY",
+    "PUBLISH_RUNS",
+    "PUBLISH_RECONCILIATION",
+    "PARSER_ISSUES",
+    "BACKUP_REGISTRY",
+    "TRIGGER_OWNERSHIP_REGISTRY"
+  ],
+  "candidateReadModels": {
+    "DATASET_STATUS": {
+      "status": "MISSING",
+      "grain": "one compact row per observable dataset or operational domain",
+      "minimumCapabilities": [
+        "release",
+        "health",
+        "freshness",
+        "latest_period",
+        "latest_load",
+        "active_phase",
+        "progress",
+        "checkpoint",
+        "trigger",
+        "backup",
+        "issue_summary",
+        "next_action"
+      ]
+    },
+    "ISSUE_REGISTRY": {
+      "status": "MISSING",
+      "grain": "one normalized current issue per stable source issue identity",
+      "minimumCapabilities": [
+        "source",
+        "severity",
+        "issue_code",
+        "status",
+        "first_seen",
+        "last_seen",
+        "occurrence_count",
+        "resolution",
+        "next_action"
+      ]
+    }
+  },
+  "reuse": {
+    "operationWatchdog": "AKORT.Beta14OperationalHardening",
+    "pairedBackup": "BACKUP_REGISTRY",
+    "triggerOwnership": "TRIGGER_OWNERSHIP_REGISTRY",
+    "rawLoads": "RAW_LOAD_REGISTRY",
+    "publishRuns": "PUBLISH_RUNS",
+    "parserIssues": "PARSER_ISSUES",
+    "systemIssues": "SYSTEM_LOG",
+    "newQueue": false,
+    "newExecutor": false,
+    "newDispatcher": false
+  },
+  "boundedness": {
+    "tailRowsPerSource": 25,
+    "readsRawTargets": false,
+    "readsPublishTargets": false,
+    "fullRegistryScan": false,
+    "returnsSourceRows": false
+  },
+  "publicApi": [
+    "AKORT_beta15ObservabilityInventoryContract",
+    "AKORT_beta15ObservabilityInventory"
+  ],
+  "writes": {
+    "createsTable": false,
+    "updatesTable": false,
+    "createsTrigger": false,
+    "deletesTrigger": false,
+    "mutatesOperation": false,
+    "dataPlaneWrite": false,
+    "productionWrite": false,
+    "enablesUserPipeline": false
+  }
+}
