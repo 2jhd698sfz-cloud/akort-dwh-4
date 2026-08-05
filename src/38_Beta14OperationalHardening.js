@@ -245,6 +245,9 @@ AKORT.Beta14OperationalHardening = (function () {
         type.indexOf('ALPHA3_DEMO_') === 0) {
       return 'CONTROL_PLANE_TEST';
     }
+    if (type === 'BETA11_RESTORE_REHEARSAL') {
+      return 'SNAPSHOT_EXCLUSIVE';
+    }
     if (type === 'FULL_AUDIT_V4') {
       return 'SNAPSHOT_EXCLUSIVE';
     }

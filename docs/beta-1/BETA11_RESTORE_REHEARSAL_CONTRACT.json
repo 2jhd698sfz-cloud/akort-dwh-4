@@ -1,0 +1,46 @@
+{
+  "packageVersion": "4.0.0-beta.1.1.6",
+  "contractVersion": "4.0-beta11-isolated-restore-rehearsal-1",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "cc5451f3bfaad4a294f07c31a7c0b76b71f14299",
+  "operationType": "BETA11_RESTORE_REHEARSAL",
+  "defaultBackupId": "BKP_DAILY_20260805",
+  "acceptedExecutor": "AKORT.OperationEngine",
+  "guardedEnqueue": "AKORT.Beta14OperationalHardening.enqueueGuarded",
+  "restoreMode": "ISOLATED_BACKUP_COPY_ONLY",
+  "isolatedRootFolder": "09_Проверка восстановления",
+  "comparisonScope": [
+    "WORKBOOK_LOCALE",
+    "WORKBOOK_TIMEZONE",
+    "NAMED_RANGES",
+    "SHEET_ORDER_AND_NAMES",
+    "SHEET_VISIBILITY",
+    "FROZEN_ROWS_AND_COLUMNS",
+    "SHEET_DIMENSIONS",
+    "CELL_VALUES",
+    "FORMULAS_R1C1",
+    "NUMBER_FORMATS"
+  ],
+  "evidence": {
+    "format": "IMMUTABLE_JSON_FILE",
+    "containsSourceAndRestoredIds": true,
+    "containsWorkbookFingerprints": true,
+    "containsSheetFingerprints": true,
+    "containsSafetyBoundary": true
+  },
+  "publicApi": [
+    "AKORT_beta11RestoreRehearsalContract",
+    "AKORT_beta11RestoreRehearsalPreflight",
+    "AKORT_beta11RestoreRehearsalSubmit",
+    "AKORT_beta11RestoreRehearsalContinueLatest",
+    "AKORT_beta11RestoreRehearsalStatusLatest"
+  ],
+  "createsTrigger": false,
+  "deletesTrigger": false,
+  "physicalDeletion": false,
+  "changesActiveDevConfiguration": false,
+  "writesRaw": false,
+  "writesPublish": false,
+  "productionWrite": false,
+  "enablesUserPipeline": false
+}
