@@ -1,0 +1,134 @@
+{
+  "schemaVersion": "4.0-beta13-failure-injection-contract-1",
+  "packageVersion": "4.0.0-beta.1.3.1",
+  "contractVersion": "4.0-beta13-failure-injection-1",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "9620d87939fae952606c96357dd3368c66265ca4",
+  "requirementId": "BETA1.3-FAILURE-INJECTION",
+  "mode": "DEV_TEST_OPERATION_FACADE",
+  "reuse": {
+    "queue": "OPERATION_QUEUE",
+    "steps": "OPERATION_STEPS",
+    "executor": "AKORT.OperationEngine",
+    "handler": "AKORT.TestOperationHandlers",
+    "operationTypePrefix": "ALPHA3_TEST_BETA13_",
+    "newQueue": false,
+    "newExecutor": false,
+    "newDispatcher": false,
+    "operationEngineModified": false,
+    "testHandlerModified": false
+  },
+  "scenarios": {
+    "RETRYABLE_ONCE": {
+      "failPhase": "VALIDATE",
+      "failMode": "RETRYABLE",
+      "failTimes": 1,
+      "maxAttempts": 3,
+      "firstStatus": "RETRY_PENDING",
+      "terminalStatus": "SUCCESS",
+      "continuation": "resume"
+    },
+    "FATAL_RECOVERY": {
+      "failPhase": "PARSE",
+      "failMode": "FATAL",
+      "failTimes": 1,
+      "maxAttempts": 3,
+      "firstStatus": "FAILED",
+      "terminalStatus": "SUCCESS",
+      "continuation": "recoverFailedPhase then resume"
+    },
+    "HANDLER_PAUSE": {
+      "pauseAfterPhase": "STAGE",
+      "firstStatus": "PAUSED",
+      "terminalStatus": "SUCCESS",
+      "continuation": "resume"
+    },
+    "SAFE_STOP": {
+      "requestStopBeforeRun": true,
+      "firstStatus": "PAUSED",
+      "terminalStatus": "SUCCESS",
+      "continuation": "resume"
+    },
+    "DEAD_LETTER": {
+      "failPhase": "DISCOVER",
+      "failMode": "RETRYABLE",
+      "failTimes": 3,
+      "maxAttempts": 2,
+      "firstStatus": "RETRY_PENDING",
+      "terminalStatus": "DEAD_LETTER",
+      "continuation": "resume"
+    }
+  },
+  "confirmation": {
+    "previewReadOnly": true,
+    "algorithm": "sha256(canonicalJson(binding))",
+    "boundFields": [
+      "packageVersion",
+      "contractVersion",
+      "baseRelease",
+      "baseCommit",
+      "scenario",
+      "operationType",
+      "test",
+      "maxAttempts",
+      "preRunStop",
+      "sentinelFingerprint"
+    ],
+    "revalidatedImmediatelyBeforeEnqueue": true,
+    "idempotencyKey": "BETA13_<SCENARIO>_<CONFIRMATION_TOKEN>"
+  },
+  "dataSentinel": {
+    "mode": "BOUNDED_HEADERS_EDGES_COUNTS",
+    "dwhSheets": [
+      "RAW_PRICES_WEEKLY",
+      "RAW_PRICES_MONTHLY",
+      "RAW_INDUSTRY",
+      "RAW_LOAD_REGISTRY",
+      "RAW_REVERSAL_LOG",
+      "AGGREGATE_STAGE"
+    ],
+    "publishSheets": [
+      "PUBLISH_PRICES_WEEKLY",
+      "PUBLISH_PRICES_MONTHLY",
+      "PUBLISH_INDUSTRY",
+      "PUBLISH_PRICE_AGGREGATES"
+    ],
+    "fields": [
+      "lastRow",
+      "lastColumn",
+      "headerFingerprint",
+      "edgeFingerprint",
+      "sheetFingerprint"
+    ],
+    "checkedBeforeAndAfterEveryProbeAction": true,
+    "fullTableDigest": false
+  },
+  "writes": {
+    "allowed": [
+      "OPERATION_QUEUE",
+      "OPERATION_STEPS",
+      "SYSTEM_LOG",
+      "script property storing last operation_id per scenario"
+    ],
+    "forbidden": [
+      "RAW tables",
+      "RAW_LOAD_REGISTRY",
+      "RAW_REVERSAL_LOG",
+      "AGGREGATE_STAGE",
+      "Publish tables",
+      "Drive files",
+      "triggers",
+      "production resources"
+    ]
+  },
+  "safety": {
+    "environment": "DEV",
+    "requiresOperationTestMode": true,
+    "requiresUserPipelineDisabled": true,
+    "blocksOtherActiveOperations": true,
+    "productionWrite": false,
+    "createsTrigger": false,
+    "automaticCleanup": false,
+    "automaticRollback": false
+  }
+}
