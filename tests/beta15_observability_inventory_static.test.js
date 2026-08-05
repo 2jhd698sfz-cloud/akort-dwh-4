@@ -135,9 +135,47 @@ test('accepted source registries are inventoried without duplication', () => {
   });
 });
 
-test('exact missing read models remain explicit', () => {
-  assert(source.includes("'DATASET_STATUS'"));
-  assert(source.includes("'ISSUE_REGISTRY'"));
+test('read-model gap is historical or closed exactly by r2', () => {
+  const implementationPath = path.join(
+    root,
+    'src',
+    '40_Beta15CompactObservability.js'
+  );
+  const implementationPresent = fs.existsSync(implementationPath);
+  if (!implementationPresent) {
+    assert(source.includes("'DATASET_STATUS'"));
+    assert(source.includes("'ISSUE_REGISTRY'"));
+    assert.strictEqual(
+      contract.candidateReadModels.DATASET_STATUS.status,
+      'MISSING'
+    );
+    assert.strictEqual(
+      contract.candidateReadModels.ISSUE_REGISTRY.status,
+      'MISSING'
+    );
+    assert(markdown.includes('Two read models are still absent'));
+    return;
+  }
+
+  const implementation = fs.readFileSync(
+    implementationPath,
+    'utf8'
+  );
+  const core = fs.readFileSync(
+    path.join(root, 'src', '02_Core.js'),
+    'utf8'
+  );
+  assert(core.includes('DATASET_STATUS: ['));
+  assert(core.includes('ISSUE_REGISTRY: ['));
+  assert(implementation.includes(
+    'AKORT.Beta15CompactObservability'
+  ));
+  assert(implementation.includes(
+    "'DATASET_STATUS'"
+  ));
+  assert(implementation.includes(
+    "'ISSUE_REGISTRY'"
+  ));
   assert.strictEqual(
     contract.candidateReadModels.DATASET_STATUS.status,
     'MISSING'

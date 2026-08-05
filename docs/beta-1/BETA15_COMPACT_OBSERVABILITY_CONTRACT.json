@@ -1,0 +1,188 @@
+{
+  "schemaVersion": "4.0-beta15-compact-observability-1",
+  "packageVersion": "4.0.0-beta.1.5.2",
+  "contractVersion": "4.0-beta15-compact-observability-1",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "dfe0733432a2cf978ccecaac6b753019a1331a9e",
+  "requirementId": "BETA1.5-MINIMUM-OBSERVABILITY",
+  "inventoryPackage": "4.0.0-beta.1.5.1",
+  "mode": "MATERIALIZED_COMPACT_READ_MODEL",
+  "readModels": {
+    "DATASET_STATUS": [
+      "dataset_id",
+      "dataset_label",
+      "source_table",
+      "source_status",
+      "health_status",
+      "freshness_status",
+      "latest_activity_at",
+      "age_minutes",
+      "freshness_threshold_minutes",
+      "latest_record_key",
+      "latest_period",
+      "latest_load_id",
+      "active_operation_id",
+      "active_phase",
+      "progress_percent",
+      "checkpoint_cursor",
+      "latest_backup_id",
+      "trigger_status",
+      "issue_count",
+      "next_action",
+      "observed_at",
+      "snapshot_fingerprint",
+      "release_version"
+    ],
+    "ISSUE_REGISTRY": [
+      "issue_key",
+      "source_table",
+      "source_record_key",
+      "dataset_id",
+      "operation_id",
+      "severity",
+      "issue_code",
+      "lifecycle_status",
+      "source_status",
+      "first_seen_at",
+      "last_seen_at",
+      "occurrence_count",
+      "summary",
+      "details_json",
+      "resolution",
+      "next_action",
+      "observed_at",
+      "snapshot_fingerprint",
+      "release_version"
+    ]
+  },
+  "freshnessPolicies": [
+    {
+      "datasetId": "SYSTEM_RELEASE",
+      "datasetLabel": "System release",
+      "sourceTable": "RELEASE_REGISTRY",
+      "thresholdMinutes": 0,
+      "allowEmpty": false
+    },
+    {
+      "datasetId": "OPERATIONS",
+      "datasetLabel": "Operation engine",
+      "sourceTable": "OPERATION_QUEUE",
+      "thresholdMinutes": 0,
+      "allowEmpty": true
+    },
+    {
+      "datasetId": "RAW_LOADS",
+      "datasetLabel": "RAW load registry",
+      "sourceTable": "RAW_LOAD_REGISTRY",
+      "thresholdMinutes": 20160,
+      "allowEmpty": false
+    },
+    {
+      "datasetId": "PUBLISH_RUNS",
+      "datasetLabel": "Publish runs",
+      "sourceTable": "PUBLISH_RUNS",
+      "thresholdMinutes": 20160,
+      "allowEmpty": false
+    },
+    {
+      "datasetId": "RECONCILIATION",
+      "datasetLabel": "Publish reconciliation",
+      "sourceTable": "PUBLISH_RECONCILIATION",
+      "thresholdMinutes": 20160,
+      "allowEmpty": false
+    },
+    {
+      "datasetId": "PARSER_QUALITY",
+      "datasetLabel": "Parser quality",
+      "sourceTable": "PARSER_ISSUES",
+      "thresholdMinutes": 0,
+      "allowEmpty": true
+    },
+    {
+      "datasetId": "BACKUPS",
+      "datasetLabel": "Paired backups",
+      "sourceTable": "BACKUP_REGISTRY",
+      "thresholdMinutes": 2160,
+      "allowEmpty": false
+    },
+    {
+      "datasetId": "TRIGGERS",
+      "datasetLabel": "Trigger ownership",
+      "sourceTable": "TRIGGER_OWNERSHIP_REGISTRY",
+      "thresholdMinutes": 10080,
+      "allowEmpty": false
+    }
+  ],
+  "issueLifecycles": [
+    "OPEN",
+    "RETRYING",
+    "REVIEW",
+    "OBSERVED"
+  ],
+  "normalizedNextActions": [
+    "NONE",
+    "RUN_OBSERVABILITY_REFRESH",
+    "REFRESH_SOURCE_DATA",
+    "REVIEW_ISSUES",
+    "REVIEW_SOURCE_SCHEMA",
+    "REVIEW_BACKUP",
+    "REVIEW_TRIGGER_OWNER",
+    "RUN_FROM_QUEUE",
+    "WAIT_ACTIVE_LEASE",
+    "RESUME_FROM_CHECKPOINT",
+    "RETRY_FROM_CHECKPOINT",
+    "REVIEW_STOPPED_CHECKPOINT",
+    "REVIEW_FAILED_OPERATION",
+    "MANUAL_REVIEW",
+    "REVIEW_DEAD_LETTER",
+    "REVIEW_UNKNOWN_STATUS"
+  ],
+  "boundedness": {
+    "tailRowsPerSource": 25,
+    "maximumDatasetRows": 16,
+    "maximumIssueRows": 250,
+    "sourceRegistryFullScan": false,
+    "statusReadsSourceRegistries": false,
+    "readsRawTargets": false,
+    "readsPublishTargets": false
+  },
+  "projection": {
+    "refreshMode": "MANUAL_BOUNDED_PROJECTION",
+    "sourceTables": [
+      "RELEASE_REGISTRY",
+      "OPERATION_QUEUE",
+      "OPERATION_STEPS",
+      "SYSTEM_LOG",
+      "RAW_LOAD_REGISTRY",
+      "PUBLISH_RUNS",
+      "PUBLISH_RECONCILIATION",
+      "PARSER_ISSUES",
+      "BACKUP_REGISTRY",
+      "TRIGGER_OWNERSHIP_REGISTRY"
+    ],
+    "writesOnly": [
+      "DATASET_STATUS",
+      "ISSUE_REGISTRY"
+    ],
+    "replacesCurrentSnapshot": true,
+    "stableSnapshotFingerprint": true
+  },
+  "publicApi": [
+    "AKORT_beta15CompactObservabilityContract",
+    "AKORT_beta15CompactObservabilityPreflight",
+    "AKORT_beta15CompactObservabilityInstall",
+    "AKORT_beta15CompactObservabilityRefresh",
+    "AKORT_beta15CompactObservabilityStatus"
+  ],
+  "safety": {
+    "createsTrigger": false,
+    "deletesTrigger": false,
+    "mutatesOperation": false,
+    "createsQueue": false,
+    "createsExecutor": false,
+    "createsDispatcher": false,
+    "dataPlaneWrite": false,
+    "productionWrite": false,
+    "enablesUserPipeline": false
+  }
+}

@@ -55,6 +55,22 @@ AKORT.Core = (function () {
       'trigger_sources_json', 'observed_at', 'registry_fingerprint',
       'release_version'
     ],
+    DATASET_STATUS: [
+      'dataset_id', 'dataset_label', 'source_table', 'source_status',
+      'health_status', 'freshness_status', 'latest_activity_at',
+      'age_minutes', 'freshness_threshold_minutes', 'latest_record_key',
+      'latest_period', 'latest_load_id', 'active_operation_id',
+      'active_phase', 'progress_percent', 'checkpoint_cursor',
+      'latest_backup_id', 'trigger_status', 'issue_count', 'next_action',
+      'observed_at', 'snapshot_fingerprint', 'release_version'
+    ],
+    ISSUE_REGISTRY: [
+      'issue_key', 'source_table', 'source_record_key', 'dataset_id',
+      'operation_id', 'severity', 'issue_code', 'lifecycle_status',
+      'source_status', 'first_seen_at', 'last_seen_at', 'occurrence_count',
+      'summary', 'details_json', 'resolution', 'next_action',
+      'observed_at', 'snapshot_fingerprint', 'release_version'
+    ],
     SYSTEM_LOG: [
       'log_id', 'logged_at', 'level', 'component', 'operation_id', 'step_id',
       'execution_id', 'event_code', 'message', 'details_json', 'release_version'
