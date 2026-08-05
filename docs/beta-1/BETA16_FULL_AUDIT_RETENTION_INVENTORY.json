@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "4.0-beta16-full-audit-retention-inventory-1",
+  "packageVersion": "4.0.0-beta.1.6.1",
+  "contractVersion": "4.0-beta16-full-audit-retention-inventory-1",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "86f8aa96fd6034bbf657e7159d3985066b67dbc6",
+  "requirementId": "BETA1.6-FULL-AUDIT-RETENTION",
+  "mode": "READ_ONLY_FULL_AUDIT_RETENTION_INVENTORY",
+  "acceptedReuse": {
+    "operationEngine": "AKORT.OperationEngine",
+    "operationCheckpointing": [
+      "enqueue",
+      "run",
+      "resume",
+      "requestStop",
+      "recoverFailedPhase"
+    ],
+    "quickAuditPhase": "QUICK_AUDIT",
+    "rawLoadRegistry": "RAW_LOAD_REGISTRY",
+    "publishReconciliation": "PUBLISH_RECONCILIATION",
+    "pairedBackupRegistry": "BACKUP_REGISTRY",
+    "compactObservability": "AKORT.Beta15CompactObservability",
+    "operationalHardening": "AKORT.Beta14OperationalHardening",
+    "gate7Evidence": "accepted Alpha.7.4 Gate 7 evidence"
+  },
+  "authoritativeSourceTables": [
+    "RELEASE_REGISTRY",
+    "OPERATION_QUEUE",
+    "OPERATION_STEPS",
+    "SYSTEM_LOG",
+    "RAW_LOAD_REGISTRY",
+    "PUBLISH_RECONCILIATION",
+    "BACKUP_REGISTRY",
+    "DATASET_STATUS",
+    "ISSUE_REGISTRY"
+  ],
+  "candidateOperationType": "FULL_AUDIT_V4",
+  "candidateReadModels": [
+    "FULL_AUDIT_EVIDENCE",
+    "RETENTION_REGISTRY"
+  ],
+  "protectedArtifactClasses": [
+    "ACCEPTED_RELEASE",
+    "GATE_ACCEPTANCE_EVIDENCE",
+    "VERIFIED_BASELINE",
+    "REQUIRED_PAIRED_BACKUP",
+    "ACTIVE_OPERATION_CHECKPOINT",
+    "LATEST_SUCCESSFUL_FULL_AUDIT"
+  ],
+  "exactRemainingGap": [
+    "No FULL_AUDIT_V4 handler is registered in the accepted Operation Engine.",
+    "Accepted checks are not orchestrated through one resumable operation.",
+    "No durable FULL_AUDIT_EVIDENCE read model exists.",
+    "No RETENTION_REGISTRY or deterministic protected-artifact policy exists.",
+    "No retention dry-run planner produces proposed actions without deletion.",
+    "No compact Full Audit submit, status and evidence facade exists."
+  ],
+  "boundedness": {
+    "tailRowsPerSource": 25,
+    "readsPhysicalRawTargets": false,
+    "readsPhysicalPublishTargets": false,
+    "returnsSourceRows": false,
+    "fullRegistryScan": false
+  },
+  "writes": {
+    "createsTable": false,
+    "updatesTable": false,
+    "createsTrigger": false,
+    "deletesTrigger": false,
+    "createsOperation": false,
+    "mutatesOperation": false,
+    "createsDriveFile": false,
+    "deletesDriveFile": false,
+    "physicalDeletion": false,
+    "dataPlaneWrite": false,
+    "productionWrite": false,
+    "enablesUserPipeline": false
+  },
+  "publicApi": [
+    "AKORT_beta16FullAuditRetentionInventoryContract",
+    "AKORT_beta16FullAuditRetentionInventory"
+  ]
+}
