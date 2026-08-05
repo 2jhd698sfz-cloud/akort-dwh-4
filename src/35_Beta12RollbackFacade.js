@@ -1056,7 +1056,7 @@ AKORT.Beta12RollbackFacade = (function () {
 
         var idempotencyKey =
           'BETA12_ROLLBACK_' + provided;
-        var queued = AKORT.OperationEngine.enqueue(
+        var queued = AKORT.Beta14OperationalHardening.enqueueGuarded(
           OPERATION_TYPE,
           {
             targetLoadId:

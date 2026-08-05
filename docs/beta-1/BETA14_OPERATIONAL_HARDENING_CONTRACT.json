@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "4.0-beta14-operational-hardening-1",
+  "packageVersion": "4.0.0-beta.1.4.2",
+  "contractVersion": "4.0-beta14-operational-hardening-1",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "a32bdf1ddbb4975a1f905825c745c9004c6324fe",
+  "requirementId": "BETA1.4-OPERATIONAL-HARDENING",
+  "acceptedReuse": {
+    "queue": "OPERATION_QUEUE",
+    "steps": "OPERATION_STEPS",
+    "executor": "AKORT.OperationEngine",
+    "lease": "checkpoint.lease",
+    "safeStop": "AKORT.OperationEngine.requestStop",
+    "resume": "AKORT.OperationEngine.resume",
+    "failedPhaseRecovery": "AKORT.OperationEngine.recoverFailedPhase",
+    "newQueue": false,
+    "newExecutor": false,
+    "newDispatcher": false,
+    "operationEngineModified": false
+  },
+  "serviceTables": {
+    "added": [
+      "TRIGGER_OWNERSHIP_REGISTRY"
+    ],
+    "headers": [
+      "process_id",
+      "owner_module",
+      "handler",
+      "lifecycle",
+      "expected_minimum",
+      "expected_maximum",
+      "observed_count",
+      "status",
+      "next_action",
+      "trigger_ids_json",
+      "event_types_json",
+      "trigger_sources_json",
+      "observed_at",
+      "registry_fingerprint",
+      "release_version"
+    ],
+    "boundedRows": "one row per declared process plus one row per unregistered handler"
+  },
+  "triggerProcesses": [
+    {
+      "processId": "BETA11_DAILY_BACKUP",
+      "handler": "AKORT_beta11DailyBackupTrigger",
+      "lifecycle": "REQUIRED",
+      "minimum": 1,
+      "maximum": 1
+    },
+    {
+      "processId": "BETA11_BACKUP_WORKER",
+      "handler": "AKORT_beta11BackupWorker",
+      "lifecycle": "CONDITIONAL",
+      "minimum": 0,
+      "maximum": 1
+    },
+    {
+      "processId": "ALPHA6_RECONCILIATION_DISPATCHER",
+      "handler": "AKORT_alpha6ReconciliationDispatcherWorker",
+      "lifecycle": "CLOSED_OR_DORMANT",
+      "minimum": 0,
+      "maximum": 0
+    },
+    {
+      "processId": "ALPHA74_GATE6_WORKER",
+      "handler": "AKORT_alpha74Gate6Worker",
+      "lifecycle": "CLOSED",
+      "minimum": 0,
+      "maximum": 0
+    },
+    {
+      "processId": "ALPHA74_GATE7_RUNNER",
+      "handler": "AKORT_alpha74Gate7Worker",
+      "lifecycle": "CLOSED",
+      "minimum": 0,
+      "maximum": 0
+    }
+  ],
+  "operationClasses": {
+    "SNAPSHOT_EXCLUSIVE": [
+      "BETA11_PAIRED_BACKUP"
+    ],
+    "DATA_PLANE_EXCLUSIVE": [
+      "SOURCE_FILE_LOAD_V4",
+      "RAW_LOAD_V4",
+      "RAW_REVERSAL_V4"
+    ],
+    "CONTROL_PLANE_TEST": [
+      "ALPHA3_TEST_*",
+      "ALPHA3_DEMO_*"
+    ]
+  },
+  "guardIntegration": [
+    {
+      "facade": "AKORT.Beta11PairedBackup",
+      "boundary": "before paired-backup enqueue"
+    },
+    {
+      "facade": "AKORT.Beta12RollbackFacade",
+      "boundary": "after confirmation revalidation and before rollback enqueue"
+    }
+  ],
+  "startReservation": {
+    "storage": "ScriptProperties",
+    "property": "AKORT_BETA14_START_RESERVATION_V1",
+    "ttlMs": 180000,
+    "purpose": "close the pre-check/enqueue race without adding a queue or executor",
+    "automaticRelease": true,
+    "expiredReservationAdoption": "delete before the next guarded start",
+    "invalidReservationBehavior": "FAIL_CLOSED"
+  },
+  "normalizedNextActions": [
+    "NONE",
+    "RUN_FROM_QUEUE",
+    "WAIT_ACTIVE_LEASE",
+    "RESUME_FROM_CHECKPOINT",
+    "RETRY_FROM_CHECKPOINT",
+    "REVIEW_STOPPED_CHECKPOINT",
+    "REVIEW_FAILED_OPERATION",
+    "MANUAL_REVIEW",
+    "REVIEW_DEAD_LETTER",
+    "REVIEW_UNKNOWN_STATUS"
+  ],
+  "publicApi": [
+    "AKORT_beta14HardeningContract",
+    "AKORT_beta14HardeningPreflight",
+    "AKORT_beta14HardeningInstall",
+    "AKORT_beta14HardeningRefresh",
+    "AKORT_beta14HardeningStatus"
+  ],
+  "writes": {
+    "preflightWrites": false,
+    "statusWrites": false,
+    "installCreatesRegistryTable": true,
+    "refreshWritesRegistryOnly": true,
+    "createsTrigger": false,
+    "deletesTrigger": false,
+    "mutatesExistingOperation": false,
+    "mutatesDataPlane": false,
+    "productionWrite": false,
+    "enablesUserPipeline": false
+  }
+}

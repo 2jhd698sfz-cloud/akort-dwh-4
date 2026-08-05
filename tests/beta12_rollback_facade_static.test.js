@@ -20,6 +20,10 @@ const engine = fs.readFileSync(
   path.join(root, 'src/03_OperationEngine.js'),
   'utf8'
 );
+const hardening = fs.readFileSync(
+  path.join(root, 'src/38_Beta14OperationalHardening.js'),
+  'utf8'
+);
 const contract = JSON.parse(fs.readFileSync(
   path.join(
     root,
@@ -238,8 +242,15 @@ test('accepted RAW_REVERSAL_V4 remains the only data plane', () => {
     "var OPERATION_TYPE = 'RAW_REVERSAL_V4';"
   ));
   assert(source.includes(
+    'AKORT.Beta14OperationalHardening.enqueueGuarded('
+  ));
+  assert(!source.includes(
     'AKORT.OperationEngine.enqueue('
   ));
+  assert.equal(
+    (hardening.match(/AKORT\.OperationEngine\.enqueue\s*\(/g) || []).length,
+    1
+  );
   assert(source.includes(
     'AKORT.OperationEngine.run('
   ));
@@ -717,7 +728,7 @@ test('submit order adopts repeats and validates new requests', () => {
     /if\s*\(\s*provided\s*!==\s*previewData\.confirmationToken\s*\)/
   );
   const enqueueAt = body.search(
-    /AKORT\.OperationEngine\.enqueue\s*\(/
+    /AKORT\.Beta14OperationalHardening\.enqueueGuarded\s*\(/
   );
 
   assert(

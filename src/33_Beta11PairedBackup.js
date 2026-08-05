@@ -856,7 +856,7 @@ AKORT.Beta11PairedBackup = (function () {
   function start_(requestType, backupId, scheduledDate) {
     assertBase_();
     ensureFolder_();
-    var queued = AKORT.OperationEngine.enqueue(
+    var queued = AKORT.Beta14OperationalHardening.enqueueGuarded(
       OPERATION_TYPE,
       {
         backupId: backupId,

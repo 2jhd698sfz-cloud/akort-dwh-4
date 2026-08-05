@@ -48,6 +48,13 @@ AKORT.Core = (function () {
       'started_at', 'finished_at', 'error_code', 'error_message',
       'release_version', 'created_by'
     ],
+    TRIGGER_OWNERSHIP_REGISTRY: [
+      'process_id', 'owner_module', 'handler', 'lifecycle',
+      'expected_minimum', 'expected_maximum', 'observed_count', 'status',
+      'next_action', 'trigger_ids_json', 'event_types_json',
+      'trigger_sources_json', 'observed_at', 'registry_fingerprint',
+      'release_version'
+    ],
     SYSTEM_LOG: [
       'log_id', 'logged_at', 'level', 'component', 'operation_id', 'step_id',
       'execution_id', 'event_code', 'message', 'details_json', 'release_version'

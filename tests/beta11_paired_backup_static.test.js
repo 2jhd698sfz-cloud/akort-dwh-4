@@ -11,6 +11,7 @@ const core = read('src/02_Core.js');
 const engine = read('src/03_OperationEngine.js');
 const publish = read('src/07_IncrementalPublish.js');
 const backup = read('src/33_Beta11PairedBackup.js');
+const hardening = read('src/38_Beta14OperationalHardening.js');
 const contract = JSON.parse(
   read('docs/beta-1/BETA11_PAIRED_BACKUP_CONTRACT.json')
 );
@@ -79,7 +80,15 @@ test('BACKUP_REGISTRY is an operational service table', () => {
 test('accepted Operation Engine remains the only executor', () => {
   assert(engine.includes('AKORT.Beta11BackupHandlers.supports(type)'));
   assert(backup.includes("var OPERATION_TYPE = 'BETA11_PAIRED_BACKUP';"));
-  assert(backup.includes('AKORT.OperationEngine.enqueue('));
+  assert(backup.includes(
+    'AKORT.Beta14OperationalHardening.enqueueGuarded('
+  ));
+  assert(!backup.includes('AKORT.OperationEngine.enqueue('));
+  assert(hardening.includes('function enqueueGuarded('));
+  assert.equal(
+    (hardening.match(/AKORT\.OperationEngine\.enqueue\s*\(/g) || []).length,
+    1
+  );
   assert(backup.includes('AKORT.OperationEngine.run(operationId'));
   assert(backup.includes('AKORT.OperationEngine.resume(operationId'));
   assert.equal((combined.match(/AKORT\.OperationEngine\s*=/g) || []).length, 1);
