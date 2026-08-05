@@ -99,10 +99,10 @@ function loadModule() {
 }
 
 test('r6 metadata and exact backup target are pinned', () => {
-  assert.strictEqual(contract.packageVersion, '4.0.0-beta.1.1.6');
+  assert.strictEqual(contract.packageVersion, '4.0.0-beta.1.1.7');
   assert.strictEqual(
     contract.contractVersion,
-    '4.0-beta11-isolated-restore-rehearsal-1'
+    '4.0-beta11-isolated-restore-rehearsal-2'
   );
   assert.strictEqual(contract.baseRelease, '4.0.0-alpha.7.4.42');
   assert.strictEqual(
@@ -150,7 +150,7 @@ test('public no-argument operator API is exact', () => {
   contract.publicApi.forEach((name) => {
     assert(source.includes('function ' + name + '()'), name);
   });
-  assert.strictEqual(contract.publicApi.length, 5);
+  assert.strictEqual(contract.publicApi.length, 6);
 });
 
 test('rehearsal uses isolated backup copies and deterministic evidence', () => {
@@ -197,9 +197,9 @@ test('workbook comparison covers values formulas formats and metadata', () => {
 
 test('comparison is bounded resumable and fingerprinted', () => {
   assert(source.includes('var CHUNK_CELL_LIMIT = 20000;'));
-  assert(source.includes('var MAX_CELLS_PER_INVOCATION = 160000;'));
-  assert(source.includes('var MAX_CHUNKS_PER_INVOCATION = 12;'));
-  assert(source.includes('var MAX_HANDLER_MS = 90000;'));
+  assert(source.includes('var MAX_CELLS_PER_INVOCATION = 640000;'));
+  assert(source.includes('var MAX_CHUNKS_PER_INVOCATION = 40;'));
+  assert(source.includes('var MAX_HANDLER_MS = 210000;'));
   assert(source.includes('repeatPhase: true'));
   assert(source.includes("phase === 'PREPARING_AGGREGATE_IMPACT'"));
   assert(source.includes("phase === 'MATERIALIZING_AGGREGATE_INPUTS'"));
@@ -220,6 +220,38 @@ test('chain fingerprint and normalization are deterministic', () => {
   assert.deepStrictEqual(
     JSON.parse(JSON.stringify(module.Test.normalizeMatrix([[1, true, null]]))),
     [[1, true, '']]
+  );
+});
+
+test('r7 compact progress is checkpoint-only and bounded', () => {
+  assert(
+    source.includes(
+      'function AKORT_beta11RestoreRehearsalProgressLatest()'
+    )
+  );
+  assert(source.includes('function progressLatest()'));
+  assert(source.includes("'OPERATION_QUEUE'"));
+  assert(source.includes('completedCells'));
+  assert(source.includes('totalCells'));
+  assert(source.includes('rowCursor'));
+  assert.strictEqual(
+    contract.compactProgress.entrypoint,
+    'AKORT_beta11RestoreRehearsalProgressLatest'
+  );
+  assert.strictEqual(contract.compactProgress.readsOperationQueueOnly, true);
+  assert.strictEqual(contract.compactProgress.writesDataPlane, false);
+  assert.strictEqual(
+    contract.boundedExecution.maxCellsPerInvocation,
+    640000
+  );
+  assert.strictEqual(
+    contract.boundedExecution.maxChunksPerInvocation,
+    40
+  );
+  assert.strictEqual(contract.boundedExecution.maxHandlerMs, 210000);
+  assert.strictEqual(
+    contract.boundedExecution.checkpointCompatibleWithR6,
+    true
   );
 });
 

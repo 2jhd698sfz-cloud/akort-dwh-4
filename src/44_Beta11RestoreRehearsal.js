@@ -6,8 +6,8 @@ var AKORT = typeof AKORT !== 'undefined' ? AKORT : {};
  * never changes the active DEV DWH/Publish configuration.
  */
 AKORT.Beta11RestoreRehearsal = (function () {
-  var PACKAGE_VERSION = '4.0.0-beta.1.1.6';
-  var CONTRACT_VERSION = '4.0-beta11-isolated-restore-rehearsal-1';
+  var PACKAGE_VERSION = '4.0.0-beta.1.1.7';
+  var CONTRACT_VERSION = '4.0-beta11-isolated-restore-rehearsal-2';
   var BASE_RELEASE = '4.0.0-alpha.7.4.42';
   var BASE_COMMIT = 'cc5451f3bfaad4a294f07c31a7c0b76b71f14299';
   var OPERATION_TYPE = 'BETA11_RESTORE_REHEARSAL';
@@ -16,9 +16,9 @@ AKORT.Beta11RestoreRehearsal = (function () {
   var EVIDENCE_PROPERTY = 'AKORT_BETA11_RESTORE_REHEARSAL_LATEST_EVIDENCE';
   var ROOT_FOLDER_NAME = '09_Проверка восстановления';
   var CHUNK_CELL_LIMIT = 20000;
-  var MAX_CELLS_PER_INVOCATION = 160000;
-  var MAX_CHUNKS_PER_INVOCATION = 12;
-  var MAX_HANDLER_MS = 90000;
+  var MAX_CELLS_PER_INVOCATION = 640000;
+  var MAX_CHUNKS_PER_INVOCATION = 40;
+  var MAX_HANDLER_MS = 210000;
   var TERMINAL = {
     SUCCESS: true,
     FAILED: true,
@@ -1189,6 +1189,154 @@ AKORT.Beta11RestoreRehearsal = (function () {
     }
   }
 
+  function progressLatest() {
+    return AKORT.Core.safeRun(
+      'BETA11_RESTORE_REHEARSAL_PROGRESS',
+      function () {
+        assertBase_();
+        var operationId = latestActiveOperationId_();
+        if (!operationId) {
+          return AKORT.Result.success(
+            'No active restore rehearsal exists; latest evidence returned.',
+            {
+              packageVersion: PACKAGE_VERSION,
+              contractVersion: CONTRACT_VERSION,
+              backupId: DEFAULT_BACKUP_ID,
+              activeOperationId: '',
+              evidence: latestEvidence_()
+            }
+          );
+        }
+
+        var rows = readObjects_(
+          dwh_(),
+          'OPERATION_QUEUE',
+          AKORT.Core.Tables.OPERATION_QUEUE
+        );
+        var matches = rows.filter(function (row) {
+          return text_(row.operation_id) === text_(operationId);
+        });
+        if (matches.length !== 1) {
+          throw AKORT.Core.error(
+            'BETA11_RESTORE_PROGRESS_OPERATION_IDENTITY_INVALID',
+            'Exactly one restore rehearsal operation row is required.',
+            {
+              operationId: operationId,
+              matches: matches.length,
+              retryable: false,
+              requiresReview: matches.length > 1
+            }
+          );
+        }
+
+        var row = matches[0];
+        var checkpoint;
+        try {
+          checkpoint = JSON.parse(text_(row.checkpoint_json) || '{}');
+        } catch (caught) {
+          throw AKORT.Core.error(
+            'BETA11_RESTORE_PROGRESS_CHECKPOINT_INVALID',
+            'Restore rehearsal checkpoint is not valid JSON.',
+            {
+              operationId: operationId,
+              cause: String(caught && caught.message || caught),
+              retryable: false,
+              requiresReview: true
+            }
+          );
+        }
+
+        var state = checkpoint &&
+          checkpoint.handlerState &&
+          checkpoint.handlerState.beta11RestoreRehearsal || {};
+
+        function scanProgress_(scan) {
+          scan = scan || {};
+          var totalCells = (scan.sheets || []).reduce(
+            function (total, sheet) {
+              return total +
+                Number(sheet.lastRow || 0) *
+                Number(sheet.lastColumn || 0);
+            },
+            0
+          );
+          var completedCells = Number(scan.cells || 0);
+          var sheetIndex = Number(scan.sheetIndex || 0);
+          return {
+            label: text_(scan.label),
+            complete: scan.complete === true,
+            sheetIndex: sheetIndex,
+            sheetCount: (scan.sheets || []).length,
+            currentSheet: scan.complete === true
+              ? ''
+              : text_(
+                  scan.sheets &&
+                  scan.sheets[sheetIndex] &&
+                  scan.sheets[sheetIndex].name
+                ),
+            rowCursor: Number(scan.rowCursor || 1),
+            chunks: Number(scan.chunks || 0),
+            completedCells: completedCells,
+            totalCells: totalCells,
+            percent: totalCells
+              ? Math.min(
+                  100,
+                  Math.round(completedCells * 10000 / totalCells) / 100
+                )
+              : scan.complete === true ? 100 : 0
+          };
+        }
+
+        var dwhProgress = scanProgress_(state.dwhScan);
+        var publishProgress = scanProgress_(state.publishScan);
+        var totalCells =
+          Number(dwhProgress.totalCells || 0) +
+          Number(publishProgress.totalCells || 0);
+        var completedCells =
+          Number(dwhProgress.completedCells || 0) +
+          Number(publishProgress.completedCells || 0);
+
+        return AKORT.Result.success(
+          'Beta.1.1 restore rehearsal compact progress loaded.',
+          {
+            packageVersion: PACKAGE_VERSION,
+            contractVersion: CONTRACT_VERSION,
+            backupId: DEFAULT_BACKUP_ID,
+            activeOperationId: operationId,
+            operationStatus: text_(row.status),
+            currentPhase: text_(row.current_phase),
+            attemptNo: Number(row.attempt_no || 0),
+            errorCode: text_(row.error_code),
+            errorMessage: text_(row.error_message),
+            progress: {
+              completedCells: completedCells,
+              totalCells: totalCells,
+              percent: totalCells
+                ? Math.min(
+                    100,
+                    Math.round(completedCells * 10000 / totalCells) / 100
+                  )
+                : 0,
+              dwh: dwhProgress,
+              publish: publishProgress
+            },
+            limits: {
+              chunkCellLimit: CHUNK_CELL_LIMIT,
+              maxCellsPerInvocation: MAX_CELLS_PER_INVOCATION,
+              maxChunksPerInvocation: MAX_CHUNKS_PER_INVOCATION,
+              maxHandlerMs: MAX_HANDLER_MS
+            },
+            productionTouched: false,
+            activeDevConfigurationChanged: false,
+            dataPlaneWrite: false,
+            userPipelineEnabled: false
+          }
+        );
+      },
+      { lock: false, persistLogs: false }
+    );
+  }
+
   function statusLatest() {
     return AKORT.Core.safeRun(
       'BETA11_RESTORE_REHEARSAL_STATUS',
@@ -1247,6 +1395,7 @@ AKORT.Beta11RestoreRehearsal = (function () {
         'AKORT_beta11RestoreRehearsalPreflight',
         'AKORT_beta11RestoreRehearsalSubmit',
         'AKORT_beta11RestoreRehearsalContinueLatest',
+        'AKORT_beta11RestoreRehearsalProgressLatest',
         'AKORT_beta11RestoreRehearsalStatusLatest'
       ],
       createsTrigger: false,
@@ -1271,6 +1420,7 @@ AKORT.Beta11RestoreRehearsal = (function () {
     preflight: preflight,
     submit: submit,
     continueLatest: continueLatest,
+    progressLatest: progressLatest,
     statusLatest: statusLatest,
     contract: contract,
     Test: Object.freeze({
@@ -1311,6 +1461,12 @@ function AKORT_beta11RestoreRehearsalSubmit() {
 
 function AKORT_beta11RestoreRehearsalContinueLatest() {
   var result = AKORT.Beta11RestoreRehearsal.continueLatest();
+  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+function AKORT_beta11RestoreRehearsalProgressLatest() {
+  var result = AKORT.Beta11RestoreRehearsal.progressLatest();
   console.log(JSON.stringify(result, null, 2));
   return result;
 }

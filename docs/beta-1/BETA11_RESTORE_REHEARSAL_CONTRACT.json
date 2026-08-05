@@ -1,6 +1,6 @@
 {
-  "packageVersion": "4.0.0-beta.1.1.6",
-  "contractVersion": "4.0-beta11-isolated-restore-rehearsal-1",
+  "packageVersion": "4.0.0-beta.1.1.7",
+  "contractVersion": "4.0-beta11-isolated-restore-rehearsal-2",
   "baseRelease": "4.0.0-alpha.7.4.42",
   "baseCommit": "cc5451f3bfaad4a294f07c31a7c0b76b71f14299",
   "operationType": "BETA11_RESTORE_REHEARSAL",
@@ -33,6 +33,7 @@
     "AKORT_beta11RestoreRehearsalPreflight",
     "AKORT_beta11RestoreRehearsalSubmit",
     "AKORT_beta11RestoreRehearsalContinueLatest",
+    "AKORT_beta11RestoreRehearsalProgressLatest",
     "AKORT_beta11RestoreRehearsalStatusLatest"
   ],
   "createsTrigger": false,
@@ -42,5 +43,17 @@
   "writesRaw": false,
   "writesPublish": false,
   "productionWrite": false,
-  "enablesUserPipeline": false
+  "enablesUserPipeline": false,
+  "boundedExecution": {
+    "chunkCellLimit": 20000,
+    "maxCellsPerInvocation": 640000,
+    "maxChunksPerInvocation": 40,
+    "maxHandlerMs": 210000,
+    "checkpointCompatibleWithR6": true
+  },
+  "compactProgress": {
+    "entrypoint": "AKORT_beta11RestoreRehearsalProgressLatest",
+    "readsOperationQueueOnly": true,
+    "writesDataPlane": false
+  }
 }

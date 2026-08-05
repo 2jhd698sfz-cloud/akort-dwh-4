@@ -1,6 +1,6 @@
 # Beta.1.1 r6 — Isolated Restore Rehearsal
 
-Package: `4.0.0-beta.1.1.6`
+Package: `4.0.0-beta.1.1.7`
 
 Target backup: `BKP_DAILY_20260805`
 
@@ -32,3 +32,11 @@ copies. It does not modify active DEV DWH or Publish, create or delete
 triggers, delete files, touch production, or enable the user pipeline.
 
 The restored copies and evidence remain in the isolated folder for review.
+
+
+## r7 continuation optimization
+
+r7 preserves the active r6 checkpoint and restored files. One continuation
+may process up to 640,000 cells, 40 chunks or 210 seconds.
+`AKORT_beta11RestoreRehearsalProgressLatest` returns compact DWH and Publish
+cursor, processed cells, total cells and percentage without data-plane writes.
