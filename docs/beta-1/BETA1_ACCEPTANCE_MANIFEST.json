@@ -1,0 +1,201 @@
+{
+  "schemaVersion": "4.0-beta1-formal-acceptance-1",
+  "acceptanceId": "BETA1_FORMAL_ACCEPTANCE_20260806",
+  "preparedAt": "2026-08-06T00:17:00+07:00",
+  "repository": "2jhd698sfz-cloud/akort-dwh-4",
+  "branch": "codex/beta-1-operational-gap-closure",
+  "decision": "GO",
+  "beta1Status": "FORMALLY_ACCEPTED",
+  "nextAuthorizedStage": "BETA2.1_READ_ONLY_CONTROL_CENTER",
+  "immutableImplementationBase": {
+    "commit": "431b6f77bb6c01c0df855aec37e99c1619a93c4f",
+    "tree": "a804c5e0ca3f35f1801c8134ced4a935893cf5ca",
+    "commitMessage": "Fix Beta12 preflight execution bounds",
+    "rule": "The enclosing acceptance-artifact commit may add documentation only and does not redefine the immutable implementation base."
+  },
+  "runtimeBinding": {
+    "releaseVersion": "4.0.0-alpha.7.4.42",
+    "environment": "DEV",
+    "scriptId": "1M3u30v6Wrv7X_qqGMDe_ITtdZSsfd1SNPr7MlEaqYFPbfJC0GSEeluL9",
+    "dwhSpreadsheetId": "1d89EJVHtrZ4a8emcb-13OMjHMyh3mvW36LcxQf9Gk5s",
+    "publishSpreadsheetId": "1tO_GmM02JSjOx05LYncsoqcqH4om9cVtr4pECxVCFBw",
+    "devRootFolderId": "1EvZx01xSMR6smJ2PNakKzlrEwT0OjV4J",
+    "userPipelineEnabled": false
+  },
+  "releaseEvidence": [
+    {
+      "stage": "Alpha.7.4 / Gate 7",
+      "status": "PASS",
+      "runtime": "4.0.0-alpha.7.4.42",
+      "evidenceId": "G7E_5F028CEB97F66118A57E5B6C",
+      "evidenceHash": "5f028ceb97f66118a57e5b6cb6a78dc67355bf41fb6ddbb8796894e4401dc3fc"
+    },
+    {
+      "stage": "Beta.1.0",
+      "status": "PASS",
+      "packageVersion": "4.0.0-beta.1.0.1",
+      "acceptedCommit": "28d9827a8b80f1bdda615e00bab22d35cd8130cc",
+      "contract": "docs/beta-1/BETA10_BOOTSTRAP_CONTRACT.md"
+    },
+    {
+      "stage": "Beta.1.1 paired backup",
+      "status": "PASS",
+      "packageVersion": "4.0.0-beta.1.1.5",
+      "backupId": "BKP_DAILY_20260805",
+      "backupOperationId": "OP_BETA11_PAIRED_BACK_20260805T010552914Z_48DE46A379A7",
+      "manifestFileId": "1V64deDbE1_YzwF7RZdLsFQljhCwf9_rD",
+      "manifestHash": "3a2d1218b5734e12520196b349168cd53908c072ce293decea0232fb94ca8681",
+      "contractSchemaVersion": "4.0-beta11-paired-backup-contract-5"
+    },
+    {
+      "stage": "Beta.1.1 isolated restore rehearsal",
+      "status": "PASS",
+      "packageVersion": "4.0.0-beta.1.1.7",
+      "contractVersion": "4.0-beta11-isolated-restore-rehearsal-2",
+      "baseCommit": "cc5451f3bfaad4a294f07c31a7c0b76b71f14299",
+      "operationId": "OP_BETA11_RESTORE_REH_20260805T110634318Z_53312189CE31",
+      "checksPassed": 9,
+      "checksTotal": 9,
+      "evidenceId": "RRE_0F19BA90233D4B0C053C5659",
+      "evidenceHash": "0f19ba90233d4b0c053c565957a6183d14c48a4405020964d38a270adf9e9d15",
+      "evidenceFileId": "151LMCH-yam2Guba_2TzCUwzhc3javtct",
+      "evidenceFileCanonicalSha256": "3fff487ea06cc32bb86cd516434e9cd6c5bf62b618499b4c726126d305a972a3"
+    },
+    {
+      "stage": "Beta.1.2 rollback facade",
+      "status": "PASS",
+      "packageVersion": "4.0.0-beta.1.2.5",
+      "contractVersion": "4.0-beta12-rollback-facade-4"
+    },
+    {
+      "stage": "Beta.1.2 controlled rollback E2E",
+      "status": "PASS",
+      "packageVersion": "4.0.0-beta.1.2.9",
+      "contractVersion": "4.0-beta12-rollback-e2e-2",
+      "componentImplementationBase": "546eeb5d8662f793691d4862870273362644e355",
+      "canaryOperationId": "OP_RAW_LOAD_V4_20260805T170514460Z_A75DF24B344B",
+      "rollbackOperationId": "OP_RAW_REVERSAL_V4_20260805T170823980Z_B5F6C277F15E",
+      "checksPassed": 15,
+      "checksTotal": 15,
+      "evidenceId": "B12E2E_5786A81DB73CAF67AD366DA7",
+      "evidenceHash": "5786a81db73caf67ad366da774be2362cbd9d526086a7b95710fe8d4c263a2c5",
+      "evidenceFileId": "1XvcXiv8TcnHMklxBC1QIwVuVWANNvjVA",
+      "evidenceFileRawSha256AtAcceptance": "cd236abfa51e8bd34e40812b6da3f6f735f573828dd48ac2e941f2fe38961cc1"
+    },
+    {
+      "stage": "Beta.1.3 failure injection",
+      "status": "PASS",
+      "packageVersion": "4.0.0-beta.1.3.1",
+      "contractVersion": "4.0-beta13-failure-injection-1",
+      "scenarioResults": {
+        "RETRYABLE_ONCE": "SUCCESS",
+        "FATAL_RECOVERY": "SUCCESS",
+        "HANDLER_PAUSE": "SUCCESS",
+        "SAFE_STOP": "SUCCESS",
+        "DEAD_LETTER": "DEAD_LETTER_EXPECTED"
+      }
+    },
+    {
+      "stage": "Beta.1.4 operational hardening",
+      "status": "PASS",
+      "packageVersion": "4.0.0-beta.1.4.2",
+      "contractVersion": "4.0-beta14-operational-hardening-1",
+      "triggerRegistryStatus": "OK"
+    },
+    {
+      "stage": "Beta.1.5 compact observability",
+      "status": "PASS",
+      "packageVersion": "4.0.0-beta.1.5.2",
+      "contractVersion": "4.0-beta15-compact-observability-1",
+      "overallStatus": "HEALTHY",
+      "datasetCount": 8,
+      "issueCount": 0
+    },
+    {
+      "stage": "Beta.1.6 Full Audit and retention",
+      "status": "PASS",
+      "packageVersion": "4.0.0-beta.1.6.3",
+      "contractVersion": "4.0-beta16-full-audit-retention-1",
+      "auditId": "AUD_20260805T095933652Z_78B683E78B",
+      "operationId": "OP_FULL_AUDIT_V4_20260805T095938216Z_FC48B387EB08",
+      "checksPassed": 12,
+      "checksTotal": 12,
+      "retentionRows": 6,
+      "protectedArtifacts": 6,
+      "reviewCandidates": 0,
+      "dryRun": true,
+      "physicalDeletion": false,
+      "evidenceHash": "b7987f64802936bb122007f81e2c82ea734cf125b7f070ecc50e4cf31784ab38"
+    }
+  ],
+  "readOnlyReconciliation": {
+    "operationQueue": {
+      "scannedRange": "OPERATION_QUEUE!C1:C965",
+      "absentStatuses": [
+        "RUNNING",
+        "QUEUED",
+        "RETRY_PENDING",
+        "PAUSED",
+        "FAILED_REQUIRES_REVIEW"
+      ],
+      "fullAuditActiveOperations": []
+    },
+    "triggerOwnership": {
+      "observedAt": "2026-08-05T04:17:08.306Z",
+      "registryFingerprint": "81fb86c7519c3f294c9d28931d495c7ac8da3a2eb7702f05bec43fab1726ea99",
+      "requiredClockTrigger": {
+        "handler": "AKORT_beta11DailyBackupTrigger",
+        "observedCount": 1,
+        "status": "OK",
+        "eventType": "CLOCK",
+        "triggerId": "365158254797389824"
+      },
+      "legacyAndConditionalObservedCount": 0
+    },
+    "configuration": {
+      "key": "PUBLISH_USER_PIPELINE_ENABLED",
+      "value": false,
+      "environment": "DEV",
+      "active": true
+    },
+    "productionImpact": "NONE_EVIDENCE_BACKED",
+    "secretsAndLocalConfig": {
+      "gitIgnored": [
+        ".env",
+        ".env.*",
+        ".clasp.json",
+        ".clasprc.json",
+        "src/99_LocalConfig.js"
+      ],
+      "acceptanceScope": "DOCUMENTATION_ONLY"
+    },
+    "sourceDeploymentBinding": {
+      "githubSourcePackage": "4.0.0-beta.1.2.9",
+      "runtimeEvidencePackage": "4.0.0-beta.1.2.9",
+      "githubContractVersion": "4.0-beta12-rollback-e2e-2",
+      "runtimeEvidenceContractVersion": "4.0-beta12-rollback-e2e-2",
+      "repositoryWideAppsScriptByteIdentityRecomputed": false,
+      "basis": "successful owner-performed clasp push plus matching runtime E2E evidence"
+    },
+    "localWorktree": {
+      "usedAsAcceptanceSource": false,
+      "status": "NOT_INSPECTED",
+      "authoritativeSource": "remote branch commit and tree above"
+    }
+  },
+  "constraintsCarriedIntoBeta2": [
+    "PUBLISH_USER_PIPELINE_ENABLED remains FALSE until the documented Beta.2 go-live step.",
+    "Beta.2 must reuse the accepted Operation Engine, Raw Store, Incremental Publish and aggregate integration.",
+    "No production write is authorized by this acceptance.",
+    "The first documented Beta.2 implementation stage is Beta.2.1 Read-only Control Center.",
+    "Beta.2.1-Beta.2.6 require separate PASS results before Beta.2 operational go-live.",
+    "The user pipeline may be enabled only as the last go-live action after GO/NO-GO."
+  ],
+  "acceptanceArtifacts": [
+    "docs/beta-1/BETA1_ACCEPTANCE_MANIFEST.json",
+    "docs/beta-1/BETA1_ACCEPTANCE_DOSSIER.md",
+    "docs/beta-1/BETA1_READ_ONLY_RECONCILIATION.md",
+    "docs/beta-1/BETA1_IMMUTABLE_BASE.md",
+    "docs/beta-1/BETA1_HANDOFF_TO_BETA2.md"
+  ]
+}
