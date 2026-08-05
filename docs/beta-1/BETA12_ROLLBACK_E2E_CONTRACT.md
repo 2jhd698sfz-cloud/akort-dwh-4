@@ -4,7 +4,7 @@
 
 This package adds a controlled end-to-end acceptance harness over the already accepted `RAW_LOAD_V4`, Beta.1.4 operational hardening, Beta.1.2 rollback facade, `RAW_REVERSAL_V4`, Publish, aggregate integration, reconciliation, and quick audit. It does not add a queue, executor, handler, trigger, table, or alternative rollback implementation.
 
-The implementation base is branch `codex/beta-1-operational-gap-closure` at commit `8d5f9a93210aa4ab7c02c9a9219b085e4d2947ac`. The runtime remains `4.0.0-alpha.7.4.42`.
+The implementation base is branch `codex/beta-1-operational-gap-closure` at commit `546eeb5d8662f793691d4862870273362644e355`. The runtime remains `4.0.0-alpha.7.4.42`.
 
 Corrective package `4.0.0-beta.1.2.7` preserves contract `4.0-beta12-rollback-e2e-1` and verifies the restore evidence file by SHA-256 of canonical JSON, not by whitespace-sensitive raw file bytes.
 
@@ -49,10 +49,6 @@ At least twelve checks must pass. The implemented set also verifies predecessor 
 
 After evidence reaches `FINALIZED`, E2E functions must not be run again. A repeated finalization only verifies and returns the existing evidence file without changing it.
 
-## Regression wiring
-
-The targeted command is `npm run test:beta12-rollback-e2e`. In the full `npm test` chain it is inserted immediately before `npm run test:beta11-restore-rehearsal`; the accepted restore rehearsal remains the unique final command.
-
 ## Safety boundary
 
 Production is never selected. Active DEV configuration is not changed. The user pipeline remains disabled. No trigger is created or deleted. No physical deletion or evidence cleanup is implemented. Accepted core modules are consumed through their public interfaces and are not modified by this package.
@@ -60,3 +56,7 @@ Production is never selected. Active DEV configuration is not changed. The user 
 ## Release-closure corrections
 
 Package `4.0.0-beta.1.2.8` closes the two live preflight defects without changing the accepted data plane. Restore evidence is verified by SHA-256 of canonical JSON rather than whitespace-sensitive raw bytes. Candidate selection supports either fully registered source-operation lineage or a narrowly defined legacy `RAW_INDUSTRY` predecessor: no load-registry row, version 1, revision type `INITIAL`, exact row fingerprint, and exact legacy-lineage fingerprint. Any partially registered, revised, protected, or drifting lineage remains fail-closed.
+
+## Preflight complexity correction
+
+Package `4.0.0-beta.1.2.9` removes the quadratic candidate scan that repeatedly traversed all `RAW_INDUSTRY` rows for each candidate. Preflight now builds row and lineage indexes once, evaluates each RAW row key exactly once, retains only the deterministic best eligible candidate, and performs no nested RAW-row scan or full candidate sort. Candidate selection is `O(N + L + O + R)` for RAW rows, load-registry rows, operation rows, and reversal rows and remains a synchronous bounded read-only decision boundary.

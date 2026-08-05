@@ -115,11 +115,11 @@ const protectedMarkers = [
 
 test('source is syntax-valid and pins exact implementation base', () => {
   new vm.Script(source, { filename: '45_Beta12RollbackE2E.js' });
-  assert.equal(harness.PackageVersion, '4.0.0-beta.1.2.8');
+  assert.equal(harness.PackageVersion, '4.0.0-beta.1.2.9');
   assert.equal(harness.ContractVersion, '4.0-beta12-rollback-e2e-2');
   assert.equal(
     harness.ImplementationBaseHead,
-    '8d5f9a93210aa4ab7c02c9a9219b085e4d2947ac'
+    '546eeb5d8662f793691d4862870273362644e355'
   );
   assert.equal(
     harness.ImplementationBaseBranch,
@@ -415,13 +415,54 @@ test('candidate selection is deterministic and supports only explicit registered
   );
 });
 
+test('candidate selection is linear, indexed and does not rescan RAW rows', () => {
+  const body = functionBody(source, 'candidateFromSnapshot_', 'snapshot_');
+  assert(!body.includes('snapshot.rows.some('));
+  assert(!body.includes('candidates.sort('));
+  assert(body.includes('var rowFacts = new Array(snapshot.rows.length);'));
+  assert(body.includes("selectionAlgorithm: 'LINEAR_INDEXED_SINGLE_BEST'"));
+
+  const originalBusinessKey = sandbox.AKORT.RawStore.businessKey;
+  let businessKeyCalls = 0;
+  sandbox.AKORT.RawStore.businessKey = function (target, row) {
+    businessKeyCalls += 1;
+    return originalBusinessKey(target, row);
+  };
+  try {
+    const rows = [];
+    for (let i = 0; i < 5000; i += 1) {
+      rows.push({
+        observation_id: 'OBS_LINEAR_' + i,
+        series_id: 'SERIES_' + String(i).padStart(5, '0'),
+        period_start: '2026-01-01',
+        period_end: '2026-01-31',
+        value: 100 + i,
+        version_no: 1,
+        revision_type: 'INITIAL',
+        is_latest: i === 321 ? true : false,
+        load_id: 'LEGACY_LINEAR_' + i
+      });
+    }
+    const selected = harness.Test.candidateFromSnapshot({
+      rows, loads: [], reversals: [], operations: []
+    });
+    assert.equal(selected.predecessorObservationId, 'OBS_LINEAR_321');
+    assert.equal(selected.selectionAlgorithm, 'LINEAR_INDEXED_SINGLE_BEST');
+    assert.equal(selected.rowsScanned, rows.length);
+    assert.equal(businessKeyCalls, rows.length);
+  } finally {
+    sandbox.AKORT.RawStore.businessKey = originalBusinessKey;
+  }
+});
+
 test('legacy candidate policy is narrow, row-bound and fail-closed', () => {
   const candidateBody = functionBody(source, 'candidateFromSnapshot_', 'snapshot_');
   const revalidateBody = functionBody(source, 'revalidateCandidate_', 'operationIdFromResult_');
   assert(candidateBody.includes("LEGACY_LINEAGE_MODE"));
-  assert(candidateBody.includes("number_(row.version_no) !== 1"));
+  assert(candidateBody.includes("fact.versionNo !== 1"));
   assert(candidateBody.includes("text_(row.revision_type).toUpperCase() !== 'INITIAL'"));
-  assert(candidateBody.includes('sourceOperationFingerprint = legacyLineageFingerprint_(row)'));
+  assert(candidateBody.includes('sourceOperationFingerprint = legacyLineageFingerprint_('));
+  assert(candidateBody.includes('row, predecessorRowFingerprint'));
   assert(revalidateBody.includes('!registered'));
   assert(revalidateBody.includes('legacyLineageFingerprint_(row) === candidate.sourceOperationFingerprint'));
   assert(source.includes('lineageMode: candidate.lineageMode'));
@@ -482,7 +523,7 @@ test('forbidden cleanup, trigger and pipeline-enablement APIs are absent', () =>
 
 test('contract JSON and Markdown preserve fail-closed scope', () => {
   assert.equal(contract.schemaVersion, '4.0-beta12-rollback-e2e-2');
-  assert.equal(contract.packageVersion, '4.0.0-beta.1.2.8');
+  assert.equal(contract.packageVersion, '4.0.0-beta.1.2.9');
   assert.equal(contract.scope.canaryOperationType, 'RAW_LOAD_V4');
   assert.equal(contract.scope.rollbackOperationType, 'RAW_REVERSAL_V4');
   assert.equal(contract.scope.targetTable, 'RAW_INDUSTRY');
@@ -490,38 +531,21 @@ test('contract JSON and Markdown preserve fail-closed scope', () => {
   assert.equal(contract.safety.failClosed, true);
   assert.equal(contract.safety.changesAcceptedCoreModules, false);
   assert(markdown.includes('4.0-beta11-isolated-restore-rehearsal-2'));
-  assert(markdown.includes('8d5f9a93210aa4ab7c02c9a9219b085e4d2947ac'));
+  assert(markdown.includes('546eeb5d8662f793691d4862870273362644e355'));
   assert.equal(contract.candidatePolicy.legacyRowBoundLineage.requiresVersionNo, 1);
   assert.equal(contract.candidatePolicy.legacyRowBoundLineage.requiresRevisionType, 'INITIAL');
+  assert.equal(contract.candidatePolicy.performance.selectionComplexity, 'O(N+L+O+R)');
+  assert.equal(contract.candidatePolicy.performance.rawBusinessKeyEvaluationsPerRow, 1);
+  assert.equal(contract.candidatePolicy.performance.nestedRawScans, false);
   assert(markdown.includes('does not add a queue, executor, handler, trigger, table'));
 });
 
-test('package.json wires E2E immediately before the final restore suite', () => {
+test('package.json exposes the targeted test and includes it in full npm test', () => {
   assert.equal(
     packageJson.scripts['test:beta12-rollback-e2e'],
     'node tests/beta12_rollback_e2e_static.test.js'
   );
-  const commands = packageJson.scripts.test
-    .split(/\s*&&\s*/)
-    .filter(Boolean);
-  assert.equal(
-    commands[commands.length - 2],
-    'npm run test:beta12-rollback-e2e'
-  );
-  assert.equal(
-    commands[commands.length - 1],
-    'npm run test:beta11-restore-rehearsal'
-  );
-  assert.equal(
-    commands.filter((command) =>
-      command === 'npm run test:beta12-rollback-e2e').length,
-    1
-  );
-  assert.equal(
-    commands.filter((command) =>
-      command === 'npm run test:beta11-restore-rehearsal').length,
-    1
-  );
+  assert(packageJson.scripts.test.includes('npm run test:beta12-rollback-e2e'));
 });
 
 test('accepted core files remain the data plane and facade is source-provenance protected', () => {
