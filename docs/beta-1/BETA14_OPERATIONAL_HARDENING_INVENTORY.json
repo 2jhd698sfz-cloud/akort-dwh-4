@@ -1,0 +1,119 @@
+{
+  "schemaVersion": "4.0-beta14-operational-inventory-1",
+  "packageVersion": "4.0.0-beta.1.4.1",
+  "contractVersion": "4.0-beta14-operational-inventory-1",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "1055d39229213e17b93faeced44dce57ea55346c",
+  "requirementId": "BETA1.4-OPERATIONAL-HARDENING",
+  "mode": "READ_ONLY_RUNTIME_INVENTORY",
+  "acceptedReuse": {
+    "queue": "OPERATION_QUEUE",
+    "steps": "OPERATION_STEPS",
+    "executor": "AKORT.OperationEngine",
+    "lease": "checkpoint.lease",
+    "safeStop": "AKORT.OperationEngine.requestStop",
+    "resume": "AKORT.OperationEngine.resume",
+    "failedPhaseRecovery": "AKORT.OperationEngine.recoverFailedPhase",
+    "newQueue": false,
+    "newExecutor": false,
+    "newDispatcher": false
+  },
+  "triggerProcesses": [
+    {
+      "processId": "BETA11_DAILY_BACKUP",
+      "ownerModule": "AKORT.Beta11PairedBackup",
+      "handler": "AKORT_beta11DailyBackupTrigger",
+      "lifecycle": "REQUIRED",
+      "minimum": 1,
+      "maximum": 1
+    },
+    {
+      "processId": "BETA11_BACKUP_WORKER",
+      "ownerModule": "AKORT.Beta11PairedBackup",
+      "handler": "AKORT_beta11BackupWorker",
+      "lifecycle": "CONDITIONAL",
+      "minimum": 0,
+      "maximum": 1
+    },
+    {
+      "processId": "ALPHA6_RECONCILIATION_DISPATCHER",
+      "ownerModule": "AKORT.IncrementalPublish",
+      "handler": "AKORT_alpha6ReconciliationDispatcherWorker",
+      "lifecycle": "CLOSED_OR_DORMANT",
+      "minimum": 0,
+      "maximum": 0
+    },
+    {
+      "processId": "ALPHA74_GATE6_WORKER",
+      "ownerModule": "AKORT.Alpha74Gate6Acceptance",
+      "handler": "AKORT_alpha74Gate6Worker",
+      "lifecycle": "CLOSED",
+      "minimum": 0,
+      "maximum": 0
+    },
+    {
+      "processId": "ALPHA74_GATE7_RUNNER",
+      "ownerModule": "AKORT.Alpha74Gate7Runner",
+      "handler": "AKORT_alpha74Gate7Worker",
+      "lifecycle": "CLOSED",
+      "minimum": 0,
+      "maximum": 0
+    }
+  ],
+  "operationClassification": {
+    "staleThresholdMinutes": {
+      "QUEUED": 15,
+      "RUNNING": 5,
+      "PAUSED": 1440,
+      "RETRY_PENDING": 30
+    },
+    "normalizedNextActions": [
+      "NONE",
+      "RUN_FROM_QUEUE",
+      "WAIT_ACTIVE_LEASE",
+      "RESUME_FROM_CHECKPOINT",
+      "RETRY_FROM_CHECKPOINT",
+      "REVIEW_STOPPED_CHECKPOINT",
+      "REVIEW_FAILED_OPERATION",
+      "MANUAL_REVIEW",
+      "REVIEW_DEAD_LETTER",
+      "REVIEW_UNKNOWN_STATUS"
+    ]
+  },
+  "writeConflictClasses": {
+    "SNAPSHOT_EXCLUSIVE": [
+      "BETA11_PAIRED_BACKUP"
+    ],
+    "DATA_PLANE_EXCLUSIVE": [
+      "SOURCE_FILE_LOAD_V4",
+      "RAW_LOAD_V4",
+      "RAW_REVERSAL_V4"
+    ],
+    "CONTROL_PLANE_TEST": [
+      "ALPHA3_TEST_*",
+      "ALPHA3_DEMO_*"
+    ]
+  },
+  "exactGapAfterInventory": [
+    "No materialized trigger-ownership registry exists.",
+    "No shared watchdog classifier exists outside individual modules.",
+    "No shared normalized next_action contract exists for future user-facing operations.",
+    "No shared write-conflict guard is called before every future user-facing enqueue."
+  ],
+  "minimalDeltaForImplementation": [
+    "Add one TRIGGER_OWNERSHIP_REGISTRY service table.",
+    "Add one thin operational-hardening facade around the accepted Operation Engine.",
+    "Materialize trigger ownership and normalized operation classifications without scanning RAW or Publish.",
+    "Expose a shared assertCanStart guard for future user-facing operation facades.",
+    "Do not create a second queue, executor, dispatcher or data pipeline."
+  ],
+  "writes": {
+    "inventoryWrites": false,
+    "createsTrigger": false,
+    "deletesTrigger": false,
+    "mutatesOperation": false,
+    "mutatesDataPlane": false,
+    "productionWrite": false,
+    "enablesUserPipeline": false
+  }
+}
