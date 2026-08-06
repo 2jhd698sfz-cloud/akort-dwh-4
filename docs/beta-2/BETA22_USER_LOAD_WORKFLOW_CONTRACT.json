@@ -1,0 +1,112 @@
+{
+  "packageVersion": "4.0.0-beta.2.2.4",
+  "contractVersion": "4.0-beta22-user-load-workflow-4",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "1512fbfd99769d208efc141154fbc0fb42a4f650",
+  "stage": "BETA2.2_USER_LOAD_WORKFLOW",
+  "status": "CANDIDATE_REVIEW_TARGET_EXTERNAL_GO_REQUIRED_BEFORE_COMMIT",
+  "reusePolicy": "REUSE_FIRST_GAP_ONLY",
+  "acceptedEntryPoints": [
+    "AKORT.ExistingSourceParsers.inspectFile",
+    "AKORT.ExistingSourceParsers.previewFile",
+    "AKORT.Beta14OperationalHardening.enqueueGuarded",
+    "AKORT.OperationEngine.status",
+    "AKORT.OperationEngine.resume",
+    "AKORT.IndustryInput.status",
+    "AKORT.IndustryInput.validate",
+    "AKORT.IndustryInput.submit"
+  ],
+  "acceptedOperationTypes": [
+    "SOURCE_FILE_LOAD_V4",
+    "RAW_LOAD_V4"
+  ],
+  "configuration": {
+    "incomingFolderProperty": "AKORT_BETA22_INCOMING_FOLDER_ID",
+    "confirmationSecretProperty": "AKORT_BETA22_CONFIRMATION_SECRET",
+    "controlledSubmitProperty": "AKORT_BETA22_CONTROLLED_SUBMIT_ENABLED",
+    "controlledSubmitDefault": false,
+    "generalUserPipelineDuringCandidateAcceptance": false,
+    "finalUserPipelineGuardAdapterDeferredToBeta27": true,
+    "controlledSubmitRequiresGeneralPipelineFalse": true
+  },
+  "confirmation": {
+    "schemaVersion": "4.0-beta22-load-confirmation-1",
+    "ttlMs": 600000,
+    "mode": "STATELESS_SERVER_HMAC_SIGNED_REPREVIEW_REQUIRED",
+    "explicitServerAcknowledgmentRequired": true,
+    "acknowledgmentFields": [
+      "acknowledged",
+      "fileId",
+      "fileName"
+    ],
+    "staleAsyncPreviewResponsesAccepted": false
+  },
+  "boundedness": {
+    "directChildrenOnly": true,
+    "maximumIncomingFiles": 50,
+    "maximumPreviewIssues": 50,
+    "recursiveDiscovery": false,
+    "movesFiles": false,
+    "runsFullLoadInsideUiCall": false,
+    "maximumIncomingScan": 200,
+    "maximumOperationStepSummaries": 12,
+    "maximumOperationMessageCharacters": 1000,
+    "temporaryDriveConversionOwnedByAcceptedParser": true,
+    "temporaryDriveConversionFileTypes": [
+      "XLS",
+      "XLSX"
+    ],
+    "temporaryConversionTrashedInFinally": true,
+    "sourceFileMutation": false
+  },
+  "safety": {
+    "newOperationType": false,
+    "newQueue": false,
+    "newExecutor": false,
+    "newDispatcher": false,
+    "newParser": false,
+    "newCalculator": false,
+    "newPublisher": false,
+    "newRawStore": false,
+    "newStateStorage": false,
+    "createsTrigger": false,
+    "productionWrite": false,
+    "industryBypass": false,
+    "beta22OwnedDriveCopy": false,
+    "acceptedParserTemporaryDriveCopy": true,
+    "previewRawWrites": 0,
+    "previewPublishWrites": 0
+  },
+  "operationBinding": {
+    "schemaVersion": "4.0-beta22-operation-binding-1",
+    "requiresBeta22IdempotencyPrefix": true,
+    "bindsAuthorizedUser": true,
+    "bindsFileIdAndSourceHash": true,
+    "arbitrarySourceFileOperationIdsAllowed": false,
+    "recomputesExactIdempotencyKey": true,
+    "bindsProfileTargetOptionsAndRowCount": true,
+    "requiresConfirmationFingerprint": true,
+    "continueStatuses": [
+      "QUEUED",
+      "PAUSED",
+      "RETRY_PENDING"
+    ],
+    "runningOrTerminalContinueAllowed": false,
+    "sourceRecheckPhases": [
+      "DISCOVER",
+      "VALIDATE",
+      "PARSE"
+    ],
+    "repreviewBeforeContinue": true,
+    "sourceChangeBeforeParserMaterializationAllowed": false,
+    "inFlightPreviewContextFenced": true
+  },
+  "industry": {
+    "acceptedFacadeOnly": true,
+    "resultEnvelopePreserved": true,
+    "validateWritesExistingFormStatusCells": true,
+    "validateRawWrites": 0,
+    "validatePublishWrites": 0,
+    "controlledSubmitBypass": false
+  }
+}

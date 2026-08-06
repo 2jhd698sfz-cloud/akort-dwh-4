@@ -16,113 +16,67 @@
       --warn: #b06000;
       --bad: #b3261e;
       --active: #185abc;
+      --soft-blue: #e8f0fe;
       --radius: 14px;
     }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font: 14px/1.45 Arial, sans-serif;
-    }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 Arial, sans-serif; }
     header {
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      justify-content: space-between;
-      padding: 18px 24px;
-      background: rgba(255,255,255,.96);
-      border-bottom: 1px solid var(--line);
+      position: sticky; top: 0; z-index: 10; display: flex; gap: 16px;
+      align-items: center; justify-content: space-between; padding: 18px 24px;
+      background: rgba(255,255,255,.97); border-bottom: 1px solid var(--line);
     }
     h1 { margin: 0; font-size: 20px; }
     h2 { margin: 0 0 12px; font-size: 16px; }
+    h3 { margin: 14px 0 8px; font-size: 14px; }
     button {
-      border: 1px solid var(--line);
-      border-radius: 9px;
-      padding: 9px 13px;
-      background: var(--surface);
-      cursor: pointer;
-      font-weight: 600;
+      border: 1px solid var(--line); border-radius: 9px; padding: 9px 13px;
+      background: var(--surface); cursor: pointer; font-weight: 600;
     }
-    button:disabled { cursor: wait; opacity: .55; }
-    main { max-width: 1240px; margin: 0 auto; padding: 22px; }
-    .notice {
-      margin-bottom: 16px;
-      padding: 12px 14px;
-      border-radius: 10px;
-      background: #e8f0fe;
-      color: #174ea6;
+    button.primary { color: #fff; background: var(--active); border-color: var(--active); }
+    button.danger { color: var(--bad); border-color: var(--bad); }
+    button:disabled { cursor: not-allowed; opacity: .52; }
+    input[type="text"], input[type="number"] {
+      width: 100%; border: 1px solid var(--line); border-radius: 8px;
+      padding: 8px 10px; background: #fff;
     }
-    .error {
-      background: #fce8e6;
-      color: var(--bad);
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0,1fr));
-      gap: 14px;
-      margin-bottom: 18px;
-    }
-    .card, section {
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      padding: 16px;
-    }
+    main { max-width: 1280px; margin: 0 auto; padding: 22px; }
+    .notice { margin-bottom: 16px; padding: 12px 14px; border-radius: 10px; background: var(--soft-blue); color: #174ea6; }
+    .error { background: #fce8e6; color: var(--bad); }
+    .success { background: #e6f4ea; color: var(--good); }
+    .grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; margin-bottom: 18px; }
+    .card, section { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
     .card .label { color: var(--muted); font-size: 12px; }
-    .card .value {
-      margin-top: 6px;
-      font-size: 20px;
-      font-weight: 700;
-      overflow-wrap: anywhere;
-    }
+    .card .value { margin-top: 6px; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
     .status-good { color: var(--good); }
     .status-warn { color: var(--warn); }
     .status-bad { color: var(--bad); }
     .status-active { color: var(--active); }
-    .layout {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 18px;
-    }
+    .layout { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; }
+    .load-layout { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(300px,1fr); gap: 18px; }
     section { margin-bottom: 18px; overflow: hidden; }
     table { width: 100%; border-collapse: collapse; }
-    th, td {
-      padding: 9px 8px;
-      border-bottom: 1px solid var(--line);
-      text-align: left;
-      vertical-align: top;
-    }
+    th, td { padding: 9px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
     th { color: var(--muted); font-size: 12px; }
     tr:last-child td { border-bottom: 0; }
-    .pill {
-      display: inline-block;
-      border: 1px solid currentColor;
-      border-radius: 999px;
-      padding: 2px 8px;
-      font-size: 11px;
-      font-weight: 700;
-    }
+    .pill { display: inline-block; border: 1px solid currentColor; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
     .muted { color: var(--muted); }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
     .empty { color: var(--muted); padding: 12px 0; }
-    .links { display: flex; flex-wrap: wrap; gap: 8px; }
-    .links a {
-      display: inline-block;
-      padding: 8px 11px;
-      border: 1px solid var(--line);
-      border-radius: 9px;
-      color: #185abc;
-      text-decoration: none;
-    }
+    .links, .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .links a { display: inline-block; padding: 8px 11px; border: 1px solid var(--line); border-radius: 9px; color: #185abc; text-decoration: none; }
     .details { font-size: 12px; }
     .loader { opacity: .55; }
+    .field { margin-bottom: 10px; }
+    .field label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 12px; }
+    .confirmation { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fafafa; }
+    .codebox { max-height: 230px; overflow: auto; white-space: pre-wrap; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fafafa; }
+    .tabbar { display: flex; gap: 8px; margin-bottom: 18px; }
+    .tabbar button.active { color: #fff; background: var(--active); border-color: var(--active); }
+    .view[hidden] { display: none; }
     @media (max-width: 900px) {
       .grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-      .layout { grid-template-columns: 1fr; }
+      .layout, .load-layout { grid-template-columns: 1fr; }
     }
     @media (max-width: 520px) {
       header { padding: 14px; }
@@ -135,93 +89,129 @@
   <header>
     <div>
       <h1>АКОРТ — Центр управления</h1>
-      <div class="muted">Beta.2.1 · только просмотр</div>
+      <div class="muted">Beta.2.2 · просмотр, проверка и контролируемая загрузка</div>
     </div>
     <button id="reload" type="button">Обновить экран</button>
   </header>
+
   <main id="app" class="loader">
     <div id="message" class="notice">Загрузка состояния системы…</div>
     <div id="content" hidden>
-      <div class="grid">
-        <div class="card">
-          <div class="label">Общий статус</div>
-          <div id="overall" class="value">—</div>
+      <div class="tabbar">
+        <button id="tabOverview" class="active" type="button">Обзор</button>
+        <button id="tabLoad" type="button">Загрузка данных</button>
+      </div>
+
+      <div id="overviewView" class="view">
+        <div class="grid">
+          <div class="card"><div class="label">Общий статус</div><div id="overall" class="value">—</div></div>
+          <div class="card"><div class="label">Релиз</div><div id="release" class="value mono">—</div></div>
+          <div class="card"><div class="label">Наборы данных</div><div id="datasetCount" class="value">—</div></div>
+          <div class="card"><div class="label">Проблемы</div><div id="issueCount" class="value">—</div></div>
         </div>
-        <div class="card">
-          <div class="label">Релиз</div>
-          <div id="release" class="value mono">—</div>
-        </div>
-        <div class="card">
-          <div class="label">Наборы данных</div>
-          <div id="datasetCount" class="value">—</div>
-        </div>
-        <div class="card">
-          <div class="label">Проблемы</div>
-          <div id="issueCount" class="value">—</div>
+
+        <div class="layout">
+          <div>
+            <section>
+              <h2>Наборы данных</h2>
+              <div style="overflow:auto">
+                <table><thead><tr><th>Набор</th><th>Состояние</th><th>Свежесть</th><th>Последняя активность</th><th>Действие</th></tr></thead><tbody id="datasets"></tbody></table>
+              </div>
+            </section>
+            <section>
+              <h2>Проблемы качества и эксплуатации</h2>
+              <div id="issueNote" class="muted"></div>
+              <div style="overflow:auto">
+                <table><thead><tr><th>Уровень</th><th>Набор</th><th>Проблема</th><th>Решение</th><th>Действие</th></tr></thead><tbody id="issues"></tbody></table>
+              </div>
+            </section>
+          </div>
+          <div>
+            <section><h2>Активная операция</h2><div id="operation"></div></section>
+            <section><h2>Резервная копия</h2><div id="backup"></div></section>
+            <section><h2>Full Audit</h2><div id="audit"></div></section>
+            <section><h2>Триггеры</h2><div id="trigger"></div></section>
+            <section><h2>Ресурсы</h2><div id="links" class="links"></div></section>
+          </div>
         </div>
       </div>
 
-      <div class="layout">
-        <div>
-          <section>
-            <h2>Наборы данных</h2>
-            <div style="overflow:auto">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Набор</th>
-                    <th>Состояние</th>
-                    <th>Свежесть</th>
-                    <th>Последняя активность</th>
-                    <th>Действие</th>
-                  </tr>
-                </thead>
-                <tbody id="datasets"></tbody>
-              </table>
-            </div>
-          </section>
+      <div id="loadView" class="view" hidden>
+        <div class="load-layout">
+          <div>
+            <section>
+              <div class="actions" style="justify-content:space-between">
+                <div>
+                  <h2>Входящие файлы</h2>
+                  <div id="incomingSummary" class="muted">—</div>
+                </div>
+                <button id="reloadFiles" type="button">Обновить файлы</button>
+              </div>
+              <div style="overflow:auto">
+                <table>
+                  <thead><tr><th>Файл</th><th>Тип</th><th>Изменён</th><th>Размер</th><th>Действия</th></tr></thead>
+                  <tbody id="incomingFiles"></tbody>
+                </table>
+              </div>
+            </section>
 
-          <section>
-            <h2>Проблемы качества и эксплуатации</h2>
-            <div id="issueNote" class="muted"></div>
-            <div style="overflow:auto">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Уровень</th>
-                    <th>Набор</th>
-                    <th>Проблема</th>
-                    <th>Решение</th>
-                    <th>Действие</th>
-                  </tr>
-                </thead>
-                <tbody id="issues"></tbody>
-              </table>
-            </div>
-          </section>
-        </div>
+            <section>
+              <h2>Проверка и предпросмотр</h2>
+              <div id="selectedFile" class="muted">Файл не выбран.</div>
+              <div class="grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:12px">
+                <div class="field"><label for="optYear">Год, при необходимости</label><input id="optYear" type="number" min="2000" max="2100"></div>
+                <div class="field"><label for="optMonth">Месяц, при необходимости</label><input id="optMonth" type="number" min="1" max="12"></div>
+                <div class="field"><label for="optWeek">Неделя, при необходимости</label><input id="optWeek" type="number" min="1" max="53"></div>
+              </div>
+              <div class="actions">
+                <button id="inspectSelected" type="button" disabled>Проверить структуру</button>
+                <button id="previewSelected" type="button" disabled>Предпросмотр</button>
+              </div>
+              <div id="previewResult" class="codebox muted" style="margin-top:12px">Результат ещё не сформирован.</div>
+              <p class="muted">
+                Для XLS/XLSX принятый парсер может создать временную
+                конвертированную Google-таблицу и переместить её в корзину
+                после чтения. Исходный файл, RAW и Publish при проверке
+                не изменяются.
+              </p>
 
-        <div>
-          <section>
-            <h2>Активная операция</h2>
-            <div id="operation"></div>
-          </section>
-          <section>
-            <h2>Резервная копия</h2>
-            <div id="backup"></div>
-          </section>
-          <section>
-            <h2>Full Audit</h2>
-            <div id="audit"></div>
-          </section>
-          <section>
-            <h2>Триггеры</h2>
-            <div id="trigger"></div>
-          </section>
-          <section>
-            <h2>Ресурсы</h2>
-            <div id="links" class="links"></div>
-          </section>
+              <div id="confirmationBox" class="confirmation" hidden>
+                <h3>Подтверждение точного файла</h3>
+                <div class="field">
+                  <label for="confirmName">Введите точное имя выбранного файла</label>
+                  <input id="confirmName" type="text" autocomplete="off">
+                </div>
+                <label><input id="confirmCheck" type="checkbox"> Я проверил профиль, период, целевую таблицу и число строк.</label>
+                <div class="actions" style="margin-top:10px">
+                  <button id="submitFile" class="primary" type="button" disabled>Подтвердить загрузку</button>
+                  <span id="writeGateNote" class="muted"></span>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div>
+            <section>
+              <h2>Операция загрузки</h2>
+              <div class="field"><label for="operationId">operation_id</label><input id="operationId" type="text" class="mono"></div>
+              <div class="actions">
+                <button id="loadOperationStatus" type="button">Проверить статус</button>
+                <button id="continueOperation" type="button" disabled>Продолжить один шаг</button>
+              </div>
+              <div id="operationResult" class="codebox muted" style="margin-top:12px">Операция не выбрана.</div>
+            </section>
+
+            <section>
+              <h2>Industry Input</h2>
+              <p class="muted">Используется существующая форма Industry Input и принятый RAW_LOAD_V4. Отдельный путь загрузки не создаётся.</p>
+              <div class="actions">
+                <button id="industryStatus" type="button">Статус</button>
+                <button id="industryValidate" type="button">Проверить форму</button>
+                <button id="industrySubmit" class="danger" type="button" disabled>Передать форму</button>
+              </div>
+              <div id="industryResult" class="codebox muted" style="margin-top:12px">Статус не запрошен.</div>
+            </section>
+          </div>
         </div>
       </div>
 
@@ -230,7 +220,8 @@
         <p>Пользователь: <span id="user" class="mono"></span></p>
         <p>Сформировано: <span id="generated"></span></p>
         <p>Pipeline: <span id="pipeline"></span></p>
-        <p>Контракт: <span id="contract" class="mono"></span></p>
+        <p>Контракт обзора: <span id="contract" class="mono"></span></p>
+        <p>Контракт загрузки: <span id="loadContract" class="mono"></span></p>
       </details>
     </div>
   </main>
@@ -238,21 +229,24 @@
   <script>
     'use strict';
 
+    const state = {
+      selectedFile: null,
+      confirmation: null,
+      preview: null,
+      previewContextKey: '',
+      previewRequestSequence: 0,
+      writeGate: { enabled: false, userPipelineEnabled: false, controlledSubmitEnabled: false },
+      loadContract: ''
+    };
+
     const el = (id) => document.getElementById(id);
-    const text = (value) =>
-      value === null || value === undefined || value === '' ? '—' : String(value);
+    const text = (value) => value === null || value === undefined || value === '' ? '—' : String(value);
 
     function statusClass(value) {
       const normalized = String(value || '').toUpperCase();
-      if (['HEALTHY', 'SUCCESS', 'PASS', 'CURRENT', 'OK'].includes(normalized)) {
-        return 'status-good';
-      }
-      if (['ERROR', 'CRITICAL', 'FAILED', 'STALE', 'ATTENTION_REQUIRED'].includes(normalized)) {
-        return 'status-bad';
-      }
-      if (['ACTIVE', 'RUNNING', 'QUEUED'].includes(normalized)) {
-        return 'status-active';
-      }
+      if (['HEALTHY','SUCCESS','PASS','CURRENT','OK','READY'].includes(normalized)) return 'status-good';
+      if (['ERROR','CRITICAL','FAILED','STALE','ATTENTION_REQUIRED','BLOCKED'].includes(normalized)) return 'status-bad';
+      if (['ACTIVE','RUNNING','QUEUED'].includes(normalized)) return 'status-active';
       return 'status-warn';
     }
 
@@ -275,6 +269,14 @@
       return row;
     }
 
+    function resultText(result) {
+      if (!result) return 'Ответ отсутствует.';
+      if (result.ok !== true) {
+        return [result.code || result.status || 'FAILED', result.message || 'Операция не выполнена.'].join('\n');
+      }
+      return JSON.stringify(result.data || {}, null, 2);
+    }
+
     function renderDatasets(rows) {
       const body = el('datasets');
       body.replaceChildren();
@@ -289,172 +291,324 @@
       });
       if (!(rows || []).length) {
         const tr = document.createElement('tr');
-        const cell = td('Нет данных');
-        cell.colSpan = 5;
-        tr.appendChild(cell);
-        body.appendChild(tr);
+        const cell = td('Нет данных'); cell.colSpan = 5; tr.appendChild(cell); body.appendChild(tr);
       }
     }
 
     function renderIssues(data) {
-      const body = el('issues');
-      body.replaceChildren();
+      const body = el('issues'); body.replaceChildren();
       const rows = data.issues || [];
       rows.forEach((row) => {
         const tr = document.createElement('tr');
-        const sev = document.createElement('span');
-        sev.className = 'pill ' + statusClass(row.severity);
-        sev.textContent = text(row.severity);
-        const sevCell = document.createElement('td');
-        sevCell.appendChild(sev);
-        tr.appendChild(sevCell);
-        tr.appendChild(td(row.datasetId));
-        tr.appendChild(td(row.summary || row.issueCode));
-        tr.appendChild(td(row.resolution));
-        tr.appendChild(td(row.nextAction));
-        body.appendChild(tr);
+        const sev = document.createElement('span'); sev.className = 'pill ' + statusClass(row.severity); sev.textContent = text(row.severity);
+        const sevCell = document.createElement('td'); sevCell.appendChild(sev); tr.appendChild(sevCell);
+        tr.appendChild(td(row.datasetId)); tr.appendChild(td(row.summary || row.issueCode));
+        tr.appendChild(td(row.resolution)); tr.appendChild(td(row.nextAction)); body.appendChild(tr);
       });
       if (!rows.length) {
-        const tr = document.createElement('tr');
-        const cell = td('Открытых проблем нет');
-        cell.colSpan = 5;
-        cell.className = 'status-good';
-        tr.appendChild(cell);
-        body.appendChild(tr);
+        const tr = document.createElement('tr'); const cell = td('Открытых проблем нет');
+        cell.colSpan = 5; cell.className = 'status-good'; tr.appendChild(cell); body.appendChild(tr);
       }
       const display = data.issueDisplay || {};
-      el('issueNote').textContent = display.truncated
-        ? `Показано ${display.displayed} из ${display.total}.`
-        : `Всего: ${display.total || 0}.`;
+      el('issueNote').textContent = display.truncated ? `Показано ${display.displayed} из ${display.total}.` : `Всего: ${display.total || 0}.`;
     }
 
     function renderOperation(value) {
-      const box = el('operation');
-      box.replaceChildren();
-      if (!value || !value.operationId) {
-        box.appendChild(line('Статус', 'Активных операций нет', 'status-good'));
-        return;
-      }
-      box.appendChild(line('ID', value.operationId, 'mono'));
-      box.appendChild(line('Статус', value.status, statusClass(value.status)));
-      box.appendChild(line('Фаза', value.phase));
-      box.appendChild(line('Прогресс', value.progressPercent === null ? '—' : value.progressPercent + '%'));
-      box.appendChild(line('Следующее действие', value.nextAction));
+      const box = el('operation'); box.replaceChildren();
+      if (!value || !value.operationId) { box.appendChild(line('Статус','Активных операций нет','status-good')); return; }
+      box.appendChild(line('ID',value.operationId,'mono')); box.appendChild(line('Статус',value.status,statusClass(value.status)));
+      box.appendChild(line('Фаза',value.phase)); box.appendChild(line('Прогресс',value.progressPercent === null ? '—' : value.progressPercent + '%'));
+      box.appendChild(line('Следующее действие',value.nextAction));
     }
 
     function renderBackup(value) {
-      const box = el('backup');
-      box.replaceChildren();
-      if (!value) {
-        box.appendChild(line('Статус', 'Нет данных', 'status-warn'));
-        return;
-      }
-      box.appendChild(line('ID', value.backupId, 'mono'));
-      box.appendChild(line('Статус', value.status, statusClass(value.healthStatus)));
-      box.appendChild(line('Свежесть', value.freshnessStatus, statusClass(value.freshnessStatus)));
-      box.appendChild(line('Последняя активность', value.latestActivityAt));
+      const box = el('backup'); box.replaceChildren();
+      if (!value) { box.appendChild(line('Статус','Нет данных','status-warn')); return; }
+      box.appendChild(line('ID',value.backupId,'mono')); box.appendChild(line('Статус',value.status,statusClass(value.healthStatus)));
+      box.appendChild(line('Свежесть',value.freshnessStatus,statusClass(value.freshnessStatus))); box.appendChild(line('Последняя активность',value.latestActivityAt));
     }
 
     function renderAudit(value) {
-      const box = el('audit');
-      box.replaceChildren();
-      if (!value || !value.evidence) {
-        box.appendChild(line('Статус', 'Evidence не найдено', 'status-warn'));
-        return;
-      }
+      const box = el('audit'); box.replaceChildren();
+      if (!value || !value.evidence) { box.appendChild(line('Статус','Evidence не найдено','status-warn')); return; }
       const e = value.evidence;
-      box.appendChild(line('Audit ID', e.auditId, 'mono'));
-      box.appendChild(line('Статус', e.status, statusClass(e.status)));
-      box.appendChild(line('Проверки', `${e.checksPassed}/${e.checksTotal}`));
-      box.appendChild(line('Предупреждения', e.checksWarned));
-      box.appendChild(line('Ошибки', e.checksFailed, e.checksFailed ? 'status-bad' : 'status-good'));
-      box.appendChild(line('Завершён', e.finishedAt));
+      box.appendChild(line('Audit ID',e.auditId,'mono')); box.appendChild(line('Статус',e.status,statusClass(e.status)));
+      box.appendChild(line('Проверки',`${e.checksPassed}/${e.checksTotal}`)); box.appendChild(line('Предупреждения',e.checksWarned));
+      box.appendChild(line('Ошибки',e.checksFailed,e.checksFailed ? 'status-bad' : 'status-good')); box.appendChild(line('Завершён',e.finishedAt));
     }
 
     function renderTrigger(value) {
-      const box = el('trigger');
-      box.replaceChildren();
-      if (!value) {
-        box.appendChild(line('Статус', 'Нет данных', 'status-warn'));
-        return;
-      }
-      box.appendChild(line('Статус', value.status, statusClass(value.healthStatus)));
-      box.appendChild(line('Последняя проверка', value.latestActivityAt));
-      box.appendChild(line('Следующее действие', value.nextAction));
+      const box = el('trigger'); box.replaceChildren();
+      if (!value) { box.appendChild(line('Статус','Нет данных','status-warn')); return; }
+      box.appendChild(line('Статус',value.status,statusClass(value.healthStatus)));
+      box.appendChild(line('Последняя проверка',value.latestActivityAt)); box.appendChild(line('Следующее действие',value.nextAction));
     }
 
     function renderLinks(rows) {
-      const box = el('links');
-      box.replaceChildren();
+      const box = el('links'); box.replaceChildren();
       (rows || []).forEach((row) => {
-        const a = document.createElement('a');
-        a.href = row.url;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        a.textContent = row.label;
-        box.appendChild(a);
+        const a = document.createElement('a'); a.href = row.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = row.label; box.appendChild(a);
       });
     }
 
-    function render(result) {
-      if (!result || result.ok !== true) {
-        throw new Error(result && result.message || 'Не удалось получить статус.');
-      }
+    function renderOverview(result) {
+      if (!result || result.ok !== true) throw new Error(result && result.message || 'Не удалось получить статус.');
       const data = result.data;
-      const overall = el('overall');
-      overall.textContent = data.system.statusLabel;
-      overall.className = 'value ' + statusClass(data.system.overallStatus);
-      el('release').textContent = data.system.release;
-      el('datasetCount').textContent = data.system.datasetCount;
-      el('issueCount').textContent = data.system.issueCount;
-      el('user').textContent = data.user.email;
-      el('generated').textContent = data.generatedAt;
-      el('pipeline').textContent = data.system.userPipelineEnabled ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН';
-      el('contract').textContent = data.contractVersion;
+      const overall = el('overall'); overall.textContent = data.system.statusLabel; overall.className = 'value ' + statusClass(data.system.overallStatus);
+      el('release').textContent = data.system.release; el('datasetCount').textContent = data.system.datasetCount; el('issueCount').textContent = data.system.issueCount;
+      el('user').textContent = data.user.email; el('generated').textContent = data.generatedAt;
+      el('pipeline').textContent = data.system.userPipelineEnabled ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН'; el('contract').textContent = data.contractVersion;
+      renderDatasets(data.datasets); renderIssues(data); renderOperation(data.activeOperation); renderBackup(data.backup); renderAudit(data.fullAudit); renderTrigger(data.trigger); renderLinks(data.links);
+    }
 
-      renderDatasets(data.datasets);
-      renderIssues(data);
-      renderOperation(data.activeOperation);
-      renderBackup(data.backup);
-      renderAudit(data.fullAudit);
-      renderTrigger(data.trigger);
-      renderLinks(data.links);
+    function clearPreviewState(message) {
+      state.confirmation = null;
+      state.preview = null;
+      state.previewContextKey = '';
+      el('confirmationBox').hidden = true;
+      el('confirmName').value = '';
+      el('confirmCheck').checked = false;
+      if (message) el('previewResult').textContent = message;
+      updateSubmitButton();
+    }
 
-      el('message').hidden = true;
-      el('content').hidden = false;
-      el('app').classList.remove('loader');
+    function invalidatePreview(message) {
+      state.previewRequestSequence += 1;
+      clearPreviewState(message);
+    }
+
+    function chooseFile(file) {
+      state.selectedFile = file;
+      el('optYear').value = '';
+      el('optMonth').value = '';
+      el('optWeek').value = '';
+      invalidatePreview();
+      el('selectedFile').textContent = `${file.fileName} · ${file.fileId}`;
+      el('inspectSelected').disabled = false; el('previewSelected').disabled = false;
+      el('previewResult').textContent = 'Файл выбран. Выполните проверку или предпросмотр.';
+      updateSubmitButton();
+    }
+
+    function renderIncoming(result) {
+      const body = el('incomingFiles'); body.replaceChildren();
+      if (!result || result.ok !== true) {
+        el('incomingSummary').textContent = result && result.message || 'Не удалось прочитать входящую папку.';
+        const tr = document.createElement('tr'); const cell = td(el('incomingSummary').textContent,'status-bad'); cell.colSpan = 5; tr.appendChild(cell); body.appendChild(tr); return;
+      }
+      const data = result.data || {}; state.writeGate = data.writeGate || state.writeGate; updateWriteControls();
+      el('loadContract').textContent = data.contractVersion || state.loadContract || '—';
+      el('incomingSummary').textContent = `${data.folder && data.folder.folderName || 'Входящие'}: ${data.fileCount || 0} файлов` + (data.truncated ? ' · список ограничен' : '');
+      (data.files || []).forEach((file) => {
+        const tr = document.createElement('tr');
+        const nameCell = document.createElement('td'); const link = document.createElement('a'); link.href = file.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = file.fileName; nameCell.appendChild(link); tr.appendChild(nameCell);
+        tr.appendChild(td(file.mimeType)); tr.appendChild(td(file.updatedAt)); tr.appendChild(td(file.sizeBytes));
+        const actionCell = document.createElement('td'); const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Выбрать'; button.addEventListener('click',() => chooseFile(file)); actionCell.appendChild(button); tr.appendChild(actionCell); body.appendChild(tr);
+      });
+      if (!(data.files || []).length) { const tr = document.createElement('tr'); const cell = td('Поддерживаемые файлы не найдены.'); cell.colSpan = 5; tr.appendChild(cell); body.appendChild(tr); }
+    }
+
+    function optionsFromForm() {
+      const result = {};
+      if (el('optYear').value) result.year = el('optYear').value;
+      if (el('optMonth').value) result.month = el('optMonth').value;
+      if (el('optWeek').value) result.week = el('optWeek').value;
+      return result;
+    }
+
+    function currentPreviewContextKey() {
+      return JSON.stringify({
+        fileId: state.selectedFile ? state.selectedFile.fileId : '',
+        options: optionsFromForm()
+      });
+    }
+
+    function updateSubmitButton() {
+      const binding = state.confirmation && state.confirmation.binding;
+      const exactName = binding &&
+        el('confirmName').value === binding.fileName;
+      const exactFile = binding && state.selectedFile &&
+        state.selectedFile.fileId === binding.fileId;
+      const contextMatches = Boolean(state.previewContextKey) &&
+        state.previewContextKey === currentPreviewContextKey();
+      el('submitFile').disabled = !(
+        state.confirmation &&
+        state.preview &&
+        state.preview.ready &&
+        exactName &&
+        exactFile &&
+        contextMatches &&
+        el('confirmCheck').checked &&
+        state.writeGate.enabled
+      );
+    }
+
+    function updateWriteControls() {
+      const gate = state.writeGate || {};
+      el('writeGateNote').textContent = gate.enabled ? `Запись разрешена: ${gate.mode}.` : 'Запись пока заблокирована сервером.';
+      el('industrySubmit').disabled = !gate.userPipelineEnabled;
+      el('continueOperation').disabled = !gate.enabled || !el('operationId').value.trim();
+      updateSubmitButton();
+    }
+
+    function runFileCall(method) {
+      if (!state.selectedFile) return;
+      clearPreviewState();
+      const requestSequence = ++state.previewRequestSequence;
+      const requestContextKey = currentPreviewContextKey();
+      const requestFileId = state.selectedFile.fileId;
+      const requestOptions = optionsFromForm();
+      el('previewResult').textContent = 'Выполняется…';
+
+      const responseIsCurrent = () =>
+        requestSequence === state.previewRequestSequence &&
+        requestContextKey === currentPreviewContextKey() &&
+        state.selectedFile &&
+        state.selectedFile.fileId === requestFileId;
+
+      const runner = google.script.run.withSuccessHandler((result) => {
+        if (!responseIsCurrent()) return;
+        el('previewResult').textContent = resultText(result);
+        if (method === 'preview' && result && result.ok === true) {
+          state.preview = result.data.preview;
+          state.confirmation = result.data.confirmation;
+          state.previewContextKey = requestContextKey;
+          state.writeGate = result.data.writeGate || state.writeGate;
+          el('confirmationBox').hidden = !state.confirmation;
+          updateWriteControls();
+        }
+      }).withFailureHandler((error) => {
+        if (!responseIsCurrent()) return;
+        el('previewResult').textContent =
+          error && error.message || 'Ошибка вызова.';
+      });
+      if (method === 'inspect') {
+        runner.AKORT_beta22InspectFile(
+          requestFileId,
+          requestOptions
+        );
+      } else {
+        runner.AKORT_beta22PreviewFile(
+          requestFileId,
+          requestOptions
+        );
+      }
+    }
+
+    function submitSelected() {
+      const binding = state.confirmation && state.confirmation.binding;
+      if (!binding) return;
+      const acknowledgment = {
+        acknowledged: el('confirmCheck').checked === true,
+        fileId: binding.fileId,
+        fileName: el('confirmName').value
+      };
+      el('submitFile').disabled = true;
+      el('previewResult').textContent = 'Операция ставится в очередь…';
+      google.script.run.withSuccessHandler((result) => {
+        el('previewResult').textContent = resultText(result);
+        if (result && result.ok === true) {
+          const operationId = result.data.operationId ||
+            result.data.operation && result.data.operation.operationId || '';
+          el('operationId').value = operationId;
+          el('operationResult').textContent =
+            JSON.stringify(result.data.operation || {}, null, 2);
+          updateWriteControls();
+        } else {
+          updateSubmitButton();
+        }
+      }).withFailureHandler((error) => {
+        el('previewResult').textContent =
+          error && error.message || 'Ошибка передачи.';
+        updateSubmitButton();
+      }).AKORT_beta22SubmitFile(
+        state.confirmation,
+        acknowledgment
+      );
+    }
+
+    function loadOperationStatus() {
+      const id = el('operationId').value.trim(); if (!id) return;
+      el('operationResult').textContent = 'Загрузка статуса…';
+      google.script.run.withSuccessHandler((result) => {
+        el('operationResult').textContent = resultText(result);
+        if (result && result.ok === true) state.writeGate = result.data.writeGate || state.writeGate;
+        updateWriteControls();
+      }).withFailureHandler((error) => { el('operationResult').textContent = error && error.message || 'Ошибка статуса.'; }).AKORT_beta22OperationStatus(id);
+    }
+
+    function continueOperation() {
+      const id = el('operationId').value.trim(); if (!id) return;
+      el('operationResult').textContent = 'Продолжение операции…';
+      google.script.run.withSuccessHandler((result) => {
+        el('operationResult').textContent = resultText(result);
+        if (result && result.ok === true) state.writeGate = result.data.writeGate || state.writeGate;
+        updateWriteControls();
+      })
+        .withFailureHandler((error) => { el('operationResult').textContent = error && error.message || 'Ошибка продолжения.'; })
+        .AKORT_beta22ContinueOperation(id);
+    }
+
+    function industryCall(kind) {
+      el('industryResult').textContent = 'Выполняется…';
+      const runner = google.script.run.withSuccessHandler((result) => { el('industryResult').textContent = resultText(result); })
+        .withFailureHandler((error) => { el('industryResult').textContent = error && error.message || 'Ошибка Industry Input.'; });
+      if (kind === 'status') runner.AKORT_beta22IndustryStatus();
+      else if (kind === 'validate') runner.AKORT_beta22IndustryValidate();
+      else runner.AKORT_beta22IndustrySubmit();
+    }
+
+    function showView(name) {
+      const overview = name === 'overview';
+      el('overviewView').hidden = !overview; el('loadView').hidden = overview;
+      el('tabOverview').classList.toggle('active',overview); el('tabLoad').classList.toggle('active',!overview);
     }
 
     function fail(error) {
-      const message = el('message');
-      message.hidden = false;
-      message.className = 'notice error';
-      message.textContent = error && error.message
-        ? error.message
-        : 'Не удалось загрузить состояние системы.';
-      el('content').hidden = true;
-      el('app').classList.remove('loader');
+      const message = el('message'); message.hidden = false; message.className = 'notice error';
+      message.textContent = error && error.message ? error.message : 'Не удалось загрузить состояние системы.';
+      el('content').hidden = true; el('app').classList.remove('loader');
+    }
+
+    function loadIncoming() {
+      el('reloadFiles').disabled = true;
+      google.script.run.withSuccessHandler((result) => { el('reloadFiles').disabled = false; renderIncoming(result); })
+        .withFailureHandler((error) => { el('reloadFiles').disabled = false; renderIncoming({ok:false,message:error && error.message}); })
+        .AKORT_beta22ListIncomingFiles();
     }
 
     function load() {
-      el('reload').disabled = true;
-      el('app').classList.add('loader');
-      el('message').hidden = false;
-      el('message').className = 'notice';
-      el('message').textContent = 'Загрузка состояния системы…';
-      google.script.run
-        .withSuccessHandler((result) => {
-          el('reload').disabled = false;
-          try { render(result); } catch (error) { fail(error); }
-        })
-        .withFailureHandler((error) => {
-          el('reload').disabled = false;
-          fail(error);
-        })
-        .AKORT_beta21ControlCenterStatus();
+      el('reload').disabled = true; el('app').classList.add('loader'); el('message').hidden = false; el('message').className = 'notice'; el('message').textContent = 'Загрузка состояния системы…';
+      google.script.run.withSuccessHandler((result) => {
+        el('reload').disabled = false;
+        try {
+          renderOverview(result); el('message').hidden = true; el('content').hidden = false; el('app').classList.remove('loader'); loadIncoming();
+        } catch (error) { fail(error); }
+      }).withFailureHandler((error) => { el('reload').disabled = false; fail(error); }).AKORT_beta21ControlCenterStatus();
     }
 
-    el('reload').addEventListener('click', load);
+    el('reload').addEventListener('click',load);
+    el('reloadFiles').addEventListener('click',loadIncoming);
+    el('tabOverview').addEventListener('click',() => showView('overview'));
+    el('tabLoad').addEventListener('click',() => showView('load'));
+    el('inspectSelected').addEventListener('click',() => runFileCall('inspect'));
+    el('previewSelected').addEventListener('click',() => runFileCall('preview'));
+    ['optYear','optMonth','optWeek'].forEach((id) => {
+      el(id).addEventListener('input',() => {
+        if (!state.selectedFile) return;
+        invalidatePreview(
+          'Параметры изменены. Выполните предпросмотр повторно.'
+        );
+      });
+    });
+    el('confirmName').addEventListener('input',updateSubmitButton);
+    el('confirmCheck').addEventListener('change',updateSubmitButton);
+    el('submitFile').addEventListener('click',submitSelected);
+    el('operationId').addEventListener('input',updateWriteControls);
+    el('loadOperationStatus').addEventListener('click',loadOperationStatus);
+    el('continueOperation').addEventListener('click',continueOperation);
+    el('industryStatus').addEventListener('click',() => industryCall('status'));
+    el('industryValidate').addEventListener('click',() => industryCall('validate'));
+    el('industrySubmit').addEventListener('click',() => industryCall('submit'));
     load();
   </script>
 </body>
