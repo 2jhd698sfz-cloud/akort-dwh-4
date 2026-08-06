@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>АКОРТ — Центр управления</title>
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --surface: #ffffff;
+      --text: #202124;
+      --muted: #5f6368;
+      --line: #dadce0;
+      --good: #137333;
+      --warn: #b06000;
+      --bad: #b3261e;
+      --active: #185abc;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 Arial, sans-serif;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 24px;
+      background: rgba(255,255,255,.96);
+      border-bottom: 1px solid var(--line);
+    }
+    h1 { margin: 0; font-size: 20px; }
+    h2 { margin: 0 0 12px; font-size: 16px; }
+    button {
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      padding: 9px 13px;
+      background: var(--surface);
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:disabled { cursor: wait; opacity: .55; }
+    main { max-width: 1240px; margin: 0 auto; padding: 22px; }
+    .notice {
+      margin-bottom: 16px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: #e8f0fe;
+      color: #174ea6;
+    }
+    .error {
+      background: #fce8e6;
+      color: var(--bad);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0,1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .card, section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .card .label { color: var(--muted); font-size: 12px; }
+    .card .value {
+      margin-top: 6px;
+      font-size: 20px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .status-good { color: var(--good); }
+    .status-warn { color: var(--warn); }
+    .status-bad { color: var(--bad); }
+    .status-active { color: var(--active); }
+    .layout {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 18px;
+    }
+    section { margin-bottom: 18px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      padding: 9px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-size: 12px; }
+    tr:last-child td { border-bottom: 0; }
+    .pill {
+      display: inline-block;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .muted { color: var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .empty { color: var(--muted); padding: 12px 0; }
+    .links { display: flex; flex-wrap: wrap; gap: 8px; }
+    .links a {
+      display: inline-block;
+      padding: 8px 11px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: #185abc;
+      text-decoration: none;
+    }
+    .details { font-size: 12px; }
+    .loader { opacity: .55; }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 520px) {
+      header { padding: 14px; }
+      main { padding: 14px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>АКОРТ — Центр управления</h1>
+      <div class="muted">Beta.2.1 · только просмотр</div>
+    </div>
+    <button id="reload" type="button">Обновить экран</button>
+  </header>
+  <main id="app" class="loader">
+    <div id="message" class="notice">Загрузка состояния системы…</div>
+    <div id="content" hidden>
+      <div class="grid">
+        <div class="card">
+          <div class="label">Общий статус</div>
+          <div id="overall" class="value">—</div>
+        </div>
+        <div class="card">
+          <div class="label">Релиз</div>
+          <div id="release" class="value mono">—</div>
+        </div>
+        <div class="card">
+          <div class="label">Наборы данных</div>
+          <div id="datasetCount" class="value">—</div>
+        </div>
+        <div class="card">
+          <div class="label">Проблемы</div>
+          <div id="issueCount" class="value">—</div>
+        </div>
+      </div>
+
+      <div class="layout">
+        <div>
+          <section>
+            <h2>Наборы данных</h2>
+            <div style="overflow:auto">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Набор</th>
+                    <th>Состояние</th>
+                    <th>Свежесть</th>
+                    <th>Последняя активность</th>
+                    <th>Действие</th>
+                  </tr>
+                </thead>
+                <tbody id="datasets"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <h2>Проблемы качества и эксплуатации</h2>
+            <div id="issueNote" class="muted"></div>
+            <div style="overflow:auto">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Уровень</th>
+                    <th>Набор</th>
+                    <th>Проблема</th>
+                    <th>Решение</th>
+                    <th>Действие</th>
+                  </tr>
+                </thead>
+                <tbody id="issues"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div>
+          <section>
+            <h2>Активная операция</h2>
+            <div id="operation"></div>
+          </section>
+          <section>
+            <h2>Резервная копия</h2>
+            <div id="backup"></div>
+          </section>
+          <section>
+            <h2>Full Audit</h2>
+            <div id="audit"></div>
+          </section>
+          <section>
+            <h2>Триггеры</h2>
+            <div id="trigger"></div>
+          </section>
+          <section>
+            <h2>Ресурсы</h2>
+            <div id="links" class="links"></div>
+          </section>
+        </div>
+      </div>
+
+      <details class="card details">
+        <summary>Технические сведения</summary>
+        <p>Пользователь: <span id="user" class="mono"></span></p>
+        <p>Сформировано: <span id="generated"></span></p>
+        <p>Pipeline: <span id="pipeline"></span></p>
+        <p>Контракт: <span id="contract" class="mono"></span></p>
+      </details>
+    </div>
+  </main>
+
+  <script>
+    'use strict';
+
+    const el = (id) => document.getElementById(id);
+    const text = (value) =>
+      value === null || value === undefined || value === '' ? '—' : String(value);
+
+    function statusClass(value) {
+      const normalized = String(value || '').toUpperCase();
+      if (['HEALTHY', 'SUCCESS', 'PASS', 'CURRENT', 'OK'].includes(normalized)) {
+        return 'status-good';
+      }
+      if (['ERROR', 'CRITICAL', 'FAILED', 'STALE', 'ATTENTION_REQUIRED'].includes(normalized)) {
+        return 'status-bad';
+      }
+      if (['ACTIVE', 'RUNNING', 'QUEUED'].includes(normalized)) {
+        return 'status-active';
+      }
+      return 'status-warn';
+    }
+
+    function td(value, className) {
+      const node = document.createElement('td');
+      node.textContent = text(value);
+      if (className) node.className = className;
+      return node;
+    }
+
+    function line(label, value, className) {
+      const row = document.createElement('p');
+      const strong = document.createElement('strong');
+      strong.textContent = label + ': ';
+      row.appendChild(strong);
+      const span = document.createElement('span');
+      span.textContent = text(value);
+      if (className) span.className = className;
+      row.appendChild(span);
+      return row;
+    }
+
+    function renderDatasets(rows) {
+      const body = el('datasets');
+      body.replaceChildren();
+      (rows || []).forEach((row) => {
+        const tr = document.createElement('tr');
+        tr.appendChild(td(row.label || row.datasetId));
+        tr.appendChild(td(row.healthStatus, statusClass(row.healthStatus)));
+        tr.appendChild(td(row.freshnessStatus, statusClass(row.freshnessStatus)));
+        tr.appendChild(td(row.latestActivityAt));
+        tr.appendChild(td(row.nextAction));
+        body.appendChild(tr);
+      });
+      if (!(rows || []).length) {
+        const tr = document.createElement('tr');
+        const cell = td('Нет данных');
+        cell.colSpan = 5;
+        tr.appendChild(cell);
+        body.appendChild(tr);
+      }
+    }
+
+    function renderIssues(data) {
+      const body = el('issues');
+      body.replaceChildren();
+      const rows = data.issues || [];
+      rows.forEach((row) => {
+        const tr = document.createElement('tr');
+        const sev = document.createElement('span');
+        sev.className = 'pill ' + statusClass(row.severity);
+        sev.textContent = text(row.severity);
+        const sevCell = document.createElement('td');
+        sevCell.appendChild(sev);
+        tr.appendChild(sevCell);
+        tr.appendChild(td(row.datasetId));
+        tr.appendChild(td(row.summary || row.issueCode));
+        tr.appendChild(td(row.resolution));
+        tr.appendChild(td(row.nextAction));
+        body.appendChild(tr);
+      });
+      if (!rows.length) {
+        const tr = document.createElement('tr');
+        const cell = td('Открытых проблем нет');
+        cell.colSpan = 5;
+        cell.className = 'status-good';
+        tr.appendChild(cell);
+        body.appendChild(tr);
+      }
+      const display = data.issueDisplay || {};
+      el('issueNote').textContent = display.truncated
+        ? `Показано ${display.displayed} из ${display.total}.`
+        : `Всего: ${display.total || 0}.`;
+    }
+
+    function renderOperation(value) {
+      const box = el('operation');
+      box.replaceChildren();
+      if (!value || !value.operationId) {
+        box.appendChild(line('Статус', 'Активных операций нет', 'status-good'));
+        return;
+      }
+      box.appendChild(line('ID', value.operationId, 'mono'));
+      box.appendChild(line('Статус', value.status, statusClass(value.status)));
+      box.appendChild(line('Фаза', value.phase));
+      box.appendChild(line('Прогресс', value.progressPercent === null ? '—' : value.progressPercent + '%'));
+      box.appendChild(line('Следующее действие', value.nextAction));
+    }
+
+    function renderBackup(value) {
+      const box = el('backup');
+      box.replaceChildren();
+      if (!value) {
+        box.appendChild(line('Статус', 'Нет данных', 'status-warn'));
+        return;
+      }
+      box.appendChild(line('ID', value.backupId, 'mono'));
+      box.appendChild(line('Статус', value.status, statusClass(value.healthStatus)));
+      box.appendChild(line('Свежесть', value.freshnessStatus, statusClass(value.freshnessStatus)));
+      box.appendChild(line('Последняя активность', value.latestActivityAt));
+    }
+
+    function renderAudit(value) {
+      const box = el('audit');
+      box.replaceChildren();
+      if (!value || !value.evidence) {
+        box.appendChild(line('Статус', 'Evidence не найдено', 'status-warn'));
+        return;
+      }
+      const e = value.evidence;
+      box.appendChild(line('Audit ID', e.auditId, 'mono'));
+      box.appendChild(line('Статус', e.status, statusClass(e.status)));
+      box.appendChild(line('Проверки', `${e.checksPassed}/${e.checksTotal}`));
+      box.appendChild(line('Предупреждения', e.checksWarned));
+      box.appendChild(line('Ошибки', e.checksFailed, e.checksFailed ? 'status-bad' : 'status-good'));
+      box.appendChild(line('Завершён', e.finishedAt));
+    }
+
+    function renderTrigger(value) {
+      const box = el('trigger');
+      box.replaceChildren();
+      if (!value) {
+        box.appendChild(line('Статус', 'Нет данных', 'status-warn'));
+        return;
+      }
+      box.appendChild(line('Статус', value.status, statusClass(value.healthStatus)));
+      box.appendChild(line('Последняя проверка', value.latestActivityAt));
+      box.appendChild(line('Следующее действие', value.nextAction));
+    }
+
+    function renderLinks(rows) {
+      const box = el('links');
+      box.replaceChildren();
+      (rows || []).forEach((row) => {
+        const a = document.createElement('a');
+        a.href = row.url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = row.label;
+        box.appendChild(a);
+      });
+    }
+
+    function render(result) {
+      if (!result || result.ok !== true) {
+        throw new Error(result && result.message || 'Не удалось получить статус.');
+      }
+      const data = result.data;
+      const overall = el('overall');
+      overall.textContent = data.system.statusLabel;
+      overall.className = 'value ' + statusClass(data.system.overallStatus);
+      el('release').textContent = data.system.release;
+      el('datasetCount').textContent = data.system.datasetCount;
+      el('issueCount').textContent = data.system.issueCount;
+      el('user').textContent = data.user.email;
+      el('generated').textContent = data.generatedAt;
+      el('pipeline').textContent = data.system.userPipelineEnabled ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН';
+      el('contract').textContent = data.contractVersion;
+
+      renderDatasets(data.datasets);
+      renderIssues(data);
+      renderOperation(data.activeOperation);
+      renderBackup(data.backup);
+      renderAudit(data.fullAudit);
+      renderTrigger(data.trigger);
+      renderLinks(data.links);
+
+      el('message').hidden = true;
+      el('content').hidden = false;
+      el('app').classList.remove('loader');
+    }
+
+    function fail(error) {
+      const message = el('message');
+      message.hidden = false;
+      message.className = 'notice error';
+      message.textContent = error && error.message
+        ? error.message
+        : 'Не удалось загрузить состояние системы.';
+      el('content').hidden = true;
+      el('app').classList.remove('loader');
+    }
+
+    function load() {
+      el('reload').disabled = true;
+      el('app').classList.add('loader');
+      el('message').hidden = false;
+      el('message').className = 'notice';
+      el('message').textContent = 'Загрузка состояния системы…';
+      google.script.run
+        .withSuccessHandler((result) => {
+          el('reload').disabled = false;
+          try { render(result); } catch (error) { fail(error); }
+        })
+        .withFailureHandler((error) => {
+          el('reload').disabled = false;
+          fail(error);
+        })
+        .AKORT_beta21ControlCenterStatus();
+    }
+
+    el('reload').addEventListener('click', load);
+    load();
+  </script>
+</body>
+</html>

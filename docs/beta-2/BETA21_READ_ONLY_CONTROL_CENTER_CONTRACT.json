@@ -1,0 +1,69 @@
+{
+  "packageVersion": "4.0.0-beta.2.1.1",
+  "contractVersion": "4.0-beta21-read-only-control-center-1",
+  "stage": "BETA2.1_READ_ONLY_CONTROL_CENTER",
+  "baseRelease": "4.0.0-alpha.7.4.42",
+  "baseCommit": "32945776e279528008cbd753e1f0321b3c52e91e",
+  "immutableBackendImplementationBase": "431b6f77bb6c01c0df855aec37e99c1619a93c4f",
+  "reusePolicy": "REUSE_FIRST_GAP_ONLY",
+  "infrastructure": {
+    "type": "APPS_SCRIPT_WEB_APP_HTMLSERVICE",
+    "project": "EXISTING_ACCEPTED_STANDALONE_APPS_SCRIPT_PROJECT",
+    "secondBoundScript": false,
+    "secondBackend": false,
+    "deploymentExecution": "USER_ACCESSING_WEB_APP",
+    "acceptanceAccess": "ONLY_MYSELF_OR_EXPLICIT_ALLOWLIST"
+  },
+  "acceptedReadApis": [
+    "AKORT.Beta15CompactObservability.status",
+    "AKORT.Beta16OperatorFacade.statusLatest",
+    "AKORT.Config.load",
+    "AKORT.Config.readSystemSettings"
+  ],
+  "readModels": [
+    "DATASET_STATUS",
+    "ISSUE_REGISTRY",
+    "FULL_AUDIT_EVIDENCE",
+    "RETENTION_REGISTRY"
+  ],
+  "uiSections": [
+    "OVERVIEW",
+    "DATASETS",
+    "ACTIVE_OPERATION",
+    "ISSUES",
+    "BACKUP",
+    "FULL_AUDIT",
+    "TRIGGERS",
+    "RESOURCE_LINKS",
+    "TECHNICAL_DETAILS"
+  ],
+  "boundedness": {
+    "maximumUiIssues": 50,
+    "statusReadsSourceRegistries": false,
+    "readsPhysicalRawTargets": false,
+    "readsPhysicalPublishTargets": false,
+    "observabilityDatasetMaximum": 16,
+    "observabilityIssueMaximum": 250
+  },
+  "safety": {
+    "newBusinessLogic": false,
+    "newOperationType": false,
+    "createsOperation": false,
+    "mutatesOperation": false,
+    "createsQueue": false,
+    "createsExecutor": false,
+    "createsDispatcher": false,
+    "createsTrigger": false,
+    "deletesTrigger": false,
+    "serviceProjectionWrite": false,
+    "dataPlaneWrite": false,
+    "productionWrite": false,
+    "enablesUserPipeline": false
+  },
+  "publicApi": [
+    "doGet",
+    "AKORT_beta21ControlCenterContract",
+    "AKORT_beta21ControlCenterPreflight",
+    "AKORT_beta21ControlCenterStatus"
+  ]
+}
